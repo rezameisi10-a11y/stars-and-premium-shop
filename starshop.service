@@ -1,0 +1,13 @@
+[Unit]
+Description=Telegram Stars Shop Bot
+After=network-online.target
+
+[Service]
+WorkingDirectory=/opt/starshop
+ExecStart=/opt/starshop/venv/bin/python main.py
+Restart=always
+RestartSec=5
+User=starshop
+
+[Install]
+WantedBy=multi-user.target

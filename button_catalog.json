@@ -1,0 +1,764 @@
+[
+ {
+  "key": "buy",
+  "text": "",
+  "dyn": true,
+  "scope": "user"
+ },
+ {
+  "key": "cat",
+  "text": "◀️ قبلی",
+  "dyn": false,
+  "scope": "user"
+ },
+ {
+  "key": "chk",
+  "text": "🔄 بررسی پرداخت",
+  "dyn": false,
+  "scope": "user"
+ },
+ {
+  "key": "disc",
+  "text": "🏷 کد تخفیف دارم",
+  "dyn": false,
+  "scope": "user"
+ },
+ {
+  "key": "menu",
+  "text": "🔙 منوی اصلی",
+  "dyn": false,
+  "scope": "user"
+ },
+ {
+  "key": "ord",
+  "text": "🔙 بازگشت به سفارش",
+  "dyn": false,
+  "scope": "user"
+ },
+ {
+  "key": "pay:card",
+  "text": "💳 کارت به کارت",
+  "dyn": false,
+  "scope": "user"
+ },
+ {
+  "key": "pay:ton",
+  "text": "💎 تون (TON)",
+  "dyn": false,
+  "scope": "user"
+ },
+ {
+  "key": "pay:usdt",
+  "text": "💵 تتر (USDT TRC20)",
+  "dyn": false,
+  "scope": "user"
+ },
+ {
+  "key": "pay:wallet",
+  "text": "👛 کیف پول (موجودی {b} ت)",
+  "dyn": true,
+  "scope": "user"
+ },
+ {
+  "key": "pay:zarinpal",
+  "text": "🏦 درگاه بانکی",
+  "dyn": false,
+  "scope": "user"
+ },
+ {
+  "key": "pm",
+  "text": "💳 پرداخت",
+  "dyn": false,
+  "scope": "user"
+ },
+ {
+  "key": "setlang",
+  "text": "",
+  "dyn": true,
+  "scope": "user"
+ },
+ {
+  "key": "topup",
+  "text": "➕ شارژ کیف پول",
+  "dyn": false,
+  "scope": "user"
+ },
+ {
+  "key": "txt",
+  "text": "",
+  "dyn": true,
+  "scope": "user"
+ },
+ {
+  "key": "adm:aadd",
+  "text": "➕ افزودن ادمین",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ad",
+  "text": "❌ خیر",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:an",
+  "text": "✏️ نام",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ap",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:apre",
+  "text": "👑 مدیر کامل",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:arm",
+  "text": "🗑 حذف",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:aw",
+  "text": "🖥 ورود وب",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ba",
+  "text": "◀️",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ba:user",
+  "text": "🧩 همه‌ی دکمه‌های ربات (جداگانه)",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:backup:env",
+  "text": "🔐 با .env",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:backup:zip",
+  "text": "📦 بکاپ کامل (zip)",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:badd",
+  "text": "➕ دکمه‌ی جدید (لینک/متن)",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:badd:text",
+  "text": "📝 پیام متنی",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:badd:url",
+  "text": "🔗 لینک (کانال، سایت، ...)",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:bcast",
+  "text": "🔄 بروزرسانی",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:bcasta",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:bdel",
+  "text": "🗑 حذف دکمه",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:bem",
+  "text": "🌟 ایموجی پریمیوم",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:bena",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:bext",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:bgo",
+  "text": "✅ ارسال",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:bk",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:bkc",
+  "text": "♻️ رنگ: مطابق نوع دکمه",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:bke",
+  "text": "🌟 ایموجی پریمیوم",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:bkt",
+  "text": "✏️ متن دکمه",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:bmv",
+  "text": "◀️",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:bren",
+  "text": "✏️ متن دکمه",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:breset",
+  "text": "♻️ بازگردانی چیدمان پیش‌فرض",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:breset:go",
+  "text": "✅ بله، بازگردانی",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:bt",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:btn",
+  "text": "❌ خیر",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:dc",
+  "text": "❌ خیر",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:dext",
+  "text": "⏱ تمدید/تغییر مدت",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:disc",
+  "text": "◀️",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:dlog",
+  "text": "📜 لاگ استفاده",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:dnew",
+  "text": "➕ ساخت کد تخفیف",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:dnewadv",
+  "text": "⚙️ ساخت پیشرفته (همه گزینه‌ها)",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ds:kind",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ds:more",
+  "text": "⚙️ گزینه‌های بیشتر",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ds:name",
+  "text": "✏️ تغییر نام کد",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ds:q",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:dt",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:dw:cancel",
+  "text": "❌ لغو",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:dw:ok",
+  "text": "✅ ساخت کد",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:dw:skip",
+  "text": "⏭ پیش‌فرض",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:dx",
+  "text": "🗑 حذف",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:gsync",
+  "text": "🔄 همگام‌سازی از تلگرام",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:home",
+  "text": "❌ انصراف",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:lg",
+  "text": "⭐ پیش‌فرض ربات",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:lnew",
+  "text": "➕ افزودن زبان جدید",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:lt",
+  "text": "◀️",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:noop",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ord",
+  "text": "#",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:p",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:pc",
+  "text": "🧮 قیمت خودکار",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:pk",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:pm",
+  "text": "📈 سود مخصوص",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:pmc",
+  "text": "↩️ سود پایه",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:pnew",
+  "text": "➕ پکیج جدید",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:pp",
+  "text": "💰 قیمت دستی",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:pt",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ptt",
+  "text": "✏️ تغییر عنوان",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:rates",
+  "text": "💹 نرخ‌ها و سود",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ratesmapp:price",
+  "text": "🧪 تست قیمت Marketapp",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ratesmapp:wallet",
+  "text": "🧪 تست کیف پول TON",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ratesnow",
+  "text": "🔄 بروزرسانی همین حالا",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ratespre",
+  "text": "📋 پیش‌تنظیم API ریالی",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:rem",
+  "text": "🌟 تنظیم ایموجی",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:rem:_t",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:restore",
+  "text": "📥 وارد کردن بکاپ",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:restore:env",
+  "text": "✅ دیتابیس + .env",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:restore:ok",
+  "text": "✅ جایگزین کن",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:retryall",
+  "text": "🔁 تلاش مجدد همه",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ro",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:roles",
+  "text": "🎨 رنگ و ایموجی گروه‌های دکمه",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:sf",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:sf:fee_fixed",
+  "text": "💸 کارمزد ثابت",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:sf:margin_percent",
+  "text": "📈 درصد سود پایه",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:sf:ton_toman",
+  "text": "✏️ نرخ دستی تون",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:sf:usdt_toman",
+  "text": "✏️ نرخ دستی دلار",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:sg",
+  "text": "◀️",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:sg:delivery",
+  "text": "🚚 تحویل خودکار",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:sg:marketapp",
+  "text": "🛰 Marketapp",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:sg:pricing",
+  "text": "⚙️ قیمت‌گذاری",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:sg:rates",
+  "text": "⚙️ API نرخ‌ها",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:stars",
+  "text": "🔄 بروزرسانی",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:stats",
+  "text": "🔄 بروزرسانی",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:stopup",
+  "text": "➕ شارژ با ستاره",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:sv",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:sx",
+  "text": "🗑 پاک کردن مقدار",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:u",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ub",
+  "text": "➕ افزایش",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ubn",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ucd",
+  "text": "🏷 فعال‌سازی کد",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ul",
+  "text": "◀️",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ulang",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ulg",
+  "text": "🌐 زبان",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:um",
+  "text": "✉️ پیام",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:unote",
+  "text": "📝 یادداشت",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:uo",
+  "text": "🧾 سفارش‌ها",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:up",
+  "text": "💳 پرداخت‌ها",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:upc",
+  "text": "🎟 ساخت کد اختصاصی",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:upd",
+  "text": "🎁 تخفیف شخصی ٪",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ur",
+  "text": "🤝 زیرمجموعه‌ها",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:users:q",
+  "text": "🔎 جستجوی کاربر (آیدی/یوزرنیم/نام)",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:uw",
+  "text": "👛 کیف پول",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "oadm:auto",
+  "text": "🎁 ارسال خودکار با ستاره ربات",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "oadm:done",
+  "text": "✅ تحویل شد",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "oadm:refund",
+  "text": "↩️ بازگشت وجه به کیف پول",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "oadm:retry",
+  "text": "🔁 تلاش مجدد",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "padm:no",
+  "text": "❌ رد",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "padm:ok",
+  "text": "✅ تأیید",
+  "dyn": false,
+  "scope": "admin"
+ }
+]
