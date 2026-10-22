@@ -302,19 +302,33 @@ function setupReceipt(r) {
   const f = $app.querySelector("#rf"), pick = $app.querySelector("#pick"), send = $app.querySelector("#send");
   let data = "";
   pick.onclick = () => f.click();
-  f.onchange = () => {
+  const bad = () => toast(t("لطفاً فقط عکس رسید را ارسال کنید."), true);
+  const show = d => { data = d; $app.querySelector("#pv").innerHTML = `<img src="${d}" style="max-width:100%;border-radius:12px;margin:8px 0">`; send.disabled = false; };
+  const toB64 = buf => { let s = "", u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
+  const sniff = u => (u[0] === 0xff && u[1] === 0xd8) ? "image/jpeg" : (u[0] === 0x89 && u[1] === 0x50) ? "image/png" : (u[0] === 0x52 && u[1] === 0x49) ? "image/webp" : "";
+  const readBuf = file => file.arrayBuffer ? file.arrayBuffer() : new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = () => no(fr.error); fr.readAsArrayBuffer(file); });
+  const toJpeg = async (file, buf) => {       // کوچک‌کردن و تبدیل به JPEG؛ اگر مرورگر نتوانست، null
+    const src = await new Promise(ok => {
+      const url = URL.createObjectURL(new Blob([buf], {type: sniff(new Uint8Array(buf, 0, 4)) || file.type || "image/jpeg"})), im = new Image();
+      im.onload = () => ok({im, url}); im.onerror = () => { URL.revokeObjectURL(url); ok(null); }; im.src = url;
+    });
+    if (!src) return null;
+    const {im, url} = src, k = Math.min(1, 1600 / Math.max(im.naturalWidth || im.width, im.naturalHeight || im.height));
+    const c = document.createElement("canvas"); c.width = Math.max(1, Math.round((im.naturalWidth || im.width) * k)); c.height = Math.max(1, Math.round((im.naturalHeight || im.height) * k));
+    c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+    return c.toDataURL("image/jpeg", 0.85);
+  };
+  f.onchange = async () => {
     const file = f.files[0]; if (!file) return;
-    const img = new Image(), url = URL.createObjectURL(file);
-    img.onload = () => {
-      const max = 1600, k = Math.min(1, max / Math.max(img.width, img.height));
-      const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
-      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-      data = c.toDataURL("image/jpeg", 0.85); URL.revokeObjectURL(url);
-      $app.querySelector("#pv").innerHTML = `<img src="${data}" style="max-width:100%;border-radius:12px;margin:8px 0">`;
-      send.disabled = false;
-    };
-    img.onerror = () => toast(t("لطفاً فقط عکس رسید را ارسال کنید."), true);
-    img.src = url;
+    try {
+      const buf = await readBuf(file), mime = sniff(new Uint8Array(buf, 0, 4));
+      let out = null;
+      try { out = await toJpeg(file, buf); } catch (e) { out = null; }
+      if (out && out.length > 100) return show(out);
+      // مرورگر نتوانست رمزگشایی کند: خودِ فایل بدون تغییر (فقط jpg/png/webp و حداکثر ۵ مگابایت)
+      if (mime && buf.byteLength < 5e6) return show(`data:${mime};base64,${toB64(buf)}`);
+      toast(t("لطفاً فقط عکس رسید را ارسال کنید.") + (mime ? " (>5MB)" : " (JPG/PNG)"), true);
+    } catch (e) { bad(); }
   };
   send.onclick = () => run(send, async () => {
     const s = await api("receipt", {payment_id: r.payment_id, image: data});
