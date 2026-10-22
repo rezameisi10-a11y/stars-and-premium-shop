@@ -7,7 +7,7 @@ from aiogram.types import CallbackQuery
 
 from service import Shop
 from settings_schema import GROUP_IDS
-from ui import btn, ikb
+from ui import btn, ikb, rtl_fix
 
 TXT = F.text & ~F.text.startswith("/")
 DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
@@ -51,6 +51,7 @@ class Adm(StatesGroup):
     restore = State()
     lang_new = State()
     lang_text = State()
+    fj_val = State()
 
 
 # پیشوند callback ← مجوز لازم (بلندترین پیشوند منطبق برنده است؛ None = هر ادمین)
@@ -71,6 +72,7 @@ PERM_MAP = [
     ("adm:btn", "buttons"), ("adm:ba:", "buttons"), ("adm:bk", "buttons"), ("adm:bt:", "buttons"), ("adm:bcol:", "buttons"), ("adm:bmv:", "buttons"), ("adm:bena:", "buttons"),
     ("adm:bdel:", "buttons"), ("adm:bren:", "buttons"), ("adm:bext:", "buttons"), ("adm:badd", "buttons"), ("adm:breset", "buttons"),
     ("adm:roles", "buttons"), ("adm:ro:", "buttons"), ("adm:rc:", "buttons"), ("adm:bem:", "buttons"), ("adm:rem:", "buttons"),
+    ("adm:fj", "settings"),
     ("adm:disc", "discounts"), ("adm:dc:", "discounts"), ("adm:dt:", "discounts"), ("adm:dx:", "discounts"),
     ("adm:dnew", "discounts"), ("adm:dnewadv", "discounts"), ("adm:ds:", "discounts"), ("adm:dw:", "discounts"), ("adm:dext:", "discounts"), ("adm:dlog:", "discounts"),
     ("adm:bcast", "broadcast"), ("adm:bgo", "broadcast"),
@@ -128,6 +130,7 @@ def num(text) -> int | None:
 
 async def view(t, text, kb=None):
     """نمایش صفحه: برای callback پیام را ویرایش می‌کند، وگرنه پیام جدید می‌فرستد."""
+    text = rtl_fix(text)
     if isinstance(t, CallbackQuery):
         try:
             await t.message.edit_text(text, reply_markup=kb)
@@ -171,4 +174,4 @@ def short(txt: str, n: int) -> str:
 async def ans(target, card):
     """ارسال (متن, کیبورد) به‌صورت پیام جدید. توجه: در aiogram 3.31 آرگومان دوم answer() کیبورد نیست."""
     text, kb = card
-    return await target.answer(text, reply_markup=kb)
+    return await target.answer(rtl_fix(text), reply_markup=kb)

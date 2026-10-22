@@ -14,7 +14,6 @@ GROUPS = [
         ("support_username", N_("یوزرنیم پشتیبانی (بدون @)"), "text", ""),
         ("maintenance", N_("حالت تعمیر (ربات برای کاربران بسته می‌شود)"), "bool", N_("ادمین‌ها همچنان دسترسی دارند")),
         ("force_join", N_("عضویت اجباری در کانال"), "bool", N_("ربات باید ادمین کانال باشد")),
-        ("force_channel", N_("کانال عضویت اجباری"), "text", N_("مثال: @mychannel")),
         ("admin_notify_orders", N_("اعلان هر سفارش پرداخت‌شده به ادمین‌ها"), "bool", ""),
         ("default_lang", N_("زبان پیش‌فرض ربات"), "text", N_("کد زبان، مثلاً fa یا en (از بخش «زبان‌ها» می‌توانید زبان جدید اضافه کنید)")),
         ("web_default_lang", N_("زبان پیش‌فرض پنل وب"), "text", N_("کد زبان، مثلاً fa یا en")),
@@ -161,6 +160,11 @@ GROUPS = [
         ("grp_backup_hours", N_("ارسال بکاپ هر چند ساعت یک‌بار (۰ = خاموش)"), "number", N_("فایل بکاپ در تاپیک «بکاپ» فرستاده می‌شود؛ گروه باید خصوصی باشد")),
         ("grp_backup_env", N_("همراه بکاپ فایل .env (توکن‌ها) هم ارسال شود"), "bool", N_("پیشنهاد نمی‌شود؛ توکن‌ها در اختیار اعضای گروه قرار می‌گیرد")),
     ]),
+    ("miniapp", N_("مینی‌اپ تلگرام"), "settings", [
+        ("miniapp_enabled", N_("فعال بودن مینی‌اپ"), "bool", N_("نیاز به آدرس عمومی HTTPS (همان PUBLIC_URL/دامنه‌ی پنل). همه‌ی کارهای کاربر در ربات داخل مینی‌اپ هم هست و ادمین‌ها با یک دکمه وارد پنل کامل مدیریت می‌شوند")),
+        ("miniapp_menu_button", N_("دکمه‌ی مینی‌اپ کنار کادر پیام (Menu Button)"), "bool", N_("به‌جای دکمه‌ی پیش‌فرض منوی ربات، دکمه‌ی باز کردن مینی‌اپ نشان داده می‌شود")),
+        ("miniapp_title", N_("متن دکمه‌ی مینی‌اپ"), "text", N_("مثال: 🛍 فروشگاه")),
+    ]),
     ("texts", N_("متن‌های ربات"), "settings", [
         ("welcome_text", N_("پیام خوش‌آمدگویی"), "textarea", N_("HTML ساده مجاز است: <b> <i> <code>؛ ایموجی پریمیوم هم پشتیبانی می‌شود")),
         ("rules_text", N_("متن قوانین"), "textarea", ""),
@@ -174,11 +178,15 @@ GROUPS = [
 GROUP_IDS = {g[0]: g for g in GROUPS}
 FIELDS = {k: (label, typ, hlp) for _, _, _, fields in GROUPS for k, label, typ, hlp in fields}
 GROUP_OF = {k: gid for gid, _, _, fields in GROUPS for k, *_ in fields}
+# تنظیم قدیمی تک‌کانال (از پنل جدید «کانال‌های عضویت اجباری» مدیریت می‌شود؛ هنوز معتبر است تا نصب‌های قبلی کار کنند)
+FIELDS["force_channel"] = (N_("کانال عضویت اجباری"), "text", N_("مثال: @mychannel"))
+GROUP_OF["force_channel"] = "general"
 EDITABLE_KEYS = set(FIELDS)
 TEXT_KEYS = {"welcome_text", "rules_text", "support_text", "maintenance_text", "join_text", "success_text"}
 
 DEFAULTS = {
-    "btn_ovr": "",
+    "btn_ovr": "", "force_channels": "",
+    "miniapp_enabled": "1", "miniapp_menu_button": "1", "miniapp_title": "🛍 فروشگاه",
     "grp_enabled": "0", "grp_chat_id": "", "grp_topics": "", "grp_ev_receipts": "1", "grp_ev_sales": "1", "grp_ev_users": "1",
     "grp_ev_alerts": "1", "grp_report_on": "1", "grp_report_time": "23:55", "grp_backup_hours": "24", "grp_backup_env": "0",
     "grp_last_report": "", "grp_last_backup": "0",

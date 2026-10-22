@@ -1,5 +1,11 @@
 [
  {
+  "key": "app",
+  "text": "",
+  "dyn": true,
+  "scope": "user"
+ },
+ {
   "key": "buy",
   "text": "",
   "dyn": true,
@@ -20,6 +26,12 @@
  {
   "key": "disc",
   "text": "🏷 کد تخفیف دارم",
+  "dyn": false,
+  "scope": "user"
+ },
+ {
+  "key": "jchk",
+  "text": "✅ بررسی عضویت",
   "dyn": false,
   "scope": "user"
  },
@@ -312,6 +324,18 @@
   "scope": "admin"
  },
  {
+  "key": "adm:ds:base",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:ds:cb",
+  "text": "",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
   "key": "adm:ds:kind",
   "text": "",
   "dyn": true,
@@ -362,6 +386,36 @@
  {
   "key": "adm:dx",
   "text": "🗑 حذف",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:fja",
+  "text": "➕ افزودن کانال",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:fjc",
+  "text": "📢 مشاهده",
+  "dyn": true,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:fjd",
+  "text": "🗑 حذف کانال",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:fje",
+  "text": "✏️ متن دکمه",
+  "dyn": false,
+  "scope": "admin"
+ },
+ {
+  "key": "adm:fjs",
+  "text": "🎨 رنگ دکمه",
   "dyn": false,
   "scope": "admin"
  },

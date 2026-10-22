@@ -11,7 +11,7 @@ from i18n import NW_, _
 from service import KIND_FA, Shop
 from settings_schema import FIELDS, GROUP_IDS, GROUPS, SAMPLE_VARS, render_template, select_options
 from ui import esc as e
-from ui import fmt
+from ui import fmt, hint_html
 from webkit import (T, actor, badge, can, fdate, get, hidden, inp, layout, line_chart, need, pform, post, redirect, sel,
                     status_badge, tbl, to_float, to_int, user_link)
 from web_users import kv
@@ -157,7 +157,7 @@ async def rates_page(request):
             inner += f"<p><label><input type='checkbox' name='{k}' {'checked' if s.get(k) == '1' else ''}> {T(label)}</label></p>"
         else:
             inner += (f"<div><label class='f'>{T(label)}</label>{inp(k, s.get(k, ''), '', 'l')}"
-                      + (f"<div class='hint'>{T(hlp)}</div>" if hlp else "") + "</div>")
+                      + (f"<div class='hint'>{hint_html(_(hlp))}</div>" if hlp else "") + "</div>")
     quick = (f"<div class='card'><h2>⚡ {T('تنظیم سریع نرخ و سود')}</h2>"
              + pform(request, "/rates/quick", f"<div class='grid g3'>{inner}</div><p><button class='b pri'>{T('ذخیره')}</button></p>", cls="") + "</div>")
     actions = ("<div class='card row'>" + pform(request, "/rates/refresh", "<button class='b ok'>🔄 " + T("بروزرسانی نرخ‌ها اکنون") + "</button>", cls="")
@@ -342,7 +342,7 @@ def allowed_groups(request):
 
 
 def field_html(shop: Shop, request, key, label, typ, hlp, val):
-    h = f"<div class='hint'>{T(hlp)}</div>" if hlp else ""
+    h = f"<div class='hint'>{hint_html(_(hlp))}</div>" if hlp else ""
     lab = T(label)
     if typ == "bool":
         return f"<p><label><input type='checkbox' name='{key}' {'checked' if val == '1' else ''}> {lab}</label>{h}</p>"
@@ -401,6 +401,9 @@ async def settings_page(request):
                    f"<li>{T('ربات را به گروه اضافه و ادمین کنید (Manage Topics و Post Messages).')}</li>"
                    f"<li>{T('داخل گروه دستور /connect را بفرستید (فقط ادمین‌های ربات). ربات تاپیک‌ها را خودش می‌سازد.')}</li></ol>"
                  + f"<p class='hint'>⚠️ {T('فایل بکاپ شامل اطلاعات کاربران است؛ فقط ادمین‌های مورد اعتماد عضو گروه باشند.')}</p></div>")
+    if gid == "general":
+        from web_force import force_card
+        extra = force_card(request, shop)
     if gid == "gateways":
         c = shop.cfg
         env_rows = [(_("آدرس عمومی (PUBLIC_URL)"), c.public_url), (_("زرین‌پال (.env)"), c.zarinpal_merchant), (_("کیف پول TON (.env)"), c.ton_wallet), (_("کیف پول USDT (.env)"), c.usdt_trc20_wallet)]

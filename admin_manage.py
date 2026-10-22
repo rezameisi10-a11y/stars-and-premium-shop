@@ -90,6 +90,7 @@ async def discount_card(shop: Shop, code):
     val = f"{d['percent']}٪" + (f" (سقف {fmt(d['max_discount'])} ت)" if d["max_discount"] else "") if d["percent"] else f"{fmt(d['fixed'])} تومان"
     lines = [f"🏷 <b><code>{d['code']}</code></b> — {'✅ فعال' if d['active'] else '⏹ غیرفعال'}",
              f"مقدار: {val}",
+             f"تخفیف روی: {BASE_NAMES.get(d.get('base') or 'price')}",
              f"استفاده: {d['used']} از {d['max_uses'] or '∞'} | هر کاربر: {d['per_user'] or '∞'} بار",
              f"اعتبار: {human_left(d['expires_at'])}",
              f"شروع: {'بلافاصله' if not d['starts_at'] or d['starts_at'] <= time.time() else '⏳ ' + human_left(d['starts_at']).replace(' مانده', ' دیگر')}",
@@ -101,6 +102,7 @@ async def discount_card(shop: Shop, code):
     kb = ikb([
         [btn("⏹ غیرفعال کردن" if d["active"] else "✅ فعال کردن", f"adm:dt:{d['code']}", role="reject" if d["active"] else "confirm"),
          btn("⏱ تمدید/تغییر مدت", f"adm:dext:{d['code']}", role="action")],
+        [btn("🎯 تغییر مبنا: " + BASE_NAMES["profit" if (d.get("base") or "price") == "price" else "price"], f"adm:ds:cb:{d['code']}", role="action")],
         [btn("📜 لاگ استفاده", f"adm:dlog:{d['code']}", role="admin"), btn("🗑 حذف", f"adm:dx:{d['code']}", role="reject")],
         back_row("adm:disc"),
     ])
@@ -269,6 +271,17 @@ async def wiz_ask(target: Message, state: FSMContext, idx: int):
     await target.answer(q + ("" if req else f"\n(پیش‌فرض: {default if default != '' else '—'})"), reply_markup=wiz_kb(req))
 
 
+BASE_NAMES = {"price": "کل قیمت محصول", "profit": "فقط سود فروشگاه"}
+
+
+def summary_kb(v, mode="a"):
+    rows = [[btn("✅ ساخت کد", "adm:dw:ok", role="confirm"), btn("❌ لغو", "adm:dw:cancel", role="reject")],
+            [btn("🎯 تخفیف روی: " + BASE_NAMES[v.get("base") or "price"] + " (تغییر)", "adm:ds:base", role="action")]]
+    if mode == "s":
+        rows.append([btn("✏️ تغییر نام کد", "adm:ds:name", role="action"), btn("⚙️ گزینه‌های بیشتر", "adm:ds:more", role="action")])
+    return ikb(rows)
+
+
 def wiz_text(v) -> str:
     kind, val = v["value"]
     now = time.time()
@@ -280,6 +293,7 @@ def wiz_text(v) -> str:
     else:
         value = f"{fmt(val)} تومان"
     lines = [f"🏷 <b>تأیید ساخت کد</b>", f"کد: <code>{v['code']}</code>", f"مقدار: {value}",
+             f"تخفیف روی: {BASE_NAMES[v.get('base') or 'price']}",
              f"شروع: {'بلافاصله' if not start else human_left(start).replace(' مانده', ' دیگر')} | "
              f"مدت: {human_left(exp).replace(' مانده', '') if exp else 'بدون انقضا'}",
              f"ظرفیت کل: {v['max_uses'] or '∞'} | هر کاربر: {v['per_user'] or '∞'}",
@@ -292,7 +306,7 @@ def wiz_text(v) -> str:
 
 async def wiz_summary(target: Message, state: FSMContext, vals):
     await state.update_data(vals=vals, step=len(WIZ))
-    await target.answer(wiz_text(vals), reply_markup=ikb([[btn("✅ ساخت کد", "adm:dw:ok", role="confirm"), btn("❌ لغو", "adm:dw:cancel", role="reject")]]))
+    await target.answer(wiz_text(vals), reply_markup=summary_kb(vals, "a"))
 
 
 # ---------- ساخت ساده‌ی کد تخفیف (۴ مرحله): مقدار، مدت (روز)، ظرفیت کل، سقف هر کاربر
@@ -307,7 +321,7 @@ SIMPLE_Q = {
     "per_user": ("۴/۴ — هر کاربر چند بار می‌تواند استفاده کند؟\n<code>0</code> = نامحدود.",
                  [("۱ بار", "1"), ("۲ بار", "2"), ("۵ بار", "5"), ("♾ نامحدود", "0")]),
 }
-SIMPLE_DEFAULTS = {"start": 0, "min_amount": 0, "cap": 0, "applies": "all", "first_only": 0, "note": ""}
+SIMPLE_DEFAULTS = {"start": 0, "min_amount": 0, "cap": 0, "applies": "all", "first_only": 0, "note": "", "base": "price"}
 
 
 def simple_kb(step: str, kind: str):
@@ -354,9 +368,7 @@ async def simple_summary(target: Message, state: FSMContext, vals):
     full["value"] = (vals.get("kind", "percent"), vals["val"])
     full["duration"] = vals["days"] * 86400
     await state.update_data(vals=full, step=len(WIZ), mode="s")
-    await target.answer(wiz_text(full), reply_markup=ikb([
-        [btn("✅ ساخت کد", "adm:dw:ok", role="confirm"), btn("❌ لغو", "adm:dw:cancel", role="reject")],
-        [btn("✏️ تغییر نام کد", "adm:ds:name", role="action"), btn("⚙️ گزینه‌های بیشتر", "adm:ds:more", role="action")]]))
+    await target.answer(wiz_text(full), reply_markup=summary_kb(full, "s"))
 
 
 @router.callback_query(F.data == "adm:dnew")
@@ -415,6 +427,39 @@ async def simple_take(target: Message, state: FSMContext, text: str):
 async def cb_ds_quick(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
     await simple_take(cb.message, state, cb.data.split(":")[3])
+
+
+@router.callback_query(F.data == "adm:ds:base")
+async def cb_ds_base(cb: CallbackQuery, state: FSMContext):
+    """تغییر مبنای تخفیف (کل قیمت ↔ فقط سود) روی صفحه‌ی تأیید ساخت کد."""
+    d = await state.get_data()
+    v = d.get("vals") or {}
+    if "value" not in v:
+        await cb.answer("اول مراحل را کامل کنید.", show_alert=True)
+        return
+    v["base"] = "profit" if (v.get("base") or "price") == "price" else "price"
+    await state.update_data(vals=v)
+    try:
+        await cb.message.edit_text(wiz_text(v), reply_markup=summary_kb(v, d.get("mode", "a")))
+    except Exception:  # noqa: BLE001
+        pass
+    await cb.answer("تخفیف روی " + BASE_NAMES[v["base"]])
+
+
+@router.callback_query(F.data.startswith("adm:ds:cb:"))
+async def cb_ds_card_base(cb: CallbackQuery, shop: Shop):
+    """تغییر مبنای یک کد موجود."""
+    code = cb.data.split(":")[3]
+    d = await shop.db.get_discount(code)
+    if not d:
+        await cb.answer("پیدا نشد", show_alert=True)
+        return
+    await shop.db.update_discount(code, base="profit" if (d.get("base") or "price") == "price" else "price")
+    await shop.db.log(f"tg:{cb.from_user.id}", "discount_base", code)
+    card = await discount_card(shop, code)
+    if card:
+        await view(cb, *card)
+    await cb.answer("انجام شد")
 
 
 @router.callback_query(F.data == "adm:ds:name")
@@ -490,7 +535,7 @@ async def cb_dw_ok(cb: CallbackQuery, shop: Shop, state: FSMContext):
     exp = (start or now) + v["duration"] if v["duration"] else 0
     ok = await shop.db.create_discount(v["code"], val if kind == "percent" else 0, val if kind == "fixed" else 0, v["max_uses"], exp,
                                        starts_at=start, per_user=v["per_user"], min_amount=v["min_amount"], max_discount=v["cap"],
-                                       applies_to=v["applies"], first_only=v["first_only"], note=v["note"])
+                                       applies_to=v["applies"], first_only=v["first_only"], note=v["note"], base=v.get("base") or "price")
     if not ok:
         await cb.message.answer("❌ کدی با این نام از قبل وجود دارد.", reply_markup=ikb([back_row("adm:disc")]))
         await cb.answer()

@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import hmac
+import json
 import logging
 import re
 import secrets
@@ -52,6 +53,7 @@ DISC_MSG = {
     "kind": N_("این کد برای این نوع محصول قابل استفاده نیست."),
     "min_amount": N_("مبلغ سفارش برای استفاده از این کد کمتر از حداقل مجاز است."),
     "first_only": N_("این کد فقط برای اولین خرید است."),
+    "no_profit": N_("این کد برای این محصول قابل استفاده نیست."),
     "unusable": N_("این کد برای این سفارش قابل استفاده نیست."),
 }
 
@@ -152,7 +154,7 @@ class Shop:
         self.broadcast_state = {"running": False, "total": 0, "sent": 0, "failed": 0}
         self._tasks: set[asyncio.Task] = set()
         self._star_alert_ts = 0.0
-        self._join_cache: dict[int, tuple[bool, float]] = {}
+        self._join_cache: dict[int, tuple[dict, float]] = {}
         self._lang_cache: dict[int, str] = {}
         self.langs: list[dict] = []
         self.pricing = Pricing(self)
@@ -175,6 +177,7 @@ class Shop:
         self._ref_watch = {r["referred_id"] for r in await self.db.all("SELECT referred_id FROM referrals WHERE status IN ('pending','left')")}
         if (await self.settings()).get("rate_auto") == "1":
             self.spawn(self.pricing.refresh_rates())
+        self.spawn(self.apply_miniapp_menu())
 
     async def stop(self):
         if self.http:
@@ -224,6 +227,8 @@ class Shop:
         secret = key in ("zarinpal_merchant", "toncenter_key", "trongrid_key") or "headers" in key
         await self.db.log(actor, "setting", f"{key}={'***' if secret else str(value)[:80]}")
         await self._reload_settings()
+        if key.startswith("miniapp_"):
+            self.spawn(self.apply_miniapp_menu())
         if key.startswith(("usd_api", "ton_api", "rate_", "price_", "frag_")):
             self.pricing._last_rates_run = 0
             self.pricing._last_costs_run = 0
@@ -586,30 +591,164 @@ class Shop:
             b = self._menu_button(it, lang)
             if b:
                 rows.setdefault(it["row_no"], []).append(b)
-        return ikb([rows[k] for k in sorted(rows)])
+        kb_rows = [rows[k] for k in sorted(rows)]
+        url = self.miniapp_url()
+        if url:
+            kb_rows.insert(0, [btn(self.miniapp_title(lang), "app", webapp=url, role="action")])
+        return ikb(kb_rows)
 
-    # ---------- عضویت اجباری ----------
-    async def member_status(self, uid, live=False):
-        """True عضو · False غیرعضو · None نامشخص (ربات ادمین کانال نیست/خطا)."""
+    # ---------- مینی‌اپ ----------
+    def miniapp_url(self) -> str:
+        """آدرس مینی‌اپ (فقط HTTPS؛ تلگرام http را نمی‌پذیرد)."""
+        base = self.cfg.public_url
+        if not base.startswith("https://") or (self.s or {}).get("miniapp_enabled", "1") != "1":
+            return ""
+        return base + "/app"
+
+    MINIAPP_TITLE = N_("🛍 فروشگاه")
+
+    def miniapp_title(self, lang: str) -> str:
+        t = (self.s or {}).get("miniapp_title") or DEFAULT_SETTINGS.get("miniapp_title", "🛍")
+        if t == DEFAULT_SETTINGS.get("miniapp_title"):
+            return CATALOG.get("bot", lang, t)
+        return t
+
+    async def apply_miniapp_menu(self):
+        """دکمه‌ی Menu Button کنار کادر پیام را (برای همه‌ی کاربران) روی مینی‌اپ یا پیش‌فرض تنظیم می‌کند."""
+        from aiogram.types import MenuButtonDefault, MenuButtonWebApp, WebAppInfo
+        url = self.miniapp_url()
+        try:
+            if url and (self.s or {}).get("miniapp_menu_button", "1") == "1":
+                await self.bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text=self.miniapp_title(self.default_lang())[:16],
+                                                                                 web_app=WebAppInfo(url=url)))
+            else:
+                await self.bot.set_chat_menu_button(menu_button=MenuButtonDefault())
+        except Exception as e:  # noqa: BLE001
+            log.warning("set_chat_menu_button failed: %s", e)
+
+    # ---------- عضویت اجباری (چند کانال) ----------
+    FORCE_MAX = 10
+
+    def force_list(self) -> list[dict]:
+        """کانال‌های عضویت اجباری: [{c: @کانال یا شناسه, t: متن دکمه, s: رنگ دکمه, l: لینک دعوت, e: ایموجی پریمیوم}].
+        اگر فهرست جدید خالی باشد، تنظیم قدیمی force_channel (یک کانال) خوانده می‌شود."""
+        s = self.s or {}
+        try:
+            data = json.loads(s.get("force_channels") or "[]")
+        except ValueError:
+            data = []
+        out = []
+        for it in data if isinstance(data, list) else []:
+            if isinstance(it, dict) and it.get("c"):
+                em = str(it.get("e") or "")
+                out.append({"c": str(it["c"]), "t": str(it.get("t") or "")[:40],
+                            "s": it.get("s") if it.get("s") in ("primary", "success", "danger") else "",
+                            "l": str(it.get("l") or "")[:200], "e": em if em.isdigit() else ""})
+        if not out and s.get("force_channel"):
+            out.append({"c": s["force_channel"], "t": "", "s": "", "l": "", "e": ""})
+        return out
+
+    @staticmethod
+    def norm_channel(text: str):
+        """(ok, @username | -100… | پیام خطا). لینک t.me و نام بدون @ هم پذیرفته می‌شود."""
+        v = (text or "").strip()
+        m = re.match(r"^(?:https?://)?(?:t\.me|telegram\.me)/([A-Za-z][A-Za-z0-9_]{3,31})/?$", v)
+        if m:
+            return True, "@" + m.group(1)
+        v = v.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789"))
+        if re.match(r"^-100\d{5,}$", v):
+            return True, v
+        v = v.lstrip("@")
+        if re.match(r"^[A-Za-z][A-Za-z0-9_]{3,31}$", v):
+            return True, "@" + v
+        return False, NW_("کانال نامعتبر است. مثال: @mychannel یا لینک t.me/mychannel (برای کانال خصوصی: شناسه‌ی -100… و لینک دعوت)")
+
+    def force_url(self, ch: dict) -> str:
+        if ch.get("l"):
+            return ch["l"]
+        c = ch["c"]
+        return "https://t.me/" + c.lstrip("@") if c.startswith("@") else ""
+
+    async def set_force_list(self, items: list[dict], actor="system"):
+        """ذخیره‌ی فهرست کانال‌ها پس از اعتبارسنجی. خروجی: (ok, پیام خطا)."""
+        clean, seen = [], set()
+        if len(items) > self.FORCE_MAX:
+            return False, NW_("حداکثر {n} کانال.").replace("{n}", str(self.FORCE_MAX))
+        for it in items:
+            ok, c = self.norm_channel(it.get("c", ""))
+            if not ok:
+                return False, c
+            if c.lower() in seen:
+                return False, NW_("این کانال قبلاً اضافه شده است.")
+            seen.add(c.lower())
+            link = str(it.get("l") or "").strip()
+            if link and not re.match(r"^https://t\.me/\S+$", link):
+                return False, NW_("لینک دعوت باید به شکل https://t.me/... باشد.")
+            if c.startswith("-100") and not link:
+                return False, NW_("برای کانال خصوصی لینک دعوت (https://t.me/+...) هم لازم است.")
+            style = it.get("s") if it.get("s") in ("primary", "success", "danger") else ""
+            em = str(it.get("e") or "")
+            clean.append({"c": c, "t": str(it.get("t") or "").strip()[:40], "s": style, "l": link, "e": em if em.isdigit() else ""})
+        await self.set_setting("force_channels", json.dumps(clean, ensure_ascii=False), actor)
+        if (self.s or {}).get("force_channel"):
+            await self.set_setting("force_channel", "", actor)     # به فهرست جدید منتقل شد
+        self._join_cache.clear()
+        return True, ""
+
+    async def member_detail(self, uid, live=False) -> dict:
+        """{کانال: True عضو | False غیرعضو | None نامشخص}؛ خالی اگر عضویت اجباری خاموش است."""
         s = await self.settings()
-        if s.get("force_join") != "1" or not s.get("force_channel"):
-            return True
+        chans = self.force_list()
+        if s.get("force_join") != "1" or not chans:
+            return {}
         if not live:
             cached = self._join_cache.get(uid)
             if cached and cached[1] > time.time():
                 return cached[0]
-        try:
-            m = await self.bot.get_chat_member(s["force_channel"], uid)
-            st = getattr(m.status, "value", m.status)
-            ok = st in ("member", "administrator", "creator") or (st == "restricted" and getattr(m, "is_member", False))
-        except Exception as e:
-            log.warning("membership check failed: %s", e)
-            if self.warn_once("member_check"):
-                await self.notify_admins("⚠️ بررسی عضویت کانال ممکن نیست؛ ربات را ادمین کانال اجباری کنید. تا آن موقع جایزه‌های زیرمجموعه‌گیری نگه داشته می‌شود.",
-                                         perm="settings")
+        det = {}
+        for ch in chans:
+            try:
+                m = await self.bot.get_chat_member(ch["c"], uid)
+                st = getattr(m.status, "value", m.status)
+                det[ch["c"]] = st in ("member", "administrator", "creator") or (st == "restricted" and getattr(m, "is_member", False))
+            except Exception as e:
+                log.warning("membership check failed for %s: %s", ch["c"], e)
+                if self.warn_once("member_check:" + ch["c"]):
+                    await self.notify_admins(f"⚠️ بررسی عضویت کانال {ch['c']} ممکن نیست؛ ربات را ادمین این کانال کنید. تا آن موقع جایزه‌های زیرمجموعه‌گیری نگه داشته می‌شود.",
+                                             perm="settings")
+                det[ch["c"]] = None
+        self._join_cache[uid] = (det, time.time() + (300 if all(v is True for v in det.values()) else 5))
+        return det
+
+    async def member_status(self, uid, live=False):
+        """True عضو همه‌ی کانال‌ها · False در دست‌کم یکی عضو نیست · None نامشخص (ربات ادمین کانال نیست/خطا)."""
+        det = await self.member_detail(uid, live)
+        if not det:
+            return True
+        if any(v is False for v in det.values()):
+            return False
+        if any(v is None for v in det.values()):
             return None
-        self._join_cache[uid] = (ok, time.time() + (300 if ok else 5))
-        return ok
+        return True
+
+    async def join_buttons(self, uid, tr) -> list[dict]:
+        """دکمه‌های کانال‌هایی که کاربر باید عضو شود: [{t, url, s, e}] (فقط کانال‌های ناعضو؛ اگر نامشخص بود همه)."""
+        det = await self.member_detail(uid)
+        chans = self.force_list()
+        todo = [c for c in chans if det.get(c["c"]) is not True] or chans
+        out = []
+        for i, ch in enumerate(todo, 1):
+            url = self.force_url(ch)
+            if not url:
+                continue
+            label = ch["t"] or (tr("📢 عضویت در کانال") + (f" {i}" if len(todo) > 1 else ""))
+            out.append({"t": label, "url": url, "s": ch["s"], "e": ch["e"]})
+        return out
+
+    async def join_kb(self, uid, tr):
+        rows = [[btn(b["t"], url=b["url"], style=b["s"] or "primary", emoji=b["e"] or None)] for b in await self.join_buttons(uid, tr)]
+        rows.append([btn(tr("✅ بررسی عضویت"), "jchk", role="confirm")])
+        return ikb(rows)
 
     async def is_member(self, uid) -> bool:
         if self.is_admin(uid):
@@ -619,7 +758,7 @@ class Shop:
     # ---------- زیرمجموعه‌گیری و ضدتقلب ----------
     def _need_join(self) -> bool:
         s = self.s
-        return s.get("referral_require_join") == "1" and s.get("force_join") == "1" and bool(s.get("force_channel"))
+        return s.get("referral_require_join") == "1" and s.get("force_join") == "1" and bool(self.force_list())
 
     async def register_referral(self, uid: int, payload: str | None, is_new: bool):
         """ثبت معرف از لینک /start ref_<id>. فقط برای کاربر کاملاً جدید؛ جایزه تا تأیید عضویت کانال «در انتظار» می‌ماند."""
@@ -767,7 +906,7 @@ class Shop:
         if not o or o["user_id"] != user_id or o["status"] != "pending_payment":
             return False, tr("این سفارش دیگر قابل ویرایش نیست."), None
         base = o["orig_amount"] or o["amount"]
-        ok, reason, disc = await self.db.check_discount(code, user_id, base, o["kind"])
+        ok, reason, disc = await self.db.check_discount(code, user_id, base, o["kind"], cost=o.get("cost") or 0)
         if not ok:
             return False, tr(DISC_MSG.get(reason, DISC_MSG["invalid"])), None
         new_amount = base - disc

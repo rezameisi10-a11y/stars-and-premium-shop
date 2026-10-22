@@ -110,6 +110,7 @@ MIGRATIONS = [
     ("discounts", "applies_to", "TEXT NOT NULL DEFAULT 'all'"),
     ("discounts", "first_only", "INTEGER NOT NULL DEFAULT 0"),
     ("discounts", "note", "TEXT NOT NULL DEFAULT ''"),
+    ("discounts", "base", "TEXT NOT NULL DEFAULT 'price'"),
     ("admins", "perms", "TEXT NOT NULL DEFAULT '*'"),
     ("admins", "name", "TEXT NOT NULL DEFAULT ''"),
     ("admins", "web_user", "TEXT"),
@@ -801,13 +802,13 @@ class DB:
 
     # ---------- کدهای تخفیف ----------
     async def create_discount(self, code, percent, fixed, max_uses, expires_at, *, starts_at=0, per_user=1, min_amount=0,
-                              max_discount=0, applies_to="all", first_only=0, note="", users=()):
+                              max_discount=0, applies_to="all", first_only=0, note="", users=(), base="price"):
         code = code.strip().upper()
         cur = await self.run(
             "INSERT OR IGNORE INTO discounts(code,percent,fixed,max_uses,expires_at,created_at,starts_at,per_user,min_amount,"
-            "max_discount,applies_to,first_only,note) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "max_discount,applies_to,first_only,note,base) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (code, percent, fixed, max_uses, expires_at, int(time.time()), starts_at, per_user, min_amount,
-             max_discount, applies_to or "all", 1 if first_only else 0, note[:200]))
+             max_discount, applies_to or "all", 1 if first_only else 0, note[:200], "profit" if base == "profit" else "price"))
         if cur.rowcount == 1:
             for uid in users:
                 await self.add_discount_user(code, uid)
@@ -815,7 +816,7 @@ class DB:
 
     async def update_discount(self, code, **fields):
         allowed = {"percent", "fixed", "max_uses", "expires_at", "starts_at", "per_user", "min_amount", "max_discount",
-                   "applies_to", "first_only", "note", "active"}
+                   "applies_to", "first_only", "note", "active", "base"}
         fields = {k: v for k, v in fields.items() if k in allowed}
         if fields:
             cols = ",".join(f"{k}=?" for k in fields)
@@ -856,9 +857,10 @@ class DB:
     async def discount_savings(self, code):
         return (await self.one("SELECT COALESCE(SUM(amount),0) s FROM discount_log WHERE code=?", (code.upper(),)))["s"]
 
-    async def check_discount(self, code, user_id, amount, kind="stars"):
-        """(ok, دلیل، مبلغ تخفیف). دلیل: ok | invalid | not_started | expired | exhausted | not_allowed | used | kind | min_amount | first_only | unusable
-        مبلغ نهایی هرگز کمتر از ۱٬۰۰۰ تومان نمی‌شود."""
+    async def check_discount(self, code, user_id, amount, kind="stars", cost=0):
+        """(ok, دلیل، مبلغ تخفیف). دلیل: ok | invalid | not_started | expired | exhausted | not_allowed | used | kind | min_amount | first_only | no_profit | unusable
+        مبلغ نهایی هرگز کمتر از ۱٬۰۰۰ تومان نمی‌شود. اگر مبنای کد «سود» باشد، درصد/مبلغ فقط از سود (قیمت − هزینه) حساب می‌شود
+        و قیمت نهایی هیچ‌وقت از هزینه‌ی تمام‌شده کمتر نخواهد شد."""
         code = (code or "").strip().upper()
         d = await self.one("SELECT * FROM discounts WHERE code=?", (code,))
         if not d or not d["active"]:
@@ -883,10 +885,15 @@ class DB:
             return False, "min_amount", 0
         if d["first_only"] and await self.user_done_orders(user_id) > 0:
             return False, "first_only", 0
-        disc = amount * d["percent"] // 100 if d["percent"] else d["fixed"]
+        pool = amount
+        if d.get("base") == "profit":
+            pool = amount - int(cost or 0)
+            if int(cost or 0) <= 0 or pool <= 0:
+                return False, "no_profit", 0
+        disc = pool * d["percent"] // 100 if d["percent"] else d["fixed"]
         if d["percent"] and d["max_discount"]:
             disc = min(disc, d["max_discount"])
-        disc = max(0, min(disc, amount - 1000))
+        disc = max(0, min(disc, pool, amount - 1000))
         if disc <= 0:
             return False, "unusable", 0
         return True, "ok", disc

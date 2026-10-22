@@ -42,11 +42,8 @@ class GateMiddleware(BaseMiddleware):
             return
         is_check = isinstance(event, CallbackQuery) and event.data == "jchk"
         if not is_check and not await shop.is_member(user.id):
-            ch = s.get("force_channel", "")
-            rows = [[btn(tr("📢 عضویت در کانال"), url=f"https://t.me/{ch.lstrip('@')}", role="action")],
-                    [btn(tr("✅ بررسی عضویت"), "jchk", role="confirm")]]
             msg = event if isinstance(event, Message) else event.message
-            await msg.answer(esc(shop.text("join_text", lang) or tr("ابتدا در کانال عضو شوید.")), reply_markup=ikb(rows))
+            await msg.answer(esc(shop.text("join_text", lang) or tr("ابتدا در کانال عضو شوید.")), reply_markup=await shop.join_kb(user.id, tr))
             if isinstance(event, CallbackQuery):
                 await event.answer()
             return

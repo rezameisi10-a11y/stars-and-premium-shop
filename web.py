@@ -12,11 +12,11 @@ from i18n import SRC_LANG, _, set_web_lang
 from service import Shop, check_pw
 from ui import esc as e
 from ui import fmt
-from webkit import (CSS, NAV, PER_PAGE, ROUTES, actor, badge, bar_chart, can, fdate, first_allowed, get, guarded, layout,
+from webkit import (CSS, NAV, THEME_JS, theme_ctrl, PER_PAGE, ROUTES, actor, badge, bar_chart, can, fdate, first_allowed, get, guarded, layout,
                     make_session, nav_allowed, page_no, pager, post, read_session, redirect, safe_next, set_session, sig, status_badge,
                     tbl, user_link)
 
-PUBLIC_PREFIXES = ("/login", "/auth", "/zarinpal/callback", "/health", "/lang/")
+PUBLIC_PREFIXES = ("/login", "/auth", "/zarinpal/callback", "/health", "/lang/", "/app")
 MAX_BODY = 2 * 1024 * 1024
 MAX_UPLOAD = 100 * 1024 * 1024
 UPLOAD_PATHS = {"/backup/import"}
@@ -49,6 +49,8 @@ async def security(request: web.Request, handler):
     if request.method == "POST":
         cl = request.content_length
         limit = 64 * 1024 if public else (MAX_UPLOAD if request.path in UPLOAD_PATHS else MAX_BODY)
+        if request.path == "/app/api/receipt":
+            limit = 9 * 1024 * 1024
         if cl is None or cl > limit:
             return web.Response(status=413, text="Request too large")
     if not public:
@@ -76,11 +78,16 @@ async def security(request: web.Request, handler):
         resp = await handler(request)
     except web.HTTPException as ex:
         resp = ex
-    resp.headers["X-Frame-Options"] = "DENY"
+    # فقط تلگرام (کلاینت وب) می‌تواند صفحه را در iframe نشان دهد؛ برای بقیه ممنوع
+    fa = "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org https://telegram.org"
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["Referrer-Policy"] = "same-origin"
     resp.headers["Cache-Control"] = "no-store"
-    resp.headers["Content-Security-Policy"] = "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:"
+    if request.path == "/app":     # مینی‌اپ تلگرام: اسکریپت رسمی تلگرام لازم است
+        resp.headers["Content-Security-Policy"] = ("default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline' https://telegram.org; "
+                                                   "img-src 'self' data:; connect-src 'self'; " + fa)
+    else:
+        resp.headers["Content-Security-Policy"] = "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; " + fa
     if isinstance(resp, web.HTTPException) and resp.status >= 400:
         raise resp
     return resp
@@ -127,8 +134,8 @@ async def login_get(request):
     else:
         form = f"<p class='hint'>{e(_('ورود با رمز غیرفعال است (WEB_PASSWORD تنظیم نشده).'))}</p>"
     html = f"""<!doctype html><html lang="{e(request['lang'])}" dir="{'rtl' if request['rtl'] else 'ltr'}"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>{e(_('ورود به پنل'))}</title><style>{CSS}</style></head><body>
-<div class="login"><div class="card"><h2>🔐 {e(_('ورود به پنل مدیریت'))}</h2>{err}{form}
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>{e(_('ورود به پنل'))}</title><style>{CSS}</style><script>{THEME_JS}</script></head><body>
+<div class="thm-fix">{theme_ctrl()}</div><div class="login"><div class="card"><h2>🔐 {e(_('ورود به پنل مدیریت'))}</h2>{err}{form}
 <p class="hint">{e(_('یا در ربات دستور {cmd} را بزنید تا لینک ورود یک‌بارمصرف دریافت کنید.', cmd='/panel'))}</p></div>{public_lang_links(request)}</div></body></html>"""
     return web.Response(text=html, content_type="text/html")
 
@@ -238,13 +245,16 @@ async def logs_page(request):
 
 def create_web_app(shop: Shop) -> web.Application:
     import web_api  # noqa: F401
+    import web_force  # noqa: F401
     import web_group  # noqa: F401
     import web_marketing  # noqa: F401  (ثبت مسیرها)
     import web_shop  # noqa: F401
     import web_system  # noqa: F401
     import web_users  # noqa: F401
+    import miniapp
     app = web.Application(middlewares=[security], client_max_size=MAX_UPLOAD + 1024 * 1024)
     app["shop"] = shop
+    miniapp.register(app)
     r = app.router
     r.add_get("/health", health)
     r.add_get("/login", login_get)

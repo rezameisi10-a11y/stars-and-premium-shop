@@ -84,7 +84,8 @@ def build_params(d, *, now=None):
         return None, _("مقادیر نباید منفی باشند.")
     return dict(percent=val if kind == "p" else 0, fixed=val if kind == "f" else 0, max_uses=mx, expires_at=exp, starts_at=start,
                 per_user=pu, min_amount=mn, max_discount=cap if kind == "p" else 0, applies_to=read_applies(d),
-                first_only=1 if "first_only" in d else 0, note=str(d.get("note", "")).strip()[:200]), None
+                first_only=1 if "first_only" in d else 0, note=str(d.get("note", "")).strip()[:200],
+                base="profit" if d.get("base") == "profit" else "price"), None
 
 
 def form_fields(extra_adv=""):
@@ -93,6 +94,8 @@ def form_fields(extra_adv=""):
               f"<div><label class='f'>1) {T('چقدر تخفیف بدهید؟')}</label>"
               f"<div class='row'>{sel('kind', [('p', _('درصدی (٪)')), ('f', _('مبلغ ثابت (تومان)'))])} {inp('val', '', _('مثلاً ۲۰'), 'm', required=True)}</div>"
               f"<span class='hint'>{T('درصدی: یک عدد از ۱ تا ۱۰۰. مبلغ ثابت: حداقل ۱٬۰۰۰ تومان.')}</span></div>"
+              f"<div><label class='f'>{T('تخفیف روی چه چیزی؟')}</label>{sel('base', [('price', _('کل قیمت محصول')), ('profit', _('فقط سود من'))])}"
+              f"<br><span class='hint'>{T('«فقط سود»: درصد از سود محصول (قیمت − هزینه) حساب می‌شود و قیمت هرگز زیر هزینه نمی‌آید.')}</span></div>"
               f"<div><label class='f'>2) {T('چند روز معتبر باشد؟')}</label>{inp('dur_n', '7', '', 'm', typ='number', extra='min=0')}"
               f"<input type='hidden' name='dur_u' value='d'><br><span class='hint'>{T('عدد صفر یعنی بدون تاریخ انقضا')}</span></div>"
               f"<div><label class='f'>3) {T('در مجموع چند نفر بتوانند استفاده کنند؟')}</label>{inp('max_uses', '0', '', 'm', typ='number', extra='min=0')}"
@@ -194,6 +197,7 @@ async def discount_detail(request):
                (T("اعتبار"), e(left_text(d["expires_at"])) + (f" ({fdate(d['expires_at'])})" if d["expires_at"] else "")),
                (T("شروع"), fdate(d["starts_at"]) if d["starts_at"] else T("بلافاصله")),
                (T("حداقل سفارش"), fmt(d["min_amount"]) if d["min_amount"] else "—"), (T("محصولات"), e(applies_label(d["applies_to"]))),
+               (T("تخفیف روی"), T("فقط سود") if d.get("base") == "profit" else T("کل قیمت محصول")),
                (T("فقط اولین خرید"), T("بله") if d["first_only"] else T("خیر")), (T("مجموع تخفیف داده‌شده"), f"{fmt(saved)} {T('تومان')}"),
                (T("یادداشت"), e(d["note"] or "—"))])
     pre = f"/discounts/{e(code)}"
@@ -206,6 +210,7 @@ async def discount_detail(request):
             f"<div><label class='f'>{T('حداقل مبلغ سفارش')}</label>{inp('min_amount', d['min_amount'], '', 'm')}</div>"
             f"<div><label class='f'>{T('سقف تخفیف')}</label>{inp('cap', d['max_discount'], '', 'm')}</div>"
             f"<div><label class='f'>{T('محصولات مجاز')}</label>{applies_checks(d['applies_to'])}</div>"
+            f"<div><label class='f'>{T('تخفیف روی چه چیزی؟')}</label>{sel('base', [('price', _('کل قیمت محصول')), ('profit', _('فقط سود من'))], d.get('base') or 'price')}</div>"
             f"<div><label class='f'>{T('یادداشت')}</label>{inp('note', d['note'], '', 'l')}</div></div>"
             f"<p><label><input type='checkbox' name='first_only' {'checked' if d['first_only'] else ''}> {T('فقط برای اولین خرید')}</label> "
             f"<label><input type='checkbox' name='active' {'checked' if d['active'] else ''}> {T('فعال')}</label></p>"
@@ -240,7 +245,7 @@ async def discount_edit(request):
     fields = dict(max_uses=to_int(f.get("max_uses"), d["max_uses"]), per_user=to_int(f.get("per_user"), d["per_user"]),
                   min_amount=to_int(f.get("min_amount"), 0), max_discount=to_int(f.get("cap"), 0) if d["percent"] else 0,
                   applies_to=read_applies(f), first_only=1 if "first_only" in f else 0, note=str(f.get("note", "")).strip()[:200],
-                  active=1 if "active" in f else 0)
+                  active=1 if "active" in f else 0, base="profit" if f.get("base") == "profit" else "price")
     if any((v is not None and v < 0) for k, v in fields.items() if isinstance(v, int)):
         raise redirect(f"/discounts/{code}", err=_("مقادیر نباید منفی باشند."))
     mode = f.get("exp_mode", "keep")

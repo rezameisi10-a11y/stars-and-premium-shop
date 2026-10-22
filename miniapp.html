@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#17212b">
+<title>Shop</title>
+<script>try{var _t=localStorage.getItem("ss_theme");if(_t==="light"||_t==="dark")document.documentElement.setAttribute("data-theme",_t)}catch(e){}</script>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{
+  --bg:var(--tg-theme-bg-color,#fff);--fg:var(--tg-theme-text-color,#111);--hint:var(--tg-theme-hint-color,#7d8590);
+  --link:var(--tg-theme-link-color,#2481cc);--btn:var(--tg-theme-button-color,#2481cc);--btnfg:var(--tg-theme-button-text-color,#fff);
+  --card:var(--tg-theme-secondary-bg-color,#f1f3f5);--line:rgba(127,127,127,.22);--ok:#2ea44f;--err:#d93a3a;--warn:#d9822b;
+  --r:14px;
+}
+/* تم دستی (خورشید/ماه): بدون انتخاب، رنگ‌ها از تلگرام می‌آید */
+html[data-theme=dark]{--bg:#17212b;--fg:#f5f5f5;--hint:#8a9aab;--card:#232e3c;--btn:#2f8fd8;--btnfg:#fff;--link:#6ab3f3;--line:rgba(255,255,255,.14)}
+html[data-theme=light]{--bg:#fff;--fg:#111;--hint:#6b7684;--card:#f1f3f5;--btn:#2481cc;--btnfg:#fff;--link:#2481cc;--line:rgba(0,0,0,.14)}
+#thm{position:fixed;top:8px;inset-inline-end:8px;z-index:8;display:flex;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:99px;padding:3px}
+#thm button{border:0;background:none;font-size:15px;width:30px;height:28px;border-radius:99px;cursor:pointer;line-height:1;padding:0;opacity:.55}
+#thm button.on{background:var(--bg);opacity:1}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,-apple-system,"Segoe UI",Tahoma,Vazirmatn,sans-serif}
+body{padding:0 14px calc(86px + env(safe-area-inset-bottom));min-height:100vh}
+#app{max-width:560px;margin:0 auto}
+h1{font-size:19px;margin:16px 2px 10px}h2{font-size:16px;margin:14px 2px 8px}
+.hint{color:var(--hint);font-size:13px}
+.card{background:var(--card);border-radius:var(--r);padding:14px;margin:10px 0}
+.hero{background:linear-gradient(135deg,var(--btn),color-mix(in srgb,var(--btn) 55%,#000));color:var(--btnfg);border-radius:18px;padding:18px;margin:14px 0}
+.hero small{opacity:.85}.hero b{display:block;font-size:26px;margin:2px 0 6px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid.g3{grid-template-columns:repeat(3,1fr)}
+.tile{background:var(--card);border:0;border-radius:var(--r);padding:14px 8px;text-align:center;color:var(--fg);font:inherit;cursor:pointer;display:flex;flex-direction:column;gap:6px;align-items:center}
+.tile .ic{font-size:26px;line-height:1}.tile span{font-size:13px}
+.tile:active,.row:active,.b:active{opacity:.7}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--card);border-radius:var(--r);padding:13px 14px;margin:8px 0;cursor:pointer;border:0;width:100%;color:var(--fg);font:inherit;text-align:start}
+.row .sub{color:var(--hint);font-size:13px}.row b{white-space:nowrap}
+.b{border:0;border-radius:12px;padding:13px 16px;font:inherit;font-weight:600;background:var(--btn);color:var(--btnfg);width:100%;cursor:pointer;margin:6px 0}
+.b.sec{background:var(--card);color:var(--fg)}.b.success{background:var(--ok);color:#fff}.b.danger{background:var(--err);color:#fff}.b.ok{background:var(--ok);color:#fff}.b.sm{width:auto;padding:8px 12px;font-size:13px;margin:0}
+.b:disabled{opacity:.5}
+input,textarea{width:100%;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:12px;padding:12px;font:inherit;outline:none}
+input:focus{border-color:var(--btn)}
+.flex{display:flex;gap:8px;align-items:center}.flex>*{flex:1}.flex>.b{flex:0 0 auto;width:auto}
+.badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;background:var(--line)}
+.badge.done{background:rgba(46,164,79,.18);color:var(--ok)}.badge.bad{background:rgba(217,58,58,.16);color:var(--err)}.badge.wait{background:rgba(217,130,43,.18);color:var(--warn)}
+.price s{color:var(--hint);font-size:12px;margin-inline-end:6px}
+.copy{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--bg);border:1px dashed var(--line);border-radius:12px;padding:10px 12px;margin:6px 0;direction:ltr;text-align:left}
+.copy code{word-break:break-all;font-size:14px}.copy button{border:0;background:var(--btn);color:var(--btnfg);border-radius:8px;padding:6px 10px;font:inherit;font-size:12px;cursor:pointer}
+.lbl{font-size:12px;color:var(--hint);margin-top:8px}
+.tabs{position:fixed;inset-inline:0;bottom:0;background:var(--bg);border-top:1px solid var(--line);display:flex;padding:6px 8px calc(6px + env(safe-area-inset-bottom));z-index:5}
+.tabs button{flex:1;border:0;background:none;color:var(--hint);font:inherit;font-size:11px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px;cursor:pointer}
+.tabs button.on{color:var(--btn)}.tabs .ic{font-size:21px;line-height:1}
+.toast{position:fixed;inset-inline:16px;bottom:96px;background:#222;color:#fff;border-radius:12px;padding:12px 14px;z-index:9;text-align:center;box-shadow:0 6px 24px rgba(0,0,0,.35)}
+.toast.err{background:var(--err)}
+.center{text-align:center;padding:60px 10px}.big{font-size:54px}
+.spin{width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--btn);border-radius:50%;animation:sp .8s linear infinite;margin:40px auto}
+@keyframes sp{to{transform:rotate(360deg)}}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.chips button{border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:99px;padding:7px 13px;font:inherit;font-size:13px;cursor:pointer}
+.seg{display:flex;background:var(--card);border-radius:12px;padding:4px;margin:8px 0}.seg button{flex:1;border:0;background:none;padding:9px;border-radius:9px;font:inherit;color:var(--fg);cursor:pointer}.seg button.on{background:var(--btn);color:var(--btnfg)}
+.sp{height:8px}
+</style>
+</head>
+<body>
+<div id="thm"><button type="button" data-th="light">☀️</button><button type="button" data-th="dark">🌙</button></div>
+<div id="app"><div class="spin"></div></div>
+<div id="tabs"></div>
+<script>
+"use strict";
+const TG = window.Telegram && Telegram.WebApp;
+if (TG) { try { TG.ready(); TG.expand(); } catch (e) {} }
+/* خورشید = روشن، ماه = تیره (ذخیره در مرورگر؛ همان کلید پنل مدیریت). بدون انتخاب، تم تلگرام اعمال می‌شود. */
+function curTheme() {
+  const a = document.documentElement.getAttribute("data-theme");
+  if (a) return a;
+  return TG && TG.colorScheme === "light" ? "light" : (TG && TG.colorScheme === "dark" ? "dark" : (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"));
+}
+function markTheme() {
+  const c = curTheme();
+  document.querySelectorAll("#thm [data-th]").forEach(b => b.classList.toggle("on", b.dataset.th === c));
+  const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+  try { if (TG && bg) { TG.setHeaderColor(bg); TG.setBackgroundColor(bg); } } catch (e) {}
+}
+document.querySelectorAll("#thm [data-th]").forEach(b => b.onclick = () => {
+  document.documentElement.setAttribute("data-theme", b.dataset.th);
+  try { localStorage.setItem("ss_theme", b.dataset.th); } catch (e) {}
+  markTheme();
+});
+markTheme();
+let I = null;               // پاسخ init: کاربر، متن‌ها، تنظیمات
+let UI = {};                // ترجمه‌ی رشته‌های رابط
+const $app = document.getElementById("app");
+
+/* ------------ ابزارها ------------ */
+function t(s, p) {
+  let v = (UI && UI[s]) || s;
+  if (p) for (const k in p) v = v.split("{" + k + "}").join(p[k]);
+  return v;
+}
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function safeHtml(s) {   // فقط تگ‌های ساده‌ی قالب‌بندی تلگرام
+  let o = esc(s || "");
+  for (const tg of ["b","i","u","s","code"]) o = o.split("&lt;" + tg + "&gt;").join("<" + tg + ">").split("&lt;/" + tg + "&gt;").join("</" + tg + ">");
+  return o.replace(/&lt;\/?tg-emoji[^&]*&gt;/g, "").replace(/\n/g, "<br>");
+}
+function num(n) { return Number(n || 0).toLocaleString("en-US"); }
+function el(html) { const d = document.createElement("div"); d.innerHTML = html.trim(); return d.firstChild; }
+function toast(msg, bad) {
+  const d = el(`<div class="toast ${bad ? "err" : ""}">${esc(msg)}</div>`);
+  document.body.appendChild(d); setTimeout(() => d.remove(), 3200);
+  try { TG && TG.HapticFeedback && TG.HapticFeedback.notificationOccurred(bad ? "error" : "success"); } catch (e) {}
+}
+function copyText(v) {
+  const done = () => toast(t("کپی شد"));
+  if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(v).then(done, () => fallback()); } else fallback();
+  function fallback() { const a = document.createElement("textarea"); a.value = v; document.body.appendChild(a); a.select(); try { document.execCommand("copy"); } catch (e) {} a.remove(); done(); }
+}
+function openLink(u) { try { if (/^https:\/\/t\.me\//.test(u) && TG.openTelegramLink) return TG.openTelegramLink(u); TG.openLink(u); } catch (e) { window.open(u, "_blank"); } }
+function badge(st, text) {
+  const c = st === "done" ? "done" : (["failed", "refunded", "cancelled"].includes(st) ? "bad" : "wait");
+  return `<span class="badge ${c}">${esc(text)}</span>`;
+}
+function fdate(ts) { try { return new Date(ts * 1000).toLocaleString(I && I.lang === "fa" ? "fa-IR" : undefined, {dateStyle: "short", timeStyle: "short"}); } catch (e) { return ""; } }
+
+async function api(action, data) {
+  let r;
+  try {
+    r = await fetch("/app/api/" + action, {method: "POST", headers: {"Content-Type": "application/json", "X-Init-Data": TG ? TG.initData : ""}, body: JSON.stringify(data || {})});
+  } catch (e) { throw {msg: t("اتصال برقرار نشد؛ دوباره تلاش کنید."), code: "net"}; }
+  let j = {};
+  try { j = await r.json(); } catch (e) {}
+  if (!r.ok) throw {msg: j.error || "error", code: j.code || "", status: r.status};
+  return j;
+}
+async function run(btnEl, fn) {          // اجرای اکشن با قفل کردن دکمه و نمایش خطا
+  if (btnEl) btnEl.disabled = true;
+  try { return await fn(); }
+  catch (e) { handleErr(e); }
+  finally { if (btnEl) btnEl.disabled = false; }
+}
+function handleErr(e) {
+  if (e && e.code === "auth") return blocked("🔒", t("این برنامه فقط از داخل تلگرام باز می‌شود."));
+  if (e && (e.code === "banned" || e.code === "maintenance" || e.code === "disabled")) return blocked(e.code === "maintenance" ? "🛠" : "⛔", e.msg);
+  if (e && e.code && e.code.indexOf("join:") === 0) return joinGate(e.channels || (e.code.length > 5 ? [{t: t("📢 عضویت در کانال"), url: "https://t.me/" + e.code.slice(5), s: ""}] : []), e.msg);
+  toast((e && e.msg) || t("خطای ناشناخته"), true);
+}
+function blocked(icon, msg) {
+  $app.innerHTML = `<div class="center"><div class="big">${icon}</div><p>${esc(msg)}</p></div>`;
+  document.getElementById("tabs").innerHTML = "";
+}
+function joinGate(chans, msg) {
+  $app.innerHTML = `<div class="center"><div class="big">📢</div><p>${esc(msg)}</p>
+    ${chans.map((c, i) => `<button class="b ${esc(c.s || "")}" data-j="${i}">${esc(c.t)}</button>`).join("")}<button class="b sec" id="j2">${esc(t("✅ بررسی عضویت"))}</button></div>`;
+  document.getElementById("tabs").innerHTML = "";
+  $app.querySelectorAll("[data-j]").forEach(b => b.onclick = () => openLink(chans[+b.dataset.j].url));
+  $app.querySelector("#j2").onclick = () => boot();
+}
+
+/* ------------ مسیریابی ------------ */
+const stack = [];
+let current = null;
+function go(name, arg, replace) {
+  if (current && !replace) stack.push(current);
+  current = {name, arg};
+  render();
+}
+function back() { current = stack.pop() || {name: "home"}; render(); }
+function home() { stack.length = 0; current = {name: "home"}; render(); }
+function setBack() {
+  if (!TG || !TG.BackButton) return;
+  TG.BackButton.offClick(back);
+  if (current && current.name !== "home" && !TABS.some(x => x.name === current.name)) { TG.BackButton.show(); TG.BackButton.onClick(back); } else TG.BackButton.hide();
+}
+const TABS = [{name: "home", ic: "🏠"}, {name: "orders", ic: "🧾"}, {name: "wallet", ic: "👛"}, {name: "more", ic: "☰"}];
+const tabLabel = () => ({home: t("خانه"), orders: t("سفارش‌ها"), wallet: t("کیف پول"), more: t("بیشتر")});
+function drawTabs() {
+  const box = document.getElementById("tabs");
+  const show = TABS.some(x => x.name === current.name) || ["catalog", "referral", "lang", "support", "rules"].includes(current.name);
+  box.innerHTML = show ? `<div class="tabs">${TABS.map(x => `<button data-n="${x.name}" class="${current.name === x.name ? "on" : ""}"><span class="ic">${x.ic}</span>${esc(tabLabel()[x.name])}</button>`).join("")}</div>` : "";
+  box.querySelectorAll("button").forEach(b => b.onclick = () => { stack.length = 0; current = {name: b.dataset.n}; render(); });
+}
+async function render() {
+  window.scrollTo(0, 0);
+  const v = VIEWS[current.name] || VIEWS.home;
+  setBack(); drawTabs();
+  $app.innerHTML = `<div class="spin"></div>`;
+  try { await v(current.arg); } catch (e) { handleErr(e); }
+}
+
+/* ------------ صفحه‌ها ------------ */
+const KIND_IC = {stars: "⭐", premium: "👑", gift: "🎁"};
+const VIEWS = {};
+
+VIEWS.home = async () => {
+  const u = I.user;
+  const tiles = I.kinds.map(k => `<button class="tile" data-k="${k}"><span class="ic">${KIND_IC[k]}</span><span>${esc(I.kind_titles[k].replace(/^\S+\s*/, ""))}</span></button>`).join("");
+  let html = `<div class="hero"><small>${esc(t("سلام {n} 👋", {n: u.name}))}</small><b>${num(u.balance)} <small>${esc(t("تومان"))}</small></b>
+    <small>${esc(t("موجودی کیف پول"))}</small></div>`;
+  if (I.texts.welcome) html += `<div class="card hint" style="color:var(--fg)">${safeHtml(I.texts.welcome)}</div>`;
+  html += `<div class="grid ${I.kinds.length === 3 ? "g3" : ""}">${tiles}</div>`;
+  html += `<div class="sp"></div>`;
+  if (u.discount) html += `<div class="card">🎁 ${esc(t("تخفیف اختصاصی شما ({p}٪) در قیمت‌ها اعمال شده است.", {p: u.discount}))}</div>`;
+  if (u.is_admin) html += `<button class="row" id="adm"><span>🛠 ${esc(t("پنل مدیریت"))}</span><span class="sub">${esc(t("ورود با حساب تلگرام"))}</span></button>`;
+  $app.innerHTML = html;
+  $app.querySelectorAll(".tile").forEach(b => b.onclick = () => go("catalog", b.dataset.k));
+  const a = $app.querySelector("#adm");
+  if (a) a.onclick = () => run(a, async () => { const r = await api("admin_login"); location.href = r.url || "/"; });
+};
+
+VIEWS.catalog = async (kind) => {
+  const r = await api("catalog", {kind});
+  let html = `<h1>${esc(I.kind_titles[kind])}</h1><p class="hint">${esc(t("محصول مورد نظر را انتخاب کنید:"))}</p>`;
+  if (r.discount) html += `<div class="card">🎁 ${esc(t("تخفیف اختصاصی شما ({p}٪) در قیمت‌ها اعمال شده است.", {p: r.discount}))}</div>`;
+  if (!r.products.length) html += `<div class="card hint">${esc(t("فعلاً موردی برای فروش موجود نیست."))}</div>`;
+  html += r.products.map(p => `<button class="row" data-id="${p.id}"><span>${esc(p.title)}${p.price.crypto ? `<div class="sub">${esc(p.price.crypto)}</div>` : ""}</span><b>${esc(p.price.short)}</b></button>`).join("");
+  $app.innerHTML = html;
+  $app.querySelectorAll(".row").forEach(b => b.onclick = () => go("recipient", {kind, id: +b.dataset.id, title: r.products.find(x => x.id == b.dataset.id).title}));
+};
+
+VIEWS.recipient = async (a) => {
+  const stars = a.kind === "stars";
+  const canMe = !stars || !!I.user.username;
+  let who = canMe ? "me" : "other";
+  $app.innerHTML = `<h1>${esc(a.title)}</h1><h2>${esc(t("گیرنده را انتخاب کنید"))}</h2>
+    <div class="seg" id="seg">${canMe ? `<button data-w="me" class="on">🙋 ${esc(t("برای خودم"))}</button>` : ""}<button data-w="other" class="${canMe ? "" : "on"}">👤 ${esc(t("برای شخص دیگر"))}</button></div>
+    <div id="oth" style="display:${canMe ? "none" : "block"}"><div class="lbl">${esc(t("یوزرنیم تلگرام گیرنده (مثال: @username)"))}</div><input id="un" dir="ltr" placeholder="@username" autocapitalize="off" autocomplete="off">
+    ${stars ? "" : `<p class="hint">${esc(t("گیرنده باید قبلاً ربات را استارت کرده باشد."))}</p>`}</div>
+    ${!canMe ? `<p class="hint">${esc(t("شما یوزرنیم ندارید؛ یوزرنیم گیرنده را تایپ کنید."))}</p>` : ""}
+    <button class="b" id="go">${esc(t("ادامه"))}</button>`;
+  const seg = $app.querySelector("#seg");
+  seg.querySelectorAll("button").forEach(b => b.onclick = () => { who = b.dataset.w; seg.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); $app.querySelector("#oth").style.display = who === "other" ? "block" : "none"; });
+  const g = $app.querySelector("#go");
+  g.onclick = () => run(g, async () => {
+    const o = await api("order_create", {product_id: a.id, who, username: who === "other" ? $app.querySelector("#un").value : ""});
+    go("order", o.id, true);
+  });
+};
+
+function priceHtml(o) {
+  return `<div class="price">${o.orig ? `<s>${esc(o.orig.text)}</s>` : ""}<b style="font-size:20px">${esc(o.price.text)}</b></div>${o.price.crypto ? `<div class="hint">${esc(o.price.crypto)}</div>` : ""}`;
+}
+VIEWS.order = async (oid) => {
+  const o = await api("order_get", {order_id: oid});
+  if (o.status !== "pending_payment") {
+    $app.innerHTML = `<h1>${esc(t("🧾 سفارش #{oid}", {oid: o.id}))}</h1><div class="card"><b>${esc(o.title)}</b><div>${badge(o.status, o.status_text)}</div>${priceHtml(o)}</div>`;
+    return;
+  }
+  const wallet = o.methods.find(m => m.id === "wallet");
+  const others = o.methods.filter(m => m.id !== "wallet");
+  let html = `<h1>${esc(t("🧾 سفارش #{oid}", {oid: o.id}))}</h1><div class="card"><b>${esc(o.title)}</b>
+    ${o.target ? `<div class="hint">${esc(t("گیرنده: {who}", {who: o.target}))}</div>` : ""}${priceHtml(o)}
+    ${o.code ? `<div class="hint">${esc(t("کد {code}", {code: o.code}))}</div>` : ""}</div>
+    <div class="lbl">🏷 ${esc(t("کد تخفیف"))}</div><div class="flex"><input id="dc" dir="ltr" autocapitalize="characters" placeholder="CODE"><button class="b sm" id="da">${esc(t("اعمال"))}</button></div>`;
+  html += `<div class="sp"></div>`;
+  if (wallet) html += `<button class="b ok" data-m="wallet">👛 ${esc(t("پرداخت از کیف پول (موجودی {b})", {b: num(wallet.balance)}))}</button>`;
+  if (I.pay_step) html += others.length ? `<button class="b" id="paynow">💳 ${esc(t("پرداخت"))}</button>` : (wallet ? "" : `<div class="card hint">${esc(t("هیچ روش پرداختی فعال نیست."))}</div>`);
+  else html += others.map(m => `<button class="b" data-m="${m.id}">${esc(m.label)}</button>`).join("");
+  $app.innerHTML = html;
+  const da = $app.querySelector("#da");
+  da.onclick = () => run(da, async () => { const c = $app.querySelector("#dc").value.trim(); if (!c) return; try { await api("discount", {order_id: o.id, code: c}); toast(t("✅ کد تخفیف اعمال شد.")); render(); } catch (e) { handleErr(e); } });
+  $app.querySelectorAll("[data-m]").forEach(b => b.onclick = () => payWith(o.id, b.dataset.m, b));
+  const pn = $app.querySelector("#paynow");
+  if (pn) pn.onclick = () => go("methods", {id: o.id, methods: others});
+};
+VIEWS.methods = async (a) => {
+  const o = await api("order_get", {order_id: a.id});
+  $app.innerHTML = `<h1>💳 ${esc(t("پرداخت"))}</h1><div class="card">${priceHtml(o)}</div><p class="hint">${esc(t("روش پرداخت را انتخاب کنید:"))}</p>` +
+    a.methods.map(m => `<button class="row" data-m="${m.id}"><span>${esc(m.label)}</span><span>›</span></button>`).join("");
+  $app.querySelectorAll("[data-m]").forEach(b => b.onclick = () => payWith(a.id, b.dataset.m, b));
+};
+function payWith(orderId, method, b, topup) {
+  return run(b, async () => {
+    const r = await api("pay", topup ? {topup, method} : {order_id: orderId, method});
+    if (r.done) { toast(r.message); stack.length = 0; current = {name: "orders"}; render(); return; }
+    go("payinfo", r, true);
+  });
+}
+
+function copyRow(label, v) { return `<div class="lbl">${esc(label)}</div><div class="copy"><code>${esc(v)}</code><button data-c="${esc(v)}">${esc(t("کپی"))}</button></div>`; }
+VIEWS.payinfo = async (r) => {
+  let h = `<h1>${r.method === "card" ? "💳" : r.method === "zarinpal" ? "🏦" : r.method === "ton" ? "💎" : "💵"} ${esc(t("اطلاعات پرداخت"))}</h1><div class="card"><div class="hint">${esc(t("مبلغ"))}</div><b style="font-size:20px">${esc(r.amount.text)}</b>
+    <div class="hint">${esc(t("کد پیگیری: {code}", {code: r.code}))}</div></div>`;
+  if (r.method === "card") {
+    h += `<div class="card">${esc(t("مبلغ را به کارت زیر واریز کنید:"))}${copyRow(t("شماره کارت"), r.card)}${r.owner ? `<div class="hint">${esc(t("به نام: {owner}", {owner: r.owner}))}</div>` : ""}${r.note ? `<div class="hint">${esc(r.note)}</div>` : ""}</div>
+      <h2>${esc(t("ارسال عکس رسید"))}</h2><input type="file" id="rf" accept="image/*" style="display:none"><button class="b sec" id="pick">📷 ${esc(t("انتخاب عکس رسید"))}</button><div id="pv"></div>
+      <button class="b" id="send" disabled>${esc(t("ارسال رسید"))}</button>`;
+  } else if (r.method === "zarinpal") {
+    h += `<button class="b" id="zp">${esc(t("پرداخت آنلاین"))}</button><p class="hint">${esc(t("بعد از پرداخت، نتیجه خودکار اعلام می‌شود."))}</p><button class="b sec" id="chk">🔄 ${esc(t("بررسی پرداخت"))}</button>`;
+  } else {
+    const cur = r.method === "ton" ? "TON" : "USDT";
+    h += `<div class="card">${r.method === "ton" ? esc(t("مقدار زیر را به آدرس بفرستید:")) : esc(t("دقیقاً مقدار زیر را روی شبکه TRC20 بفرستید:"))}${copyRow(t("مقدار") + " (" + cur + ")", String(r.crypto))}${copyRow(t("آدرس"), r.address)}
+      ${r.memo ? copyRow("Comment / Memo", r.memo) + `<p class="hint">⚠️ ${esc(t("حتماً در بخش Comment/Memo این متن را وارد کنید."))}</p>` : `<p class="hint">⚠️ ${esc(t("مقدار باید با همین اعشار ارسال شود تا پرداخت شما شناسایی شود."))}</p>`}</div>
+      <button class="b" id="chk">🔄 ${esc(t("بررسی پرداخت"))}</button>`;
+  }
+  $app.innerHTML = h;
+  $app.querySelectorAll("[data-c]").forEach(b => b.onclick = () => copyText(b.dataset.c));
+  const chk = $app.querySelector("#chk");
+  if (chk) chk.onclick = () => run(chk, async () => { const s = await api("check", {payment_id: r.payment_id}); toast(s.message, s.status === "rejected" || s.status === "expired"); if (s.status === "confirmed") { stack.length = 0; current = {name: "orders"}; render(); } });
+  const zp = $app.querySelector("#zp"); if (zp) zp.onclick = () => openLink(r.url);
+  if (r.method === "card") setupReceipt(r);
+};
+function setupReceipt(r) {
+  const f = $app.querySelector("#rf"), pick = $app.querySelector("#pick"), send = $app.querySelector("#send");
+  let data = "";
+  pick.onclick = () => f.click();
+  f.onchange = () => {
+    const file = f.files[0]; if (!file) return;
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const max = 1600, k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      data = c.toDataURL("image/jpeg", 0.85); URL.revokeObjectURL(url);
+      $app.querySelector("#pv").innerHTML = `<img src="${data}" style="max-width:100%;border-radius:12px;margin:8px 0">`;
+      send.disabled = false;
+    };
+    img.onerror = () => toast(t("لطفاً فقط عکس رسید را ارسال کنید."), true);
+    img.src = url;
+  };
+  send.onclick = () => run(send, async () => {
+    const s = await api("receipt", {payment_id: r.payment_id, image: data});
+    toast(s.message); stack.length = 0; current = {name: "orders"}; render();
+  });
+}
+
+VIEWS.orders = async () => {
+  const r = await api("orders");
+  let h = `<h1>${esc(t("🧾 آخرین سفارش‌های شما:"))}</h1>`;
+  if (!r.orders.length) h += `<div class="card hint">${esc(t("هنوز سفارشی ندارید."))}</div>`;
+  h += r.orders.map(o => `<button class="row" data-id="${o.id}" data-s="${o.status}"><span>#${o.id} · ${esc(o.title)}<div class="sub">${esc(fdate(o.created_at))}</div><div>${badge(o.status, o.status_text)}</div></span><b>${esc(o.price.short)}</b></button>`).join("");
+  $app.innerHTML = h;
+  $app.querySelectorAll(".row").forEach(b => b.onclick = () => go("order", +b.dataset.id));
+};
+
+VIEWS.wallet = async () => {
+  const r = await api("wallet");
+  const lo = I.limits.min_topup, hi = I.limits.max_topup;
+  const quick = [lo, lo * 5, lo * 10, lo * 20].filter((v, i, a) => v <= hi && a.indexOf(v) === i);
+  let h = `<div class="hero"><small>${esc(t("موجودی کیف پول"))}</small><b>${num(r.balance)} <small>${esc(t("تومان"))}</small></b></div>
+    <h2>➕ ${esc(t("شارژ کیف پول"))}</h2><div class="card"><div class="hint">${esc(t("مبلغ شارژ را به تومان وارد کنید (حداقل {lo}):", {lo: num(lo)}))}</div>
+    <input id="amt" type="number" inputmode="numeric" placeholder="${num(lo)}"><div class="chips">${quick.map(v => `<button data-v="${v}">${num(v)}</button>`).join("")}</div>
+    <button class="b" id="top">${esc(t("ادامه"))}</button></div>`;
+  if (r.history.length) h += `<h2>${esc(t("آخرین تراکنش‌ها:"))}</h2>` + r.history.map(x => `<div class="row" style="cursor:default"><span>${x.amount > 0 ? "➕" : "➖"} ${esc(x.reason)}<div class="sub">${esc(fdate(x.ts))}</div></span><b style="color:${x.amount > 0 ? "var(--ok)" : "var(--err)"}">${num(Math.abs(x.amount))}</b></div>`).join("");
+  $app.innerHTML = h;
+  $app.querySelectorAll(".chips button").forEach(b => b.onclick = () => { $app.querySelector("#amt").value = b.dataset.v; });
+  const top = $app.querySelector("#top");
+  top.onclick = () => { const v = parseInt($app.querySelector("#amt").value, 10); if (!(v >= lo && v <= hi)) return toast(t("مبلغ نامعتبر است. بین {lo} تا {hi} تومان، فقط عدد.", {lo: num(lo), hi: num(hi)}), true); go("topup", {amount: v, methods: r.methods}); };
+};
+VIEWS.topup = async (a) => {
+  const labels = {card: "💳 " + t("کارت به کارت"), zarinpal: "🏦 " + t("درگاه بانکی"), ton: "💎 " + t("تون (TON)"), usdt: "💵 " + t("تتر (USDT TRC20)")};
+  $app.innerHTML = `<h1>➕ ${esc(t("شارژ کیف پول"))}</h1><div class="card"><b style="font-size:20px">${num(a.amount)} ${esc(t("تومان"))}</b></div><p class="hint">${esc(t("روش پرداخت را انتخاب کنید:"))}</p>` +
+    (a.methods.length ? a.methods.map(m => `<button class="row" data-m="${m}"><span>${esc(labels[m] || m)}</span><span>›</span></button>`).join("") : `<div class="card hint">${esc(t("هیچ روش پرداختی فعال نیست."))}</div>`);
+  $app.querySelectorAll("[data-m]").forEach(b => b.onclick = () => payWith(null, b.dataset.m, b, a.amount));
+};
+
+VIEWS.referral = async () => {
+  const r = await api("referral");
+  const st = r.stats;
+  let h = `<h1>🤝 ${esc(t("زیرمجموعه‌گیری"))}</h1><div class="card">${esc(t("با لینک اختصاصی خود دوستانتان را دعوت کنید؛ از هر سفارش تحویل‌شده‌ی آن‌ها {pct}٪ پورسانت به کیف پولتان اضافه می‌شود.", {pct: r.percent}))}
+    ${r.bonus ? `<div>🎁 ${esc(t("به‌ازای هر دوست تأییدشده {b} تومان جایزه می‌گیرید.", {b: num(r.bonus)}))}</div>` : ""}
+    ${r.need_join ? `<div class="hint">⚠️ ${esc(t("جایزه وقتی فعال می‌شود که دوست شما در کانال ما عضو شود و عضو بماند."))}</div>` : ""}</div>
+    ${copyRow(t("لینک دعوت شما"), r.link)}<button class="b" id="share">${esc(t("اشتراک‌گذاری لینک"))}</button>
+    <div class="grid"><div class="card"><div class="hint">${esc(t("دعوت‌شده‌ها"))}</div><b>${st.count}</b></div>
+    <div class="card"><div class="hint">${esc(t("تأییدشده"))}</div><b>${st.active}</b></div></div>
+    <div class="card"><div class="hint">${esc(t("مجموع پورسانت"))}</div><b>${num(st.earned)} ${esc(t("تومان"))}</b></div>
+    ${st.held ? `<div class="card"><div class="hint">${esc(t("در انتظار واریز"))}</div><b>${num(st.held)} ${esc(t("تومان"))}</b></div>` : ""}`;
+  $app.innerHTML = h;
+  $app.querySelectorAll("[data-c]").forEach(b => b.onclick = () => copyText(b.dataset.c));
+  $app.querySelector("#share").onclick = () => openLink("https://t.me/share/url?url=" + encodeURIComponent(r.link));
+};
+
+VIEWS.lang = async () => {
+  $app.innerHTML = `<h1>🌐 ${esc(t("زبان"))}</h1>` + I.langs.map(l => `<button class="row" data-l="${l.code}"><span>${esc(l.flag)} ${esc(l.name)}</span><span>${l.code === I.lang ? "✅" : ""}</span></button>`).join("");
+  $app.querySelectorAll("[data-l]").forEach(b => b.onclick = () => run(b, async () => { await api("set_lang", {lang: b.dataset.l}); stack.length = 0; await boot(); }));
+};
+
+VIEWS.support = async () => {
+  let h = `<h1>☎️ ${esc(t("پشتیبانی"))}</h1>`;
+  if (I.texts.support) h += `<div class="card">${safeHtml(I.texts.support)}</div>`;
+  if (I.support) h += `<button class="b" id="sp">${esc(t("☎️ پشتیبانی: {u}", {u: "@" + I.support}))}</button>`;
+  if (!I.texts.support && !I.support) h += `<div class="card hint">${esc(t("☎️ پشتیبانی هنوز تنظیم نشده است."))}</div>`;
+  $app.innerHTML = h;
+  const sp = $app.querySelector("#sp"); if (sp) sp.onclick = () => openLink("https://t.me/" + I.support);
+};
+VIEWS.rules = async () => {
+  $app.innerHTML = `<h1>📜 ${esc(t("قوانین"))}</h1><div class="card">${I.texts.rules ? safeHtml(I.texts.rules) : `<span class="hint">${esc(t("قوانینی ثبت نشده است."))}</span>`}</div>`;
+};
+VIEWS.text = async (it) => { $app.innerHTML = `<h1>${esc(it.label)}</h1><div class="card">${safeHtml(it.text || "—")}</div>`; };
+
+VIEWS.more = async () => {
+  let h = `<h1>${esc(t("بیشتر"))}</h1>`;
+  const rows = [["referral", "🤝", t("زیرمجموعه‌گیری")], ["support", "☎️", t("پشتیبانی")], ["rules", "📜", t("قوانین")]];
+  if (I.langs.length) rows.push(["lang", "🌐", t("زبان")]);
+  h += rows.map(r => `<button class="row" data-n="${r[0]}"><span>${r[1]} ${esc(r[2])}</span><span>›</span></button>`).join("");
+  h += I.items.map(it => `<button class="row" data-i="${it.id}"><span>${esc(it.label)}</span><span>${it.action === "url" ? "↗" : "›"}</span></button>`).join("");
+  if (I.user.is_admin) h += `<button class="row" id="adm"><span>🛠 ${esc(t("پنل مدیریت"))}</span><span>↗</span></button>`;
+  $app.innerHTML = h;
+  $app.querySelectorAll("[data-n]").forEach(b => b.onclick = () => go(b.dataset.n));
+  $app.querySelectorAll("[data-i]").forEach(b => b.onclick = () => { const it = I.items.find(x => x.id == b.dataset.i); if (it.action === "url") openLink(it.url); else go("text", it); });
+  const a = $app.querySelector("#adm");
+  if (a) a.onclick = () => run(a, async () => { const r = await api("admin_login"); location.href = r.url || "/"; });
+};
+
+/* ------------ شروع ------------ */
+async function boot() {
+  try {
+    I = await api("init");
+  } catch (e) { return handleErr(e); }
+  UI = I.ui || {};
+  document.documentElement.lang = I.lang;
+  document.documentElement.dir = I.rtl ? "rtl" : "ltr";
+  document.title = I.shop_name || "Shop";
+  current = {name: "home"}; stack.length = 0;
+  render();
+}
+boot();
+</script>
+</body>
+</html>

@@ -9,7 +9,7 @@ from admin_common import ans, C2S, TXT, Adm, back_row, make_router, short, view
 from apiutil import D
 from service import Shop
 from settings_schema import FIELDS, GROUP_IDS, GROUPS, SAMPLE_VARS, TEXT_KEYS, select_options
-from ui import ROLE_LABELS, STYLE_DOTS, btn, esc, fmt, ikb
+from ui import ROLE_LABELS, STYLE_DOTS, btn, esc, fmt, hint_tg, ikb
 
 router = make_router()
 PAGE = 8
@@ -72,6 +72,7 @@ async def cb_settings(cb: CallbackQuery, shop: Shop, state: FSMContext):
 
 
 EXTRA_BUTTONS = {
+    "general": [("📢 کانال‌های عضویت اجباری", "adm:fj")],
     "rates": [("🧪 تست API دلار", "adm:rates:t:usd"), ("🧪 تست API تون", "adm:rates:t:ton"), ("🔄 بروزرسانی نرخ", "adm:ratesnow")],
     "pricing": [("🧪 تست API استارز", "adm:rates:t:fs"), ("🧪 تست API پریمیوم", "adm:rates:t:fp"), ("💹 نمونه قیمت‌ها", "adm:rates")],
     "delivery": [("🧪 تست API موجودی", "adm:rates:t:pb"), ("⭐ موجودی ربات", "adm:stars")],
@@ -149,7 +150,7 @@ async def cb_field(cb: CallbackQuery, shop: Shop, state: FSMContext):
         opts = select_options(typ)
         kb = [[btn(("✔ " if s.get(key) == o else "") + o, f"adm:sv:{key}:{i}", role="admin")] for i, o in enumerate(opts)]
         kb.append(back_row(f"adm:sg:{gid}:{page_of(gid, key)}"))
-        await view(cb, f"<b>{esc(label)}</b>\n{esc(hlp)}\n\nمقدار فعلی: <code>{esc(s.get(key, '') or '—')}</code>", ikb(kb))
+        await view(cb, f"<b>{esc(label)}</b>\n{hint_tg(hlp)}\n\nمقدار فعلی: <code>{esc(s.get(key, '') or '—')}</code>", ikb(kb))
         await cb.answer()
         return
     await state.set_state(Adm.set_value)
@@ -159,7 +160,7 @@ async def cb_field(cb: CallbackQuery, shop: Shop, state: FSMContext):
     if key in TEXT_KEYS:
         extra = "\n💡 می‌توانید متن را با فرمت (ضخیم، ایموجی پریمیوم و ...) بفرستید؛ همان‌طور که هست ذخیره می‌شود."
     kb = ikb([[btn("🗑 پاک کردن مقدار", f"adm:sx:{key}", role="reject"), btn("❌ انصراف", f"adm:sg:{gid}:{page_of(gid, key)}", role="back")]])
-    await cb.message.answer(f"<b>{esc(label)}</b>\n{esc(hlp)}\n\nمقدار فعلی: <code>{esc(cur)}</code>\n\nمقدار جدید را بفرستید:" + extra
+    await cb.message.answer(f"<b>{esc(label)}</b>\n{hint_tg(hlp)}\n\nمقدار فعلی: <code>{esc(cur)}</code>\n\nمقدار جدید را بفرستید:" + extra
                             + ("\n🔒 پیام شما بعد از ذخیره پاک می‌شود." if is_secret(key) else ""), reply_markup=kb)
     await cb.answer()
 
@@ -210,6 +211,164 @@ async def got_value(m: Message, shop: Shop, state: FSMContext):
         except Exception:  # noqa: BLE001
             pass
     await m.answer("✅ ذخیره شد.", reply_markup=ikb([[btn("🔙 بازگشت به تنظیمات", f"adm:sg:{d['gid']}:{page_of(d['gid'], key)}", role="back")]]))
+
+
+# ============================================================ کانال‌های عضویت اجباری
+FJ_STYLES = ["", "primary", "success", "danger"]
+FJ_DOT = {"": "🔵", "primary": "🔵", "success": "🟢", "danger": "🔴"}
+FJ_FIELDS = {"c": "آیدی کانال (@mychannel)", "t": "متن دکمه", "l": "لینک دعوت (https://t.me/...)", "e": "آیدی ایموجی پریمیوم (فقط عدد)"}
+
+
+def fj_list_view(shop: Shop):
+    items = shop.force_list()
+    on = shop.s.get("force_join") == "1"
+    lines = [f"{i}. {FJ_DOT[c['s']]} <b>{esc(c['t'] or 'بدون متن (پیش‌فرض)')}</b> — <code>{esc(c['c'])}</code>" for i, c in enumerate(items, 1)]
+    text = ("📢 <b>کانال‌های عضویت اجباری</b>\n"
+            + ("وضعیت: ✅ فعال" if on else "وضعیت: ⏹ غیرفعال (از «تنظیمات ← عمومی» گزینه‌ی عضویت اجباری را روشن کنید)")
+            + "\nکاربر باید در همه‌ی کانال‌ها عضو باشد؛ ربات باید ادمین هر کانال باشد.\n\n"
+            + ("\n".join(lines) if lines else "هنوز کانالی اضافه نشده است."))
+    kb = [[btn(f"{i}. {FJ_DOT[c['s']]} {short(c['t'] or c['c'], 22)}", f"adm:fjc:{i - 1}", role="admin")] for i, c in enumerate(items, 1)]
+    if len(items) < shop.FORCE_MAX:
+        kb.append([btn("➕ افزودن کانال", "adm:fja", role="confirm")])
+    kb.append(back_row("adm:sg:general:0"))
+    return text, ikb(kb)
+
+
+def fj_card_view(shop: Shop, i: int):
+    items = shop.force_list()
+    if not 0 <= i < len(items):
+        return None
+    c = items[i]
+    text = (f"📢 <b>کانال {i + 1}</b>: <code>{esc(c['c'])}</code>\n"
+            f"متن دکمه: {esc(c['t']) or '— (پیش‌فرض: «📢 عضویت در کانال»)'}\n"
+            f"رنگ دکمه: {FJ_DOT[c['s']]} {STYLE_NAMES[c['s']]}\n"
+            f"لینک دعوت: {esc(c['l']) or '— (از آیدی کانال ساخته می‌شود)'}\n"
+            f"ایموجی پریمیوم: {esc(c['e']) or '—'}")
+    kb = ikb([[btn("✏️ متن دکمه", f"adm:fje:{i}:t", role="action"), btn("🎨 رنگ دکمه", f"adm:fjs:{i}", role="action")],
+              [btn("🔗 لینک دعوت", f"adm:fje:{i}:l", role="action"), btn("✨ ایموجی", f"adm:fje:{i}:e", role="action")],
+              [btn("🗑 حذف کانال", f"adm:fjd:{i}", role="reject")], back_row("adm:fj")])
+    return text, kb
+
+
+STYLE_NAMES = {"": "پیش‌فرض (آبی)", "primary": "آبی", "success": "سبز", "danger": "قرمز"}
+
+
+@router.callback_query(F.data == "adm:fj")
+async def cb_fj(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    await state.clear()
+    await view(cb, *fj_list_view(shop))
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("adm:fjc:"))
+async def cb_fj_card(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    await state.clear()
+    card = fj_card_view(shop, int(cb.data.split(":")[2]))
+    if not card:
+        await cb.answer("پیدا نشد", show_alert=True)
+        return
+    await view(cb, *card)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("adm:fjs:"))
+async def cb_fj_style(cb: CallbackQuery, shop: Shop):
+    i = int(cb.data.split(":")[2])
+    items = shop.force_list()
+    if not 0 <= i < len(items):
+        await cb.answer("پیدا نشد", show_alert=True)
+        return
+    items[i]["s"] = FJ_STYLES[(FJ_STYLES.index(items[i]["s"]) + 1) % len(FJ_STYLES)]
+    ok, err = await shop.set_force_list(items, f"tg:{cb.from_user.id}")
+    if not ok:
+        await cb.answer(err, show_alert=True)
+        return
+    await view(cb, *fj_card_view(shop, i))
+    await cb.answer("رنگ عوض شد")
+
+
+@router.callback_query(F.data.startswith("adm:fje:"))
+async def cb_fj_edit(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    _, _, _, i, field = cb.data.split(":")
+    await state.set_state(Adm.fj_val)
+    await state.update_data(i=int(i), field=field)
+    await cb.message.answer(f"✏️ <b>{FJ_FIELDS[field]}</b> را بفرستید.\nبرای خالی کردن «-» بفرستید. (لغو: /admin)",
+                            reply_markup=ikb([back_row(f"adm:fjc:{i}")]))
+    await cb.answer()
+
+
+@router.callback_query(F.data == "adm:fja")
+async def cb_fj_add(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(Adm.fj_val)
+    await state.update_data(i=-1, field="c", new={})
+    await cb.message.answer("➕ ۱/۲ — آیدی یا لینک کانال را بفرستید (مثال: <code>@mychannel</code> یا <code>t.me/mychannel</code>).\n"
+                            "برای کانال خصوصی: شناسه‌ی <code>-100…</code>؛ بعدش لینک دعوت را هم می‌پرسم.",
+                            reply_markup=ikb([back_row("adm:fj")]))
+    await cb.answer()
+
+
+@router.message(Adm.fj_val, TXT)
+async def got_fj(m: Message, shop: Shop, state: FSMContext):
+    d = await state.get_data()
+    i, field, text = d["i"], d["field"], m.text.strip()
+    items = shop.force_list()
+    uid = f"tg:{m.from_user.id}"
+    if i == -1:        # ویزارد افزودن: کانال ← متن دکمه ← (لینک برای خصوصی)
+        new = d.get("new") or {}
+        if field == "c":
+            ok, v = shop.norm_channel(text)
+            if not ok:
+                await m.answer(f"❌ {esc(v)}")
+                return
+            new["c"] = v
+            await state.update_data(new=new, field="t")
+            await m.answer("۲/۲ — متن دکمه را بفرستید (مثلاً <code>اطلاع‌رسانی</code> یا <code>تخفیف‌ها</code>). برای متن پیش‌فرض «-» بفرستید.")
+            return
+        if field == "t":
+            new["t"] = "" if text == "-" else text[:40]
+            if new["c"].startswith("-100"):
+                await state.update_data(new=new, field="l")
+                await m.answer("این کانال خصوصی است؛ لینک دعوت را بفرستید (https://t.me/+...):")
+                return
+        elif field == "l":
+            new["l"] = text
+        ok, err = await shop.set_force_list(items + [new], uid)
+        if not ok:
+            await m.answer(f"❌ {esc(err)}")
+            return
+        await state.clear()
+        await m.answer("✅ کانال اضافه شد. رنگ دکمه را از کارت کانال انتخاب کنید.", reply_markup=ikb([[btn("📢 مشاهده", f"adm:fjc:{len(items)}", role="admin")], back_row("adm:fj")]))
+        return
+    if not 0 <= i < len(items):
+        await state.clear()
+        await m.answer("کانال پیدا نشد.")
+        return
+    items[i][field] = "" if text == "-" else text
+    ok, err = await shop.set_force_list(items, uid)
+    if not ok:
+        await m.answer(f"❌ {esc(err)}\nدوباره بفرستید یا /admin.")
+        return
+    await state.clear()
+    await m.answer("✅ ذخیره شد.", reply_markup=ikb([[btn("📢 مشاهده", f"adm:fjc:{i}", role="admin")], back_row("adm:fj")]))
+
+
+@router.callback_query(F.data.startswith("adm:fjd:"))
+async def cb_fj_del(cb: CallbackQuery, shop: Shop):
+    parts = cb.data.split(":")
+    i = int(parts[2])
+    items = shop.force_list()
+    if not 0 <= i < len(items):
+        await cb.answer("پیدا نشد", show_alert=True)
+        return
+    if len(parts) < 4:
+        await view(cb, f"🗑 کانال <code>{esc(items[i]['c'])}</code> حذف شود؟",
+                   ikb([[btn("✅ بله، حذف کن", f"adm:fjd:{i}:y", role="confirm"), btn("❌ نه", f"adm:fjc:{i}", role="back")]]))
+        await cb.answer()
+        return
+    del items[i]
+    await shop.set_force_list(items, f"tg:{cb.from_user.id}")
+    await view(cb, *fj_list_view(shop))
+    await cb.answer("حذف شد")
 
 
 # ============================================================ نرخ‌ها و قیمت‌گذاری

@@ -5,7 +5,7 @@ import logging
 import re
 
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 from i18n import NW_
 
@@ -97,6 +97,50 @@ def set_styles(settings: dict) -> None:
     PREMIUM_ON = settings.get("premium_emoji_enabled", "1") == "1"
 
 
+_KEYDESC = re.compile(r"^\s*([A-Za-z0-9_.]+)\s=\s(.+)$", re.S)
+RLM = "\u200f"
+_HAS_FA = re.compile(r"[\u0600-\u06ff]")
+
+
+def hint_items(text: str):
+    """راهنمای «key = توضیح · key = توضیح» را به لیست (key|None, توضیح) می‌شکند؛ برای متن‌های دیگر None برمی‌گرداند."""
+    parts = [x.strip() for x in str(text or "").split(" · ") if x.strip()]
+    items = []
+    for x in parts:
+        m = _KEYDESC.match(x)
+        items.append((m.group(1), m.group(2).strip()) if m else (None, x))
+    if not any(k for k, _ in items):
+        return None
+    return items
+
+
+def hint_tg(text: str) -> str:
+    """راهنمای تنظیمات برای پیام تلگرام: هر گزینه در یک خط جدا، کلید لاتین داخل <code> و با RLM تا راست‌به‌چپ بماند
+    (بدون آن، متنی که با حروف لاتین شروع شود در تلگرام چپ‌به‌راست چیده و درهم‌ریخته می‌شود)."""
+    items = hint_items(text)
+    if items is None:
+        return rtl_fix(esc(text))
+    return "\n".join(f"{RLM}▫️ " + (f"<code>{esc(k)}</code> {RLM}— {esc(d)}" if k else esc(d)) for k, d in items)
+
+
+def hint_html(text: str) -> str:
+    """همان تقسیم‌بندی برای پنل وب (HTML امن؛ text از قبل ترجمه شده)."""
+    items = hint_items(text)
+    if items is None:
+        return esc(text)
+    return "<br>".join("▫️ " + (f"<bdi dir='ltr'><code>{esc(k)}</code></bdi> — {esc(d)}" if k else esc(d)) for k, d in items)
+
+
+def rtl_fix(text: str) -> str:
+    """اگر اولین حرف متن (بیرون از تگ‌های HTML) لاتین باشد و متن فارسی هم دارد، RLM جلوی آن می‌گذارد تا جهت پیام راست‌به‌چپ بماند."""
+    t = str(text or "")
+    if not t or not _HAS_FA.search(t):
+        return t
+    bare = re.sub(r"<[^>]*>", "", t)
+    first = next((c for c in bare if c.isalpha()), "")
+    return RLM + t if first and first.isascii() and not t.startswith(RLM) else t
+
+
 def esc(x) -> str:
     return html.escape(str(x if x is not None else ""))
 
@@ -108,7 +152,7 @@ def fmt(n) -> str:
         return str(n)
 
 
-def btn(text, data=None, url=None, role=None, style=None, emoji=None):
+def btn(text, data=None, url=None, role=None, style=None, emoji=None, webapp=None):
     """ساخت دکمه inline. style/emoji صریح اولویت دارند؛ وگرنه از رنگ/ایموجی نقش (role) خوانده می‌شود.
     emoji = شناسه‌ی عددی ایموجی پریمیوم که قبل از متن دکمه نمایش داده می‌شود (icon_custom_emoji_id، Bot API 9.4)."""
     ov = ovr_lookup(bkey(data)) if (OVR and data) else None
@@ -121,9 +165,13 @@ def btn(text, data=None, url=None, role=None, style=None, emoji=None):
             em = ov["e"]
         if ov["t"] and not url:
             text = ov["t"]
+    if webapp and not url:
+        url = None
     kw = {"style": st} if st in ("primary", "success", "danger") else {}
     if em and PREMIUM_ON and str(em).isdigit():
         kw["icon_custom_emoji_id"] = str(em)
+    if webapp:
+        return InlineKeyboardButton(text=text, web_app=WebAppInfo(url=webapp), **kw)
     if url:
         return InlineKeyboardButton(text=text, url=url, **kw)
     return InlineKeyboardButton(text=text, callback_data=data, **kw)
