@@ -401,6 +401,9 @@ async def settings_page(request):
                    f"<li>{T('ربات را به گروه اضافه و ادمین کنید (Manage Topics و Post Messages).')}</li>"
                    f"<li>{T('داخل گروه دستور /connect را بفرستید (فقط ادمین‌های ربات). ربات تاپیک‌ها را خودش می‌سازد.')}</li></ol>"
                  + f"<p class='hint'>⚠️ {T('فایل بکاپ شامل اطلاعات کاربران است؛ فقط ادمین‌های مورد اعتماد عضو گروه باشند.')}</p></div>")
+    if gid == "miniapp":
+        from web_miniapp import ui_card
+        extra = ui_card(request, shop)
     if gid == "general":
         from web_force import force_card
         extra = force_card(request, shop)

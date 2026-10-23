@@ -1,6 +1,11 @@
 """ابزارهای عمومی برای فراخوانی APIهای دلخواه ادمین (نرخ ارز، قیمت فراگمنت، سرویس‌دهنده‌ی ارسال)."""
+import asyncio
+import ipaddress
 import json
+import os
 import re
+import socket
+from urllib.parse import urlsplit
 from decimal import Decimal, InvalidOperation
 
 from aiohttp import ClientSession, ClientTimeout
@@ -58,6 +63,28 @@ def parse_headers(text: str) -> dict:
     return {str(k): str(v) for k, v in d.items()} if isinstance(d, dict) else {}
 
 
+class BlockedURL(ValueError):
+    pass
+
+
+async def check_public_url(url: str):
+    """جلوگیری از SSRF: فقط http(s) و فقط مقصد عمومی (نه localhost، شبکه‌ی داخلی یا متادیتای ابری).
+    اگر واقعاً به سرویس داخلی نیاز دارید، در .env مقدار ALLOW_PRIVATE_API=1 بگذارید."""
+    if os.getenv("ALLOW_PRIVATE_API", "").strip().lower() in ("1", "true", "yes"):
+        return
+    u = urlsplit(url)
+    if u.scheme not in ("http", "https") or not u.hostname:
+        raise BlockedURL("URL must start with http:// or https://")
+    try:
+        infos = await asyncio.get_running_loop().getaddrinfo(u.hostname, u.port or (443 if u.scheme == "https" else 80), type=socket.SOCK_STREAM)
+    except OSError as e:
+        raise BlockedURL(f"cannot resolve host: {e}")
+    for inf in infos:
+        ip = ipaddress.ip_address(inf[4][0].split("%")[0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            raise BlockedURL("blocked: the address points to a private/internal network")
+
+
 async def call_api(http: ClientSession, url: str, method="GET", headers="", body="", timeout=15, vars=None):
     """درخواست HTTP؛ خروجی: (status, parsed|text, raw_text). متغیرهای {qty} {months} {username} ... در url و body جایگزین می‌شوند."""
     vars = vars or {}
@@ -68,6 +95,8 @@ async def call_api(http: ClientSession, url: str, method="GET", headers="", body
     if method == "POST" and body.strip():
         data = json.loads(render_template(body, vars))
         kw["json"] = data
+    await check_public_url(url)
+    kw["allow_redirects"] = False          # ریدایرکت می‌تواند به شبکه‌ی داخلی برود
     async with http.request(method, url, **kw) as r:
         raw = await r.text()
         try:

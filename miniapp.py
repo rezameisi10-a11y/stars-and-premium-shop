@@ -6,6 +6,7 @@
 همه‌ی منطق (قیمت، تخفیف، پرداخت، تحویل) همان توابع Shop است که ربات هم استفاده می‌کند."""
 import base64
 import hashlib
+import io
 import hmac
 import json
 import logging
@@ -17,6 +18,7 @@ from urllib.parse import parse_qsl
 from aiogram.types import BufferedInputFile
 from aiohttp import web
 
+import miniapp_ui
 from i18n import CATALOG, SRC_LANG
 from service import KIND_FA, METHOD_FA, PAY_STATUS_FA, STATUS_FA, Shop, normalize_url
 from ui import fmt
@@ -73,6 +75,9 @@ class ApiError(Exception):
 
 def _rate_limited(uid: int) -> bool:
     now = time.time()
+    if len(_hits) > 5000:
+        for k in [k for k, v in _hits.items() if not v or now - v[-1] > 10]:
+            _hits.pop(k, None)
     h = [t for t in _hits.get(uid, []) if now - t < 10]
     h.append(now)
     _hits[uid] = h
@@ -185,13 +190,20 @@ async def a_init(ctx: Ctx, d: dict) -> dict:
             kinds.append(k)
     support = s["support_username"].lstrip("@")
     ui = {k: ctx.tr(k) for k in ui_strings()}
+    mui = miniapp_ui.load(s)
+    st = await shop.db.one("SELECT COUNT(*) n, COALESCE(SUM(CASE WHEN status='done' THEN 1 ELSE 0 END),0) done, "
+                           "COALESCE(SUM(CASE WHEN status='done' THEN amount ELSE 0 END),0) spent FROM orders WHERE user_id=?", (ctx.uid,))
+    inv = (await shop.db.one("SELECT COUNT(*) c FROM referrals WHERE referrer_id=?", (ctx.uid,)))["c"]
+    photo = str(ctx.tg.get("photo_url") or "")
     return {
+        "mui": mui, "photo": photo if photo.startswith("https://") else "",
+        "stats": {"orders": st["n"], "done": st["done"], "spent": _money(ctx, st["spent"]), "invited": inv},
         "user": {"id": ctx.uid, "name": tg_name(ctx.tg), "username": ctx.tg.get("username") or "", "balance": u["balance"],
                  "discount": u.get("personal_discount") or 0, "is_admin": shop.is_admin(ctx.uid)},
         "lang": ctx.lang, "rtl": bool(lang_row["rtl"]) if lang_row else True, "langs": langs if len(langs) > 1 else [],
         "ui": ui, "shop_name": s.get("shop_name") or "", "kinds": kinds,
         "kind_titles": {k: ctx.tr(KIND_TITLE[k]) for k in KIND_TITLE},
-        "texts": {"welcome": shop.text("welcome_text", ctx.lang), "rules": shop.text("rules_text", ctx.lang),
+        "texts": {"welcome": (mui.get("welcome") or {}).get("t") or shop.text("welcome_text", ctx.lang), "rules": shop.text("rules_text", ctx.lang),
                   "support": shop.text("support_text", ctx.lang)},
         "support": support, "items": items, "bot": shop.bot_username,
         "limits": {"min_topup": int(float(s["min_topup"])), "max_topup": int(float(s["max_topup"]))},
@@ -444,6 +456,39 @@ async def page(request: web.Request):
     return web.Response(text=html, content_type="text/html")
 
 
+_EMOJI: dict[str, tuple[str, bytes]] = {}
+
+
+async def emoji(request: web.Request):
+    """تصویر ایموجی پریمیوم برای نمایش در مینی‌اپ (فقط شناسه‌هایی که ادمین در تنظیمات مینی‌اپ گذاشته)."""
+    shop: Shop = request.app["shop"]
+    eid = request.match_info["eid"]
+    if not eid.isdigit() or eid not in miniapp_ui.emoji_ids(shop.s):
+        raise web.HTTPNotFound()
+    hit = _EMOJI.get(eid)
+    if hit is None:
+        try:
+            st = (await shop.bot.get_custom_emoji_stickers([eid]))[0]
+            if st.is_animated:               # tgs را مرورگر نشان نمی‌دهد → پیش‌نمایش ثابت
+                if not st.thumbnail:
+                    raise ValueError("no thumbnail")
+                fid, ctype = st.thumbnail.file_id, "image/webp"
+            else:
+                fid, ctype = st.file_id, ("video/webm" if st.is_video else "image/webp")
+            f = await shop.bot.get_file(fid)
+            buf = io.BytesIO()
+            await shop.bot.download_file(f.file_path, buf)
+            hit = (ctype, buf.getvalue())
+        except Exception as e:  # noqa: BLE001
+            log.warning("emoji %s failed: %s", eid, e)
+            raise web.HTTPNotFound()
+        if len(_EMOJI) > 120:
+            _EMOJI.clear()
+        _EMOJI[eid] = hit
+    return web.Response(body=hit[1], content_type=hit[0], headers={"Cache-Control": "public, max-age=86400"})
+
+
 def register(app: web.Application):
     app.router.add_get("/app", page)
+    app.router.add_get("/app/emoji/{eid}", emoji)
     app.router.add_post("/app/api/{action}", api)

@@ -112,6 +112,46 @@ table.rt{min-width:0;display:block}.rt thead{display:none}.rt tbody{display:bloc
 .rt td form{display:flex;flex-wrap:wrap;gap:8px;width:100%;align-items:flex-end}.rt td form>input,.rt td form>select{flex:1 1 130px;min-width:0;width:auto}.rt td .mini{flex:1 1 130px;min-width:0}.rt td .mini input{width:100%}
 .rt td[data-label='ویرایش']::before{display:none}
 }
+/* ======== پوسته‌ی «شیشه‌ی شفق» (مشترک با مینی‌اپ) ======== */
+:root{--bg:#080c1a;--panel:rgba(255,255,255,.065);--panel2:rgba(255,255,255,.09);--line:rgba(255,255,255,.12);--edge:rgba(255,255,255,.2);--inp:rgba(8,12,28,.55);
+--g1:#8b5cf6;--g2:#22d3ee;--g3:#f472b6;--gsh:0 14px 38px rgba(2,4,20,.5)}
+html[data-theme=light]{--bg:#e9edfb;--panel:rgba(255,255,255,.62);--panel2:rgba(255,255,255,.8);--line:rgba(60,70,140,.15);--edge:rgba(255,255,255,.95);--inp:rgba(255,255,255,.85);--gsh:0 12px 30px rgba(70,80,160,.16)}
+html{background:var(--bg)}
+body{position:relative;overflow-x:hidden;background:transparent}
+body::before,body::after{content:"";position:fixed;z-index:-1;pointer-events:none;width:80vmax;height:80vmax;border-radius:50%;filter:blur(80px);opacity:.5;animation:aur 30s ease-in-out infinite alternate}
+body::before{top:-30vmax;inset-inline-start:-25vmax;background:radial-gradient(circle,var(--g1) 0,transparent 60%)}
+body::after{bottom:-35vmax;inset-inline-end:-25vmax;background:radial-gradient(circle,var(--acc) 0,transparent 60%);animation-delay:-11s}
+html[data-theme=light] body::before,html[data-theme=light] body::after{opacity:.32}
+@keyframes aur{to{transform:translate(6vmax,5vmax) rotate(20deg)}}
+@media (prefers-reduced-motion:reduce){body::before,body::after{animation:none}}
+.side,.top,.card,.stat,.pick,.phone{-webkit-backdrop-filter:blur(22px) saturate(1.5);backdrop-filter:blur(22px) saturate(1.5)}
+.side{background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.04));border-inline-end:1px solid var(--edge)}
+.top{background:var(--panel);border-bottom:1px solid var(--edge)}
+.card{border:1px solid var(--edge);border-radius:20px;box-shadow:var(--gsh),inset 0 1px 0 var(--edge);background:linear-gradient(160deg,var(--panel2),var(--panel))}
+.stat{position:relative;overflow:hidden;border:1px solid var(--edge);border-top:1px solid var(--edge);border-radius:20px;box-shadow:var(--gsh),inset 0 1px 0 var(--edge);background:linear-gradient(160deg,var(--panel2),var(--panel))}
+.stat::before{content:"";position:absolute;inset-inline:0;bottom:-55%;height:90%;background:radial-gradient(ellipse at 50% 100%,var(--sc,var(--acc)),transparent 70%);opacity:.28;pointer-events:none}
+.stat.ok,.stat.warn,.stat.err,.stat.pri{border-top-color:var(--edge)}
+.stat.ok{--sc:var(--ok)}.stat.warn{--sc:var(--warn)}.stat.err{--sc:var(--err)}.stat.pri{--sc:var(--pri)}
+.stat b{font-size:26px;background:linear-gradient(90deg,var(--tx),color-mix(in srgb,var(--tx) 60%,var(--sc,var(--acc))));-webkit-background-clip:text;background-clip:text;color:transparent}
+.brand i{box-shadow:0 8px 22px color-mix(in srgb,var(--acc) 55%,transparent);background:linear-gradient(135deg,var(--acc),var(--g1))}
+.side a.nav{border:1px solid transparent;transition:background .15s,border-color .15s}
+.side a.nav:hover{background:var(--panel2);border-color:var(--line)}
+.side a.nav.on{background:linear-gradient(135deg,color-mix(in srgb,var(--acc) 28%,transparent),color-mix(in srgb,var(--g1) 22%,transparent));border-color:var(--edge);color:var(--tx);box-shadow:0 6px 16px color-mix(in srgb,var(--acc) 22%,transparent)}
+.b{background:var(--panel2);border:1px solid var(--edge);border-radius:12px;transition:transform .12s,box-shadow .15s,border-color .15s}
+.b:hover{box-shadow:0 6px 18px color-mix(in srgb,var(--acc) 30%,transparent)}.b:active{transform:scale(.97)}
+.b.pri{background:linear-gradient(135deg,var(--pri),var(--g1));border-color:transparent;box-shadow:0 8px 20px color-mix(in srgb,var(--pri) 38%,transparent),inset 0 1px 0 rgba(255,255,255,.3)}
+.b.ok{background:linear-gradient(135deg,#10b981,#059669);border-color:transparent}.b.err{background:linear-gradient(135deg,#f43f5e,#be123c);border-color:transparent}
+input,select,textarea{background:var(--inp);border:1px solid var(--line);border-radius:12px;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 28%,transparent)}
+th{border-bottom-color:var(--edge)}td{border-bottom-color:var(--line)}
+.badge{border:1px solid var(--line)}
+.tabs a,.langs a,.pager a{background:var(--panel);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.tabs a.on,.langs a.on,.pager span{background:linear-gradient(135deg,var(--acc),var(--g1));border-color:transparent;color:#fff;box-shadow:0 6px 16px color-mix(in srgb,var(--acc) 35%,transparent)}
+.flash{border-radius:14px;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+.login .card{box-shadow:0 24px 60px rgba(2,4,20,.5),inset 0 1px 0 var(--edge)}
+.top h1{font-size:19px;letter-spacing:-.2px}
+.side::-webkit-scrollbar,.tw::-webkit-scrollbar{height:8px;width:8px}.side::-webkit-scrollbar-thumb,.tw::-webkit-scrollbar-thumb{background:var(--line);border-radius:9px}
+@media(max-width:900px){.side{background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none}.rt tr{background:var(--panel2)}}
 """
 
 THEME_JS = """
@@ -204,7 +244,7 @@ def status_badge(s, pay=False):
 
 
 def safe_next(v, default):
-    return v if isinstance(v, str) and v.startswith("/") and not v.startswith("//") else default
+    return v if isinstance(v, str) and v.startswith("/") and not v.startswith("//") and "\\" not in v and not any(ord(ch) < 32 for ch in v) else default
 
 
 def redirect(path, ok=None, err=None):

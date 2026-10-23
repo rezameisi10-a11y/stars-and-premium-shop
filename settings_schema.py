@@ -186,7 +186,7 @@ TEXT_KEYS = {"welcome_text", "rules_text", "support_text", "maintenance_text", "
 
 DEFAULTS = {
     "btn_ovr": "", "force_channels": "",
-    "miniapp_enabled": "1", "miniapp_menu_button": "1", "miniapp_title": "🛍 فروشگاه",
+    "miniapp_ui": "", "miniapp_enabled": "1", "miniapp_menu_button": "1", "miniapp_title": "🛍 فروشگاه",
     "grp_enabled": "0", "grp_chat_id": "", "grp_topics": "", "grp_ev_receipts": "1", "grp_ev_sales": "1", "grp_ev_users": "1",
     "grp_ev_alerts": "1", "grp_report_on": "1", "grp_report_time": "23:55", "grp_backup_hours": "24", "grp_backup_env": "0",
     "grp_last_report": "", "grp_last_backup": "0",

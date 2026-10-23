@@ -743,6 +743,9 @@ async def cb_backup_menu(cb: CallbackQuery):
 @router.callback_query(F.data.in_({"adm:backup:zip", "adm:backup:env"}))
 async def cb_backup(cb: CallbackQuery, shop: Shop):
     inc = cb.data.endswith("env")
+    if inc and shop.admin_perms.get(cb.from_user.id) != "*":
+        await cb.answer("فقط مدیر کامل می‌تواند بکاپ شامل .env و توکن بگیرد.", show_alert=True)
+        return
     data = await bk.make_bundle(shop, include_env=inc)
     await cb.message.answer_document(BufferedInputFile(data, filename=f"starshop-backup-{datetime.now():%Y%m%d-%H%M}.zip"),
                                      caption="💾 بکاپ کامل" + (" (شامل .env و توکن)" if inc else "") + " — شامل اطلاعات حساس؛ نگهداری امن")
@@ -751,7 +754,10 @@ async def cb_backup(cb: CallbackQuery, shop: Shop):
 
 
 @router.callback_query(F.data == "adm:restore")
-async def cb_restore(cb: CallbackQuery, state: FSMContext):
+async def cb_restore(cb: CallbackQuery, state: FSMContext, shop: Shop):
+    if shop.admin_perms.get(cb.from_user.id) != "*":     # دیتابیس شامل جدول ادمین‌هاست
+        await cb.answer("فقط مدیر کامل می‌تواند بکاپ را بازگردانی کند.", show_alert=True)
+        return
     await state.set_state(Adm.restore)
     await cb.message.answer("📥 فایل بکاپ (.zip یا .db یا .tar.gz) را همین‌جا به‌صورت «فایل» بفرستید. (برای لغو /admin)\n"
                             "⚠️ قبل از جایگزینی، از وضعیت فعلی یک بکاپ ایمنی کنار دیتابیس گرفته می‌شود.")
@@ -760,6 +766,9 @@ async def cb_restore(cb: CallbackQuery, state: FSMContext):
 
 @router.message(Adm.restore, F.document)
 async def got_restore_file(m: Message, shop: Shop, state: FSMContext):
+    if shop.admin_perms.get(m.from_user.id) != "*":
+        await state.clear()
+        return
     if (m.document.file_size or 0) > 20 * 1024 * 1024:
         await m.answer("❌ حجم فایل بیش از ۲۰ مگابایت است؛ از «پنل وب ← وارد کردن بکاپ» استفاده کنید.")
         return
@@ -792,6 +801,9 @@ async def restore_wrong(m: Message):
 
 @router.callback_query(F.data.in_({"adm:restore:ok", "adm:restore:env"}))
 async def cb_restore_go(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    if shop.admin_perms.get(cb.from_user.id) != "*":
+        await cb.answer("فقط مدیر کامل.", show_alert=True)
+        return
     d = await state.get_data()
     await state.clear()
     if not d.get("path") or not os.path.exists(d["path"]):

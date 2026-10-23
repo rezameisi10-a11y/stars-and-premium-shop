@@ -16,7 +16,8 @@ from webkit import (CSS, NAV, THEME_JS, theme_ctrl, PER_PAGE, ROUTES, actor, bad
                     make_session, nav_allowed, page_no, pager, post, read_session, redirect, safe_next, set_session, sig, status_badge,
                     tbl, user_link)
 
-PUBLIC_PREFIXES = ("/login", "/auth", "/zarinpal/callback", "/health", "/lang/", "/app")
+PUBLIC_EXACT = {"/login", "/auth", "/zarinpal/callback", "/health", "/app"}
+PUBLIC_PREFIXES = ("/lang/", "/app/")
 MAX_BODY = 2 * 1024 * 1024
 MAX_UPLOAD = 100 * 1024 * 1024
 UPLOAD_PATHS = {"/backup/import"}
@@ -45,7 +46,7 @@ async def security(request: web.Request, handler):
     request["who"] = ""
     request["perms"] = None
     request["uid"] = None
-    public = request.path == "/login" or request.path.startswith(PUBLIC_PREFIXES) or request.path == "/health"
+    public = request.path in PUBLIC_EXACT or request.path.startswith(PUBLIC_PREFIXES)
     if request.method == "POST":
         cl = request.content_length
         limit = 64 * 1024 if public else (MAX_UPLOAD if request.path in UPLOAD_PATHS else MAX_BODY)
@@ -82,24 +83,41 @@ async def security(request: web.Request, handler):
     fa = "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org https://telegram.org"
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["Referrer-Policy"] = "same-origin"
-    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=(), payment=()"
+    resp.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
+    resp.headers.setdefault("Cache-Control", "no-store")
+    if shop.cfg.cookie_secure:
+        resp.headers["Strict-Transport-Security"] = "max-age=31536000"
     if request.path == "/app":     # مینی‌اپ تلگرام: اسکریپت رسمی تلگرام لازم است
         resp.headers["Content-Security-Policy"] = ("default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline' https://telegram.org; "
-                                                   "img-src 'self' data:; connect-src 'self'; " + fa)
+                                                   "img-src 'self' data: https://t.me; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; " + fa)
     else:
-        resp.headers["Content-Security-Policy"] = "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; " + fa
+        resp.headers["Content-Security-Policy"] = "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'; " + fa
     if isinstance(resp, web.HTTPException) and resp.status >= 400:
         raise resp
     return resp
 
 
+_DUMMY_PW = "pbkdf2$00000000$" + "0" * 64
 _fails: dict[str, list[float]] = {}
 
 
 def too_many(ip):
     now = time.time()
     _fails[ip] = [t for t in _fails.get(ip, []) if now - t < 600]
-    return len(_fails[ip]) >= 8
+    if len(_fails) > 5000:                    # جلوگیری از رشد بی‌پایان حافظه
+        for k in [k for k, v in _fails.items() if not v or now - v[-1] > 600]:
+            _fails.pop(k, None)
+    return len(_fails.get(ip, [])) >= 8
+
+
+def client_ip(request, shop) -> str:
+    """آی‌پی کلاینت. فقط وقتی TRUST_PROXY=1 باشد X-Forwarded-For (آخرین مقدارِ افزوده‌شده توسط پروکسی) خوانده می‌شود."""
+    if shop.cfg.trust_proxy:
+        xf = request.headers.get("X-Forwarded-For", "")
+        if xf:
+            return xf.split(",")[-1].strip()[:64] or (request.remote or "?")
+    return request.remote or "?"
 
 
 # ---------------------------------------------------------------- زبان
@@ -142,7 +160,7 @@ async def login_get(request):
 
 async def login_post(request):
     shop: Shop = request.app["shop"]
-    ip = request.remote or "?"
+    ip = client_ip(request, shop)
     if too_many(ip):
         raise web.HTTPTooManyRequests(text=_("تلاش بیش از حد. ۱۰ دقیقه بعد دوباره امتحان کنید."))
     data = await request.post()
@@ -155,6 +173,8 @@ async def login_post(request):
         a = await shop.db.get_admin_by_web_user(u)
         if a and a["web_pw"] and check_pw(p, a["web_pw"]) and a["user_id"] in shop.admin_perms:
             uid = a["user_id"]
+        elif not a:
+            check_pw(p, _DUMMY_PW)      # زمان پاسخ برای کاربر ناموجود هم‌اندازه بماند
     if uid is None:
         _fails.setdefault(ip, []).append(time.time())
         await shop.db.log("web", "login_failed", ip)
@@ -248,6 +268,7 @@ def create_web_app(shop: Shop) -> web.Application:
     import web_force  # noqa: F401
     import web_group  # noqa: F401
     import web_marketing  # noqa: F401  (ثبت مسیرها)
+    import web_miniapp  # noqa: F401
     import web_shop  # noqa: F401
     import web_system  # noqa: F401
     import web_users  # noqa: F401

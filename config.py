@@ -24,6 +24,7 @@ class Config:
     toncenter_key: str = ""
     usdt_trc20_wallet: str = ""
     trongrid_key: str = ""
+    trust_proxy: bool = False       # فقط پشت nginx/Caddy: آی‌پی واقعی از X-Forwarded-For خوانده شود
 
     @property
     def cookie_secure(self) -> bool:
@@ -56,4 +57,5 @@ def load_config() -> Config:
         toncenter_key=os.getenv("TONCENTER_KEY", "").strip(),
         usdt_trc20_wallet=os.getenv("USDT_TRC20_WALLET", "").strip(),
         trongrid_key=os.getenv("TRONGRID_KEY", "").strip(),
+        trust_proxy=os.getenv("TRUST_PROXY", "").strip().lower() in ("1", "true", "yes"),
     )

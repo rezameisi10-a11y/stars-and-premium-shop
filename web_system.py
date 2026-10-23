@@ -555,6 +555,8 @@ async def backup_file(request):
 @post("/backup/import", "backup")
 async def backup_import(request):
     shop: Shop = request.app["shop"]
+    if not is_full(request):        # دیتابیس شامل جدول ادمین‌هاست؛ جایگزینی آن = ارتقای دسترسی
+        raise redirect("/backup", err=_("فقط مدیر کامل می‌تواند بکاپ را بازگردانی کند."))
     _cleanup_pending()
     d = await request.post()
     f = d.get("file")
@@ -588,10 +590,12 @@ async def backup_import(request):
 @post("/backup/apply", "backup")
 async def backup_apply(request):
     shop: Shop = request.app["shop"]
+    if not is_full(request):
+        raise redirect("/backup", err=_("فقط مدیر کامل می‌تواند بکاپ را بازگردانی کند."))
     d = await request.post()
     _cleanup_pending()
     item = PENDING.pop(str(d.get("token", "")), None)
-    if not item or not os.path.exists(item["path"]):
+    if not item or not os.path.exists(item["path"]) or item.get("uid") != request["uid"]:
         raise redirect("/backup", err=_("مهلت تأیید تمام شده؛ دوباره فایل را بارگذاری کنید."))
     with_env = "with_env" in d and is_full(request) and item["env"]
     try:

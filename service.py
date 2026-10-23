@@ -913,10 +913,25 @@ class Shop:
         await self.db.set_order_discount(oid, code.strip().upper(), new_amount)
         return True, tr("✅ کد تخفیف اعمال شد: {d} تومان کسر شد.", d=fmt(disc)), new_amount
 
+    async def discount_still_valid(self, oid) -> bool:
+        """کد تخفیف فقط هنگام «پرداخت» مصرف می‌شود؛ پس چند سفارش باز می‌توانند یک کد محدود را نگه دارند.
+        قبل از پرداخت دوباره بررسی می‌کنیم و اگر دیگر معتبر نبود، قیمت اصلی برمی‌گردد (False)."""
+        o = await self.db.get_order(oid)
+        if not o or not o.get("discount_code") or o["status"] != "pending_payment":
+            return True
+        base = o["orig_amount"] or o["amount"]
+        ok, _r, disc = await self.db.check_discount(o["discount_code"], o["user_id"], base, o["kind"], cost=o.get("cost") or 0)
+        if ok and base - disc == o["amount"]:
+            return True
+        await self.db.set_order_discount(oid, None, base)
+        return False
+
     # ---------- ساخت پرداخت ----------
     async def create_payment(self, method, user_id, amount, order_id=None, tr=None):
         """خروجی: (payment_id, متن راهنما، کیبورد). در صورت مشکل ValueError با پیام (به زبان کاربر)."""
         tr = tr or await self.tr_for(user_id)
+        if order_id and not await self.discount_still_valid(order_id):
+            raise ValueError(tr("کد تخفیف دیگر معتبر نیست؛ قیمت اصلی اعمال شد. دوباره روش پرداخت را انتخاب کنید."))
         s = await self.settings()
         if method == "card":
             if not s["card_number"]:
@@ -1021,6 +1036,8 @@ class Shop:
     async def pay_with_wallet(self, oid, user_id) -> bool:
         o = await self.db.get_order(oid)
         if not o or o["user_id"] != user_id or o["status"] != "pending_payment":
+            return False
+        if not await self.discount_still_valid(oid):
             return False
         if not await self.db.deduct_balance(user_id, o["amount"], f"order:{oid}"):
             return False

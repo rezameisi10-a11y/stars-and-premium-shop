@@ -105,14 +105,17 @@ def extract_upload(data: bytes):
             raise ValueError("shop.db is not inside the zip")
         if z.getinfo(dbn).file_size > MAX_DB_BYTES:
             raise ValueError("database is too large")
-        db = z.read(dbn)
+        with z.open(dbn) as zf:           # خواندن محدود: سربرگ zip می‌تواند دروغ بگوید (zip bomb)
+            db = zf.read(MAX_DB_BYTES + 1)
         en = _pick(names, {"env", ".env"})
         if en and z.getinfo(en).file_size < 100_000:
-            env = z.read(en).decode("utf-8", "replace")
+            with z.open(en) as zf:
+                env = zf.read(100_001).decode("utf-8", "replace")[:100_000]
         mn = _pick(names, {"meta.json"})
-        if mn:
+        if mn and z.getinfo(mn).file_size < 100_000:
             try:
-                meta = json.loads(z.read(mn))
+                with z.open(mn) as zf:
+                    meta = json.loads(zf.read(100_001))
             except ValueError:
                 meta = None
     elif data[:2] == b"\x1f\x8b":
