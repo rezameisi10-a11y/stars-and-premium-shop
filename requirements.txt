@@ -3,3 +3,4 @@ aiohttp>=3.9
 aiosqlite>=0.20
 python-dotenv>=1.0
 pytoniq-core>=0.1.40
+segno>=1.6

@@ -44,7 +44,7 @@ def home_kb(shop: Shop, uid: int):
     add(("🏷 کدهای تخفیف", "adm:disc", c("discounts")), ("📢 پیام همگانی", "adm:bcast", c("broadcast")))
     add(("🌐 زبان‌ها", "adm:langs", c("languages")), ("👮 ادمین‌ها", "adm:admins", c("admins")))
     add(("⭐ موجودی ستاره ربات", "adm:stars", c("stars")), ("💾 بکاپ / وارد کردن", "adm:backup", c("backup")))
-    add(("🖥 پنل وب", "adm:web", True))
+    add(("🛡 فروش VPN", "adm:vpn", c("vpn")), ("🖥 پنل وب", "adm:web", True))
     rows.append([btn("🔙 منوی کاربر", "menu", role="back")])
     return ikb(rows)
 

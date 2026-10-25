@@ -228,13 +228,19 @@ async def dashboard(request):
     if shop.s.get("prov_balance_url"):
         from provider import fmt_balance
         prov = f"<div class='stat pri'><small>{e(_('موجودی سرویس‌دهنده'))}</small><b>{e(fmt_balance(shop.provider_balance))}</b><small>{e(_('تحویل خودکار'))}</small></div>"
+    vpn_card = ""
+    if can(request, "vpn"):
+        vst = await shop.db.vpn_stats()
+        if vst["total"]:
+            vpn_card = (f"<div class='stat pri'><small>🛡 {e(_('فروش VPN'))}</small><b>{fmt(vst['active'])}</b>"
+                        f"<small>{e(_('فعال'))} · <a href='/vpn/services'>{e(_('بررسی'))} ←</a></small></div>")
     cards = (f"<div class='grid g4'>"
              f"<div class='stat'><small>{e(_('کل کاربران'))}</small><b>{fmt(st['users'])}</b><small>{e(_('امروز'))} +{st['new_today']}</small></div>"
              f"<div class='stat ok'><small>{e(_('درآمد کل'))}</small><b>{fmt(st['revenue'])}</b><small>{e(_('تومان'))} · {fmt(st['done'])} {e(_('سفارش'))}</small></div>"
              f"<div class='stat ok'><small>{e(_('سود ثبت‌شده'))}</small><b>{fmt(st['profit'])}</b><small>{e(_('امروز'))}: {fmt(st['today_profit'])}</small></div>"
              f"<div class='stat pri'><small>{e(_('فروش امروز'))}</small><b>{fmt(st['today_revenue'])}</b><small>{st['today_orders']} {e(_('سفارش'))}</small></div>"
              f"<div class='stat warn'><small>⭐ {e(_('موجودی ستاره ربات'))}</small><b>{bal if bal is not None else '—'}</b><small>{e(_('برای پریمیوم و گیفت'))}</small></div>"
-             f"{prov}"
+             f"{prov}{vpn_card}"
              f"<div class='stat'><small>💵 {e(_('دلار'))} {src[snap['usd']['source']][0]}</small><b>{fmt(snap['usd']['value'])}</b><small>{e(src[snap['usd']['source']][1])}</small></div>"
              f"<div class='stat'><small>💎 {e(_('تون'))} {src[snap['ton']['source']][0]}</small><b>{fmt(snap['ton']['value'])}</b><small>{e(src[snap['ton']['source']][1])}</small></div>"
              f"<div class='stat err'><small>{e(_('در صف تحویل / خطا'))}</small><b>{st['todo']}</b><a href='/orders?status=manual_pending'>{e(_('بررسی'))} ←</a></div>"
@@ -272,6 +278,7 @@ def create_web_app(shop: Shop) -> web.Application:
     import web_shop  # noqa: F401
     import web_system  # noqa: F401
     import web_users  # noqa: F401
+    import web_vpn  # noqa: F401
     import miniapp
     app = web.Application(middlewares=[security], client_max_size=MAX_UPLOAD + 1024 * 1024)
     app["shop"] = shop

@@ -799,7 +799,7 @@
  },
  {
   "key": "oadm:retry",
-  "text": "🔁 تلاش مجدد",
+  "text": "🔁 تلاش مجدد ساخت سرویس",
   "dyn": false,
   "scope": "admin"
  },

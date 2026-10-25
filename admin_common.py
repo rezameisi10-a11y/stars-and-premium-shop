@@ -79,7 +79,7 @@ PERM_MAP = [
     ("adm:admins", "admins"), ("adm:aadd", "admins"), ("adm:arm:", "admins"), ("adm:ap:", "admins"), ("adm:apre:", "admins"),
     ("adm:an:", "admins"), ("adm:aw:", "admins"), ("adm:ad:", "admins"),
     ("adm:stars", "stars"), ("adm:stopup", "stars"), ("adm:grp:", "settings"),
-    ("adm:backup", "backup"), ("adm:restore", "backup"),
+    ("adm:backup", "backup"), ("adm:restore", "backup"), ("adm:vpn", "vpn"),
     ("adm:langs", "languages"), ("adm:lg:", "languages"), ("adm:lnew", "languages"), ("adm:lt:", "languages"),
 ]
 _PERM_SORTED = sorted(PERM_MAP, key=lambda x: -len(x[0]))

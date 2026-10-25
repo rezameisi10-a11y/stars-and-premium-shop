@@ -3,7 +3,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY *.py miniapp.html ./
-COPY *.json VERSION ./
+COPY button_catalog.json VERSION ./
+COPY locales ./locales
 RUN mkdir -p /app/data
 VOLUME /app/data
 EXPOSE 8080

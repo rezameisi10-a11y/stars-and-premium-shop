@@ -231,7 +231,8 @@ def order_text(o, tr, title, shop=None) -> str:
     disc = ""
     if o.get("discount_code") and o.get("orig_amount") and o["orig_amount"] != o["amount"]:
         disc = "\n" + tr("قیمت اصلی: {orig} | کد {code}", orig=f"<s>{fmt(o['orig_amount'])}</s>", code=esc(o["discount_code"]))
-    return (tr("🧾 سفارش #{oid}", oid=o["id"]) + f"\n{esc(title)}\n" + tr("گیرنده: {who}", who=who) + f"{disc}\n"
+    who_line = "" if o["kind"] == "vpn" else tr("گیرنده: {who}", who=who)
+    return (tr("🧾 سفارش #{oid}", oid=o["id"]) + f"\n{esc(title)}\n" + who_line + f"{disc}\n"
             + tr("مبلغ: {amount}", amount=f"<b>{shop.money(o['amount'], tr) if shop else fmt(o['amount'])}</b>")
             + (("\n" + shop.crypto_line(o["amount"])) if shop and shop.crypto_line(o["amount"]) else "")
             + "\n\n" + tr("روش پرداخت را انتخاب کنید:"))

@@ -413,6 +413,7 @@ NAV = [
     ("/rates", N_("نرخ‌ها و سود"), "💹", "pricing"),
     ("/stars", N_("ستاره و تحویل خودکار"), "⭐", "stars"),
     ("/marketapp", N_("Marketapp (Fragment)"), "🛰", "pricing"),
+    ("/vpn", N_("فروش VPN"), "🛡", "vpn"),
     ("/discounts", N_("کدهای تخفیف"), "🏷", "discounts"),
     ("/broadcast", N_("پیام همگانی"), "📢", "broadcast"),
     ("/keyboard", N_("دکمه‌ها، رنگ و ایموجی"), "🎨", "buttons"),

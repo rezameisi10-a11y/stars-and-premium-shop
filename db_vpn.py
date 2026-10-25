@@ -1,0 +1,194 @@
+"""دیتابیس بخش فروش VPN: پنل‌ها، پلن‌ها، بسته‌های افزودنی (حجم/زمان) و سرویس‌های کاربران. (mixin کلاس DB)"""
+import json
+import time
+
+VPN_SCHEMA = """
+CREATE TABLE IF NOT EXISTS vpn_panels(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, type TEXT NOT NULL, url TEXT NOT NULL DEFAULT '',
+  username TEXT NOT NULL DEFAULT '', password TEXT NOT NULL DEFAULT '', token TEXT NOT NULL DEFAULT '',
+  sub_url TEXT NOT NULL DEFAULT '', inbound_ids TEXT NOT NULL DEFAULT '', extra TEXT NOT NULL DEFAULT '{}',
+  capacity INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 1, sort INTEGER NOT NULL DEFAULT 100,
+  note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS vpn_plans(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, panel_id INTEGER NOT NULL,
+  days INTEGER NOT NULL DEFAULT 30, gb REAL NOT NULL DEFAULT 0, price INTEGER NOT NULL DEFAULT 0, cost INTEGER NOT NULL DEFAULT 0,
+  ip_limit INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, sort INTEGER NOT NULL DEFAULT 100, note TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS vpn_addons(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, gb REAL NOT NULL DEFAULT 0, days INTEGER NOT NULL DEFAULT 0,
+  price INTEGER NOT NULL DEFAULT 0, cost INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, sort INTEGER NOT NULL DEFAULT 100);
+CREATE TABLE IF NOT EXISTS vpn_services(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, panel_id INTEGER NOT NULL, plan_id INTEGER,
+  name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', expires_at INTEGER NOT NULL DEFAULT 0,
+  total_bytes INTEGER NOT NULL DEFAULT 0, used_bytes INTEGER NOT NULL DEFAULT 0, sub_url TEXT NOT NULL DEFAULT '',
+  links TEXT NOT NULL DEFAULT '[]', meta TEXT NOT NULL DEFAULT '{}', order_id INTEGER, is_test INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL DEFAULT '', notified TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, last_sync INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS ix_vpns_user ON vpn_services(user_id);
+CREATE INDEX IF NOT EXISTS ix_vpns_status ON vpn_services(status);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_vpns_order ON vpn_services(order_id) WHERE order_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_vpns_name ON vpn_services(panel_id, name) WHERE status != 'deleted';
+"""
+
+PANEL_FIELDS = {"name", "type", "url", "username", "password", "token", "sub_url", "inbound_ids", "extra", "capacity", "enabled", "sort", "note"}
+PLAN_FIELDS = {"title", "panel_id", "days", "gb", "price", "cost", "ip_limit", "active", "sort", "note"}
+ADDON_FIELDS = {"title", "gb", "days", "price", "cost", "active", "sort"}
+SERVICE_FIELDS = {"panel_id", "plan_id", "name", "status", "expires_at", "total_bytes", "used_bytes", "sub_url", "links", "meta", "title",
+                  "notified", "note", "last_sync", "user_id", "is_test"}
+LIVE = ("active", "disabled", "limited", "expired", "on_hold", "pending_manual")
+
+
+class VpnDB:
+    # ---------- پنل‌ها
+    async def add_vpn_panel(self, **f) -> int:
+        f = {k: v for k, v in f.items() if k in PANEL_FIELDS}
+        f.setdefault("extra", "{}")
+        cur = await self.run(f"INSERT INTO vpn_panels({','.join(f)},created_at) VALUES({','.join('?' * len(f))},?)", (*f.values(), int(time.time())))
+        return cur.lastrowid
+
+    async def get_vpn_panel(self, pid):
+        return await self.one("SELECT * FROM vpn_panels WHERE id=?", (pid,))
+
+    async def list_vpn_panels(self, only_enabled=False):
+        w = " WHERE enabled=1" if only_enabled else ""
+        return await self.all(f"SELECT p.*, (SELECT COUNT(*) FROM vpn_services s WHERE s.panel_id=p.id AND s.status!='deleted') AS n_services "
+                              f"FROM vpn_panels p{w} ORDER BY sort, id")
+
+    async def update_vpn_panel(self, pid, **f):
+        f = {k: v for k, v in f.items() if k in PANEL_FIELDS}
+        if f:
+            await self.run(f"UPDATE vpn_panels SET {','.join(k + '=?' for k in f)} WHERE id=?", (*f.values(), pid))
+
+    async def delete_vpn_panel(self, pid) -> bool:
+        """پنلِ دارای سرویس حذف نمی‌شود (ادمین می‌تواند غیرفعالش کند)."""
+        if (await self.one("SELECT COUNT(*) c FROM vpn_services WHERE panel_id=? AND status!='deleted'", (pid,)))["c"]:
+            return False
+        await self.run("DELETE FROM vpn_plans WHERE panel_id=?", (pid,))
+        await self.run("DELETE FROM vpn_panels WHERE id=?", (pid,))
+        return True
+
+    async def panel_load(self, pid) -> int:
+        return (await self.one("SELECT COUNT(*) c FROM vpn_services WHERE panel_id=? AND status NOT IN ('deleted','expired')", (pid,)))["c"]
+
+    # ---------- پلن‌ها
+    async def add_vpn_plan(self, **f) -> int:
+        f = {k: v for k, v in f.items() if k in PLAN_FIELDS}
+        cur = await self.run(f"INSERT INTO vpn_plans({','.join(f)}) VALUES({','.join('?' * len(f))})", tuple(f.values()))
+        return cur.lastrowid
+
+    async def get_vpn_plan(self, pid):
+        return await self.one("SELECT * FROM vpn_plans WHERE id=?", (pid,))
+
+    async def list_vpn_plans(self, active_only=False, panel_id=None):
+        w, a = [], []
+        if active_only:
+            w.append("p.active=1 AND n.enabled=1")
+        if panel_id:
+            w.append("p.panel_id=?")
+            a.append(panel_id)
+        return await self.all("SELECT p.*, n.name AS panel_name, n.type AS panel_type FROM vpn_plans p JOIN vpn_panels n ON n.id=p.panel_id"
+                              + (" WHERE " + " AND ".join(w) if w else "") + " ORDER BY p.sort, p.price, p.id", tuple(a))
+
+    async def update_vpn_plan(self, pid, **f):
+        f = {k: v for k, v in f.items() if k in PLAN_FIELDS}
+        if f:
+            await self.run(f"UPDATE vpn_plans SET {','.join(k + '=?' for k in f)} WHERE id=?", (*f.values(), pid))
+
+    async def delete_vpn_plan(self, pid):
+        await self.run("DELETE FROM vpn_plans WHERE id=?", (pid,))
+
+    # ---------- بسته‌های افزودنی
+    async def add_vpn_addon(self, **f) -> int:
+        f = {k: v for k, v in f.items() if k in ADDON_FIELDS}
+        cur = await self.run(f"INSERT INTO vpn_addons({','.join(f)}) VALUES({','.join('?' * len(f))})", tuple(f.values()))
+        return cur.lastrowid
+
+    async def get_vpn_addon(self, aid):
+        return await self.one("SELECT * FROM vpn_addons WHERE id=?", (aid,))
+
+    async def list_vpn_addons(self, active_only=False):
+        return await self.all("SELECT * FROM vpn_addons" + (" WHERE active=1" if active_only else "") + " ORDER BY sort, price, id")
+
+    async def update_vpn_addon(self, aid, **f):
+        f = {k: v for k, v in f.items() if k in ADDON_FIELDS}
+        if f:
+            await self.run(f"UPDATE vpn_addons SET {','.join(k + '=?' for k in f)} WHERE id=?", (*f.values(), aid))
+
+    async def delete_vpn_addon(self, aid):
+        await self.run("DELETE FROM vpn_addons WHERE id=?", (aid,))
+
+    # ---------- سرویس‌ها
+    async def add_vpn_service(self, **f) -> int:
+        now = int(time.time())
+        f = {k: v for k, v in f.items() if k in SERVICE_FIELDS | {"order_id"}}
+        for k in ("links", "meta"):
+            if k in f and not isinstance(f[k], str):
+                f[k] = json.dumps(f[k], ensure_ascii=False)
+        f["created_at"] = f["updated_at"] = now
+        cur = await self.run(f"INSERT INTO vpn_services({','.join(f)}) VALUES({','.join('?' * len(f))})", tuple(f.values()))
+        return cur.lastrowid
+
+    async def get_vpn_service(self, sid):
+        return await self.one("SELECT s.*, p.name AS panel_name, p.type AS panel_type FROM vpn_services s LEFT JOIN vpn_panels p ON p.id=s.panel_id WHERE s.id=?", (sid,))
+
+    async def vpn_service_by_order(self, oid):
+        return await self.one("SELECT * FROM vpn_services WHERE order_id=?", (oid,))
+
+    async def update_vpn_service(self, sid, **f):
+        f = {k: v for k, v in f.items() if k in SERVICE_FIELDS}
+        for k in ("links", "meta"):
+            if k in f and not isinstance(f[k], str):
+                f[k] = json.dumps(f[k], ensure_ascii=False)
+        if f:
+            f["updated_at"] = int(time.time())
+            await self.run(f"UPDATE vpn_services SET {','.join(k + '=?' for k in f)} WHERE id=?", (*f.values(), sid))
+
+    def _svc_where(self, user_id=None, status=None, q="", panel_id=None, include_deleted=False):
+        w, a = [], []
+        if user_id is not None:
+            w.append("s.user_id=?")
+            a.append(user_id)
+        if status == "live":
+            w.append("s.status IN ('active','disabled','limited','expired','on_hold','pending_manual')")
+        elif status:
+            w.append("s.status=?")
+            a.append(status)
+        elif not include_deleted:
+            w.append("s.status!='deleted'")
+        if panel_id:
+            w.append("s.panel_id=?")
+            a.append(panel_id)
+        if q:
+            qq = f"%{q.strip().lstrip('@')}%"
+            w.append("(s.name LIKE ? OR CAST(s.user_id AS TEXT) LIKE ? OR CAST(s.id AS TEXT)=? OR EXISTS(SELECT 1 FROM users u WHERE u.id=s.user_id AND u.username LIKE ?))")
+            a += [qq, qq, q.strip(), qq]
+        return (" WHERE " + " AND ".join(w)) if w else "", tuple(a)
+
+    async def list_vpn_services(self, user_id=None, status=None, q="", panel_id=None, limit=50, offset=0):
+        w, a = self._svc_where(user_id, status, q, panel_id)
+        return await self.all("SELECT s.*, p.name AS panel_name, p.type AS panel_type FROM vpn_services s LEFT JOIN vpn_panels p ON p.id=s.panel_id"
+                              f"{w} ORDER BY s.id DESC LIMIT ? OFFSET ?", (*a, limit, offset))
+
+    async def count_vpn_services(self, user_id=None, status=None, q="", panel_id=None):
+        w, a = self._svc_where(user_id, status, q, panel_id)
+        return (await self.one(f"SELECT COUNT(*) c FROM vpn_services s{w}", a))["c"]
+
+    async def vpn_has_test(self, user_id) -> bool:
+        return bool(await self.one("SELECT 1 x FROM vpn_services WHERE user_id=? AND is_test=1", (user_id,)))
+
+    async def vpn_syncable(self, older_than: int, limit=200):
+        """سرویس‌های زنده‌ای که مدتی است با پنل همگام نشده‌اند."""
+        return await self.all("SELECT * FROM vpn_services WHERE status IN ('active','disabled','limited','on_hold','expired') AND last_sync<? "
+                              "ORDER BY last_sync LIMIT ?", (older_than, limit))
+
+    async def vpn_stats(self) -> dict:
+        r = await self.one("SELECT COUNT(*) total, COALESCE(SUM(status='active'),0) active, COALESCE(SUM(status='expired'),0) expired, "
+                           "COALESCE(SUM(is_test),0) tests FROM vpn_services WHERE status!='deleted'")
+        rev = await self.one("SELECT COUNT(*) n, COALESCE(SUM(amount),0) revenue, COALESCE(SUM(amount-cost),0) profit FROM orders WHERE kind='vpn' AND status='done'")
+        return {**dict(r), "orders": rev["n"], "revenue": rev["revenue"], "profit": rev["profit"]}
+
+    async def create_vpn_order(self, user_id, title, days, ref, amount, cost=0) -> int:
+        now = int(time.time())
+        cur = await self.run(
+            "INSERT INTO orders(user_id,product_id,kind,title,qty,ref,target_id,target_username,amount,orig_amount,cost,created_at,updated_at) "
+            "VALUES(?,NULL,'vpn',?,?,?,?,NULL,?,?,?,?,?)", (user_id, title, days, ref, user_id, amount, amount, cost, now, now))
+        return cur.lastrowid

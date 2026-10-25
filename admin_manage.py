@@ -17,7 +17,7 @@ from ui import btn, esc, fmt, ikb
 
 router = make_router()
 RTL_CODES = {"ar", "fa", "he", "ur", "ps", "ku", "sd", "yi", "dv"}
-KIND_NAMES = {"stars": "استارز", "premium": "پریمیوم", "gift": "گیفت"}
+KIND_NAMES = {"stars": "استارز", "premium": "پریمیوم", "gift": "گیفت", "vpn": "VPN"}
 
 
 def human_left(ts) -> str:
@@ -219,7 +219,7 @@ def _p_applies(t):
     if t in ("all", "همه", ""):
         return True, "all"
     parts = [p for p in t.split(",") if p]
-    return (True, ",".join(parts)) if parts and all(p in KIND_NAMES for p in parts) else (False, "مقدار all یا ترکیبی از stars,premium,gift")
+    return (True, ",".join(parts)) if parts and all(p in KIND_NAMES for p in parts) else (False, "مقدار all یا ترکیبی از stars,premium,gift,vpn")
 
 
 def _p_yes(t):
@@ -244,7 +244,7 @@ WIZ = [
     ("per_user", "۶/۱۰ — هر کاربر چندبار می‌تواند استفاده کند؟ (<code>0</code> = نامحدود)", _p_int, 1, False),
     ("min_amount", "۷/۱۰ — حداقل مبلغ سفارش به تومان (<code>0</code> = بدون حداقل)", _p_int, 0, False),
     ("cap", "۸/۱۰ — سقف مبلغ تخفیف به تومان برای تخفیف درصدی (<code>0</code> = بدون سقف)", _p_int, 0, False),
-    ("applies", "۹/۱۰ — برای کدام محصولات؟ <code>all</code> یا ترکیبی از <code>stars,premium,gift</code>", _p_applies, "all", False),
+    ("applies", "۹/۱۰ — برای کدام محصولات؟ <code>all</code> یا ترکیبی از <code>stars,premium,gift,vpn</code>", _p_applies, "all", False),
     ("first_only", "۱۰/۱۰ — فقط برای اولین خرید کاربر؟ <code>yes</code> یا <code>no</code>", _p_yes, 0, False),
     ("note", "یادداشت داخلی (اختیاری؛ «-» = بدون یادداشت)", _p_note, "", False),
 ]

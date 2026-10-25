@@ -22,6 +22,8 @@ import miniapp_ui
 from i18n import CATALOG, SRC_LANG
 from service import KIND_FA, METHOD_FA, PAY_STATUS_FA, STATUS_FA, Shop, normalize_url
 from ui import fmt
+from vpn_service import STATUS_FA as VPN_STATUS_FA
+from vpn_service import VpnError, bar, days_left, fmt_gb
 from webkit import set_session
 
 log = logging.getLogger("miniapp")
@@ -137,7 +139,7 @@ def _money(ctx: Ctx, amount) -> dict:
 
 
 def _order_dict(ctx: Ctx, o: dict) -> dict:
-    who = ("@" + o["target_username"]) if o["target_username"] else (str(o["target_id"]) if o["target_id"] else "")
+    who = "" if o["kind"] == "vpn" else ("@" + o["target_username"]) if o["target_username"] else (str(o["target_id"]) if o["target_id"] else "")
     disc = bool(o.get("discount_code") and o.get("orig_amount") and o["orig_amount"] != o["amount"])
     return {"id": o["id"], "kind": o["kind"], "title": _otitle(ctx, o), "target": who, "status": o["status"],
             "status_text": ctx.tr(STATUS_FA.get(o["status"], o["status"])), "created_at": o["created_at"],
@@ -188,6 +190,8 @@ async def a_init(ctx: Ctx, d: dict) -> dict:
     for k in ("stars", "premium", "gift"):
         if await shop.db.list_products(k):
             kinds.append(k)
+    vpn_on = shop.vpn.enabled() and bool(await shop.db.list_vpn_plans(active_only=True))
+    vpn_n = await shop.db.count_vpn_services(user_id=ctx.uid) if shop.vpn.enabled() else 0
     support = s["support_username"].lstrip("@")
     ui = {k: ctx.tr(k) for k in ui_strings()}
     mui = miniapp_ui.load(s)
@@ -206,6 +210,7 @@ async def a_init(ctx: Ctx, d: dict) -> dict:
         "texts": {"welcome": (mui.get("welcome") or {}).get("t") or shop.text("welcome_text", ctx.lang), "rules": shop.text("rules_text", ctx.lang),
                   "support": shop.text("support_text", ctx.lang)},
         "support": support, "items": items, "bot": shop.bot_username,
+        "vpn": {"on": vpn_on, "mine": vpn_n, "test": await shop.vpn.can_test(ctx.uid)},
         "limits": {"min_topup": int(float(s["min_topup"])), "max_topup": int(float(s["max_topup"]))},
         "pay_step": s.get("pay_step", "1") == "1",
         "methods": [m["id"] for m in await _pay_methods(ctx)],
@@ -221,7 +226,7 @@ def tg_name(tg: dict) -> str:
 
 async def a_catalog(ctx: Ctx, d: dict) -> dict:
     kind = d.get("kind")
-    if kind not in KIND_FA:
+    if kind not in ("stars", "premium", "gift"):
         raise ApiError("bad kind")
     shop = ctx.shop
     u = await shop.db.get_user(ctx.uid)
@@ -306,7 +311,7 @@ async def a_pay(ctx: Ctx, d: dict) -> dict:
     if method == "wallet":
         if not await shop.pay_with_wallet(order["id"], ctx.uid):
             raise ApiError(ctx.tr("موجودی کیف پول کافی نیست."))
-        return {"done": True, "message": ctx.tr("✅ پرداخت از کیف پول انجام شد؛ سفارش #{oid} در حال تحویل است.", oid=order["id"])}
+        return {"done": True, "kind": order["kind"], "message": ctx.tr("✅ پرداخت از کیف پول انجام شد؛ سفارش #{oid} در حال تحویل است.", oid=order["id"])}
     try:
         pid, _text, kb = await shop.create_payment(method, ctx.uid, amount, order["id"] if order else None, ctx.tr)
     except ValueError as e:
@@ -390,7 +395,144 @@ async def a_set_lang(ctx: Ctx, d: dict) -> dict:
     return {"ok": True}
 
 
-ACTIONS = {"init": a_init, "catalog": a_catalog, "order_create": a_order_create, "order_get": a_order_get, "discount": a_discount,
+# ======================================================================= VPN
+def _vpn_err(ctx: Ctx, e: VpnError) -> ApiError:
+    return ApiError(ctx.tr(str(e)))
+
+
+def _plan_dict(ctx: Ctx, p: dict) -> dict:
+    return {"id": p["id"], "title": p["title"], "days": p["days"], "gb": p["gb"], "panel": p.get("panel_name", ""), "panel_id": p["panel_id"],
+            "price": _money(ctx, p["user_price"]), "note": p.get("note") or ""}
+
+
+def _svc_dict(ctx: Ctx, sv: dict, full=False) -> dict:
+    left = days_left(sv["expires_at"])
+    out = {"id": sv["id"], "name": sv["name"], "title": sv["title"] or "", "status": sv["status"], "status_text": ctx.tr(VPN_STATUS_FA.get(sv["status"], sv["status"])),
+           "used": sv["used_bytes"], "total": sv["total_bytes"], "used_text": fmt_gb(sv["used_bytes"]), "total_text": fmt_gb(sv["total_bytes"]) if sv["total_bytes"] else "",
+           "percent": min(100, int(sv["used_bytes"] * 100 / sv["total_bytes"])) if sv["total_bytes"] else 0, "days_left": left,
+           "expires_at": sv["expires_at"], "is_test": bool(sv["is_test"]), "panel_id": sv["panel_id"], "pending": sv["status"] == "pending_manual"}
+    if full:
+        out.update(sub_url=sv["sub_url"], links=json.loads(sv["links"] or "[]")[:6], help=(ctx.shop.s.get("vpn_help_text") or "").strip(),
+                   can_addon=ctx.shop.s.get("vpn_allow_addon", "1") == "1" and not sv["is_test"], can_revoke=ctx.shop.s.get("vpn_allow_revoke", "1") == "1" and bool(sv["sub_url"]),
+                   can_renew=not sv["is_test"] and sv["status"] != "pending_manual")
+    return out
+
+
+async def _own_svc(ctx: Ctx, sid) -> dict:
+    sv = await ctx.shop.db.get_vpn_service(int(sid or 0))
+    if not sv or sv["user_id"] != ctx.uid or sv["status"] == "deleted":
+        raise ApiError(ctx.tr("سرویس پیدا نشد."), 404)
+    return sv
+
+
+async def a_vpn_plans(ctx: Ctx, d: dict) -> dict:
+    shop = ctx.shop
+    if not shop.vpn.enabled():
+        raise ApiError(ctx.tr("فروش VPN فعال نیست."), 403)
+    u = await shop.db.get_user(ctx.uid)
+    plans = await shop.vpn.plans_for(u)
+    return {"plans": [_plan_dict(ctx, p) for p in plans], "test": await shop.vpn.can_test(ctx.uid), "ask_name": (shop.s.get("vpn_name_mode") or "random") == "ask",
+            "discount": (u or {}).get("personal_discount") or 0}
+
+
+async def a_vpn_order(ctx: Ctx, d: dict) -> dict:
+    try:
+        oid = await ctx.shop.vpn.create_order(ctx.uid, int(d.get("plan_id") or 0), str(d.get("name") or "").strip().lower() or None)
+    except VpnError as e:
+        raise _vpn_err(ctx, e)
+    return await a_order_get(ctx, {"order_id": oid})
+
+
+async def a_vpn_test(ctx: Ctx, d: dict) -> dict:
+    try:
+        sid = await ctx.shop.vpn.create_test(ctx.uid)
+    except VpnError as e:
+        raise _vpn_err(ctx, e)
+    sv = await ctx.shop.db.get_vpn_service(sid)
+    try:
+        await ctx.shop.vpn.send_service(ctx.uid, sv, new=True)
+    except Exception:  # noqa: BLE001
+        pass
+    return {"id": sid}
+
+
+async def a_vpn_services(ctx: Ctx, d: dict) -> dict:
+    rows = await ctx.shop.db.list_vpn_services(user_id=ctx.uid, limit=50)
+    return {"services": [_svc_dict(ctx, r) for r in rows], "test": await ctx.shop.vpn.can_test(ctx.uid)}
+
+
+async def a_vpn_service(ctx: Ctx, d: dict) -> dict:
+    sv = await _own_svc(ctx, d.get("id"))
+    if d.get("refresh") or time.time() - (sv["last_sync"] or 0) > 60:
+        try:
+            sv = await ctx.shop.vpn.sync(sv, force=bool(d.get("refresh")))
+        except Exception:  # noqa: BLE001
+            if d.get("refresh"):
+                raise ApiError(ctx.tr("ارتباط با سرور برقرار نشد؛ کمی بعد دوباره تلاش کنید."))
+    out = _svc_dict(ctx, sv, full=True)
+    data = sv["sub_url"] or (out["links"][0] if out["links"] else "")
+    png = ctx.shop.vpn.qr_png(data) if data else None
+    out["qr"] = "data:image/png;base64," + base64.b64encode(png).decode() if png else ""
+    return out
+
+
+async def a_vpn_renew_plans(ctx: Ctx, d: dict) -> dict:
+    sv = await _own_svc(ctx, d.get("id"))
+    u = await ctx.shop.db.get_user(ctx.uid)
+    plans = [p for p in await ctx.shop.vpn.plans_for(u) if p["panel_id"] == sv["panel_id"]]
+    return {"service": _svc_dict(ctx, sv), "plans": [_plan_dict(ctx, p) for p in plans]}
+
+
+async def a_vpn_renew(ctx: Ctx, d: dict) -> dict:
+    try:
+        oid = await ctx.shop.vpn.renew_order(ctx.uid, int(d.get("id") or 0), int(d.get("plan_id") or 0))
+    except VpnError as e:
+        raise _vpn_err(ctx, e)
+    return await a_order_get(ctx, {"order_id": oid})
+
+
+async def a_vpn_addons(ctx: Ctx, d: dict) -> dict:
+    sv = await _own_svc(ctx, d.get("id"))
+    shop = ctx.shop
+    if shop.s.get("vpn_allow_addon", "1") != "1":
+        raise ApiError(ctx.tr("خرید بسته‌ی اضافه فعال نیست."))
+    u = await shop.db.get_user(ctx.uid)
+    return {"service": _svc_dict(ctx, sv), "addons": [{"id": a["id"], "title": a["title"], "gb": a["gb"], "days": a["days"], "price": _money(ctx, shop._personal(a["price"], u))}
+                                                     for a in await shop.db.list_vpn_addons(active_only=True)]}
+
+
+async def a_vpn_addon(ctx: Ctx, d: dict) -> dict:
+    try:
+        oid = await ctx.shop.vpn.addon_order(ctx.uid, int(d.get("id") or 0), int(d.get("addon_id") or 0))
+    except VpnError as e:
+        raise _vpn_err(ctx, e)
+    return await a_order_get(ctx, {"order_id": oid})
+
+
+async def a_vpn_revoke(ctx: Ctx, d: dict) -> dict:
+    sv = await _own_svc(ctx, d.get("id"))
+    if ctx.shop.s.get("vpn_allow_revoke", "1") != "1":
+        raise ApiError(ctx.tr("این قابلیت غیرفعال است."), 403)
+    ok, _m = await ctx.shop.vpn.admin_action(sv["id"], "revoke", actor=f"user:{ctx.uid}")
+    if not ok:
+        raise ApiError(ctx.tr("انجام نشد؛ بعداً دوباره تلاش کنید."))
+    return await a_vpn_service(ctx, {"id": sv["id"]})
+
+
+async def a_vpn_send(ctx: Ctx, d: dict) -> dict:
+    """ارسال سرویس (لینک و QR) به چت ربات کاربر."""
+    sv = await _own_svc(ctx, d.get("id"))
+    if sv["status"] == "pending_manual":
+        raise ApiError(ctx.tr("سرویس شما پس از آماده‌سازی توسط پشتیبانی ارسال می‌شود."))
+    await ctx.shop.vpn.send_service(ctx.uid, sv, new=False)
+    await ctx.shop.vpn.send_qr(ctx.uid, sv)
+    return {"ok": True, "message": ctx.tr("در چت ربات ارسال شد.")}
+
+
+ACTIONS = {"vpn_plans": a_vpn_plans, "vpn_order": a_vpn_order, "vpn_test": a_vpn_test, "vpn_services": a_vpn_services, "vpn_service": a_vpn_service,
+           "vpn_renew_plans": a_vpn_renew_plans, "vpn_renew": a_vpn_renew, "vpn_addons": a_vpn_addons, "vpn_addon": a_vpn_addon,
+           "vpn_revoke": a_vpn_revoke, "vpn_send": a_vpn_send,
+           "init": a_init, "catalog": a_catalog, "order_create": a_order_create, "order_get": a_order_get, "discount": a_discount,
            "pay": a_pay, "receipt": a_receipt, "check": a_check, "wallet": a_wallet, "orders": a_orders,
            "referral": a_referral, "set_lang": a_set_lang}
 

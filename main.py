@@ -10,9 +10,11 @@ from aiohttp import web
 
 import admin_manage
 import admin_settings
+import admin_vpn
 import handlers_admin
 import handlers_group
 import handlers_user
+import handlers_vpn
 import ui
 from config import load_config
 from db import DB
@@ -42,7 +44,9 @@ async def main() -> int:
     dp.include_router(handlers_admin.router)
     dp.include_router(admin_settings.router)
     dp.include_router(admin_manage.router)
+    dp.include_router(admin_vpn.router)
     dp.include_router(handlers_user.router)
+    dp.include_router(handlers_vpn.router)
 
     runner = web.AppRunner(create_web_app(shop))
     await runner.setup()

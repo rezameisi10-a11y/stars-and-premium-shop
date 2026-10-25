@@ -360,7 +360,7 @@ async def orders_list(request):
                 if a == "retry" and o["kind"] == "stars" and not shop.s.get("prov_stars_url"):
                     continue
                 act += pform(request, f"/orders/{o['id']}/action", hidden("act", a) + hidden("next", request.path_qs) + f"<button class='b sm {cls}'>{e(lab)}</button>", confirm=conf)
-        tgt = ("@" + e(o["target_username"])) if o["target_username"] else (str(o["target_id"]) if o["target_id"] else "-")
+        tgt = "-" if o["kind"] == "vpn" else ("@" + e(o["target_username"])) if o["target_username"] else (str(o["target_id"]) if o["target_id"] else "-")
         profit = fmt(o["amount"] - o["cost"]) if o.get("cost") else "—"
         note = f"<div class='hint'>{e(o['note'])}</div>" if o.get("note") else ""
         cells.append([o["id"], user_link(o["user_id"], o.get("user_username")), e(o["title"]), tgt,

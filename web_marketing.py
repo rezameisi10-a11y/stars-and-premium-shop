@@ -14,7 +14,7 @@ from ui import fmt
 from web_users import FILTER_LABELS, kv
 from webkit import (T, actor, badge, can, fdate, get, hidden, inp, layout, pform, post, redirect, sel, tbl, to_int)
 
-KIND_NAMES = {"stars": N_("استارز"), "premium": N_("پریمیوم"), "gift": N_("گیفت")}
+KIND_NAMES = {"stars": N_("استارز"), "premium": N_("پریمیوم"), "gift": N_("گیفت"), "vpn": N_("VPN")}
 UNITS = [("m", N_("دقیقه")), ("h", N_("ساعت")), ("d", N_("روز"))]
 UNIT_SEC = {"m": 60, "h": 3600, "d": 86400}
 

@@ -22,6 +22,7 @@ from i18n import CATALOG, N_, NW_, SRC_LANG
 from pricing import PREMIUM_STARS, Pricing
 from settings_schema import TEXT_KEYS, validate
 from ui import btn, esc, fmt, ikb  # noqa: F401  (re-export برای هندلرها)
+from vpn_service import VPN
 
 log = logging.getLogger("shop")
 
@@ -41,7 +42,7 @@ PAY_STATUS_FA = {"pending": N_("⏳ منتظر پرداخت"), "waiting_admin": 
                  "rejected": N_("❌ رد شد"), "expired": N_("⌛ منقضی"), "failed": N_("⚠️ ناموفق")}
 METHOD_FA = {"wallet": N_("کیف پول"), "card": N_("کارت به کارت"), "zarinpal": N_("درگاه بانکی"),
              "ton": N_("تون (TON)"), "usdt": N_("تتر (USDT TRC20)")}
-KIND_FA = {"stars": N_("استارز"), "premium": N_("پریمیوم"), "gift": N_("گیفت")}
+KIND_FA = {"stars": N_("استارز"), "premium": N_("پریمیوم"), "gift": N_("گیفت"), "vpn": N_("VPN")}
 
 DISC_MSG = {
     "invalid": N_("کد تخفیف نامعتبر است."),
@@ -60,7 +61,7 @@ DISC_MSG = {
 # عملیات داخلی هر دکمه منوی اصلی ← callback_data
 MENU_CALLBACKS = {"stars": "cat:stars:0", "premium": "cat:premium:0", "gift": "cat:gift:0", "wallet": "wallet",
                   "orders": "orders", "referral": "referral", "rules": "rules", "support": "support", "admin": "adm:home",
-                  "lang": "lang"}
+                  "lang": "lang", "vpn": "vpn", "vpn_my": "vpn:my"}
 
 # ---------------------------------------------------------------- دسترسی ادمین‌ها
 PERMS = {
@@ -78,6 +79,7 @@ PERMS = {
     "languages": NW_("زبان‌ها و ترجمه‌ها"),
     "settings": NW_("تنظیمات عمومی، درگاه‌ها و ضدتقلب"),
     "stars": NW_("موجودی ستاره ربات"),
+    "vpn": NW_("فروش VPN (پنل‌ها، پلن‌ها، سرویس‌ها)"),
     "backup": NW_("بکاپ و وارد کردن بکاپ"),
     "logs": NW_("لاگ فعالیت"),
     "admins": NW_("مدیریت ادمین‌ها"),
@@ -86,7 +88,7 @@ PERM_PRESETS = {
     "full": (NW_("مدیر کامل"), ["*"]),
     "receipts": (NW_("بررسی‌کننده‌ی رسید"), ["receipts", "users_view"]),
     "support": (NW_("پشتیبان"), ["orders", "users_view", "users_edit", "wallet"]),
-    "sales": (NW_("مدیر فروش"), ["stats", "orders", "receipts", "users_view", "users_edit", "products", "discounts", "wallet"]),
+    "sales": (NW_("مدیر فروش"), ["stats", "orders", "receipts", "users_view", "users_edit", "products", "discounts", "wallet", "vpn"]),
     "content": (NW_("مدیر محتوا"), ["buttons", "languages", "broadcast", "users_view"]),
     "finance": (NW_("مدیر مالی"), ["stats", "pricing", "stars", "wallet", "receipts", "backup"]),
 }
@@ -159,6 +161,7 @@ class Shop:
         self.langs: list[dict] = []
         self.pricing = Pricing(self)
         self.group = GroupFeed(self)
+        self.vpn = VPN(self)
         self._rate_last: dict[str, float] = {}
         self._ref_watch: set[int] = set()
         self._warned: dict[str, float] = {}
@@ -180,6 +183,7 @@ class Shop:
         self.spawn(self.apply_miniapp_menu())
 
     async def stop(self):
+        await self.vpn.close()
         if self.http:
             await self.http.close()
 
@@ -427,7 +431,7 @@ class Shop:
         ov = CATALOG.over.get(("bot", lang), {}).get(f"@prod:{p['id']}")
         if ov:
             return ov
-        if lang == SRC_LANG:
+        if lang == SRC_LANG or p["kind"] == "vpn":
             return p["title"]
         tr = self.tr_lang(lang)
         if p["title"] == default_title(p["kind"], p["qty"]):
@@ -587,6 +591,8 @@ class Shop:
             if it["action"] == "admin" and not self.is_admin(uid):
                 continue
             if it["action"] == "lang" and not multi:
+                continue
+            if it["action"] in ("vpn", "vpn_my") and not self.vpn.enabled():
                 continue
             b = self._menu_button(it, lang)
             if b:
@@ -1061,6 +1067,11 @@ class Shop:
     # ---------- تحویل ----------
     def order_admin_kb(self, o):
         rows = []
+        if o["kind"] == "vpn":
+            rows.append([btn("🔁 تلاش مجدد ساخت سرویس", f"oadm:retry:{o['id']}", role="action")])
+            rows.append([btn("✅ تحویل شد", f"oadm:done:{o['id']}", role="confirm"),
+                         btn("↩️ بازگشت وجه به کیف پول", f"oadm:refund:{o['id']}", role="reject")])
+            return ikb(rows)
         if o["kind"] in ("gift", "premium"):
             rows.append([btn("🎁 ارسال خودکار با ستاره ربات", f"oadm:auto:{o['id']}", role="action")])
         if o["kind"] != "stars" or provider.provider_enabled(self.s, "stars"):
@@ -1102,6 +1113,9 @@ class Shop:
         uid = o["user_id"]
         s = await self.settings()
         try:
+            if o["kind"] == "vpn":
+                await self.vpn.fulfil(o)
+                return
             if o["kind"] == "stars":
                 if provider.provider_enabled(s, "stars"):
                     await self._deliver_via_provider(o, "stars")
@@ -1499,7 +1513,7 @@ class Shop:
 
     async def background_loop(self):
         while True:
-            for step in (self.check_crypto, self.expire_old, self.pricing.tick, self.release_rewards, self._check_provider_balance, self.group.tick):
+            for step in (self.check_crypto, self.expire_old, self.pricing.tick, self.release_rewards, self._check_provider_balance, self.group.tick, self.vpn.tick):
                 try:
                     await step()
                 except Exception:

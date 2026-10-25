@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 import aiosqlite
 
+from db_vpn import VPN_SCHEMA, VpnDB
 from i18n import BUILTIN_LANGS, N_
 from settings_schema import DEFAULTS as NEW_DEFAULTS
 
@@ -158,13 +159,15 @@ DEFAULT_MENU = [
     ("stars", N_("⭐ خرید استارز"), "success", 0, 0),
     ("premium", N_("👑 پریمیوم"), "primary", 0, 1),
     ("gift", N_("🎁 گیفت تلگرام"), "", 1, 0),
+    ("vpn", N_("🛡 خرید VPN"), "success", 1, 1),
     ("wallet", N_("👛 کیف پول + شارژ"), "", 2, 0),
     ("orders", N_("🧾 سفارش‌های من"), "", 2, 1),
-    ("referral", N_("🤝 زیرمجموعه‌گیری"), "", 3, 0),
-    ("rules", N_("📜 قوانین"), "", 3, 1),
-    ("support", N_("☎️ پشتیبانی"), "danger", 4, 0),
-    ("lang", N_("🌐 زبان / Language"), "", 4, 1),
-    ("admin", N_("⚙️ پنل مدیریت"), "primary", 5, 0),
+    ("vpn_my", N_("📡 سرویس‌های VPN من"), "", 3, 0),
+    ("referral", N_("🤝 زیرمجموعه‌گیری"), "", 4, 0),
+    ("rules", N_("📜 قوانین"), "", 4, 1),
+    ("support", N_("☎️ پشتیبانی"), "danger", 5, 0),
+    ("lang", N_("🌐 زبان / Language"), "", 5, 1),
+    ("admin", N_("⚙️ پنل مدیریت"), "primary", 6, 0),
 ]
 BUILTIN_ACTIONS = {a for a, *_ in DEFAULT_MENU}
 
@@ -174,7 +177,7 @@ USER_SORTS = {"new": "u.created_at DESC", "old": "u.created_at ASC", "seen": "u.
               "balance": "u.balance DESC", "spent": "spent DESC", "orders": "orders_n DESC"}
 
 
-class DB:
+class DB(VpnDB):
     def __init__(self, path: str):
         self.path = path
         self.conn: aiosqlite.Connection | None = None
@@ -186,6 +189,7 @@ class DB:
         self.conn.row_factory = sqlite3.Row
         await self.conn.execute("PRAGMA journal_mode=WAL")
         await self.conn.executescript(SCHEMA)
+        await self.conn.executescript(VPN_SCHEMA)
         for table, col, ddl in MIGRATIONS:
             cols = [r["name"] for r in await self.all(f"PRAGMA table_info({table})")]
             if col not in cols:
@@ -203,6 +207,13 @@ class DB:
             await self.conn.execute(
                 "INSERT INTO menu_buttons(action,label,style,row_no,pos,builtin) VALUES('lang',?,'',?,0,1)",
                 ("🌐 زبان / Language", row))
+        if (await self.one("SELECT COUNT(*) c FROM menu_buttons"))["c"] > 0:      # مهاجرت: دکمه‌های VPN برای نصب‌های قبلی
+            missing = [(a, lb, st) for a, lb, st, _r, _p in DEFAULT_MENU if a in ("vpn", "vpn_my")
+                       and not await self.one("SELECT 1 x FROM menu_buttons WHERE action=?", (a,))]
+            if missing:
+                row = (await self.one("SELECT COALESCE(MAX(row_no),-1)+1 r FROM menu_buttons"))["r"]
+                for pos, (a, lb, st) in enumerate(missing):
+                    await self.conn.execute("INSERT INTO menu_buttons(action,label,style,row_no,pos,builtin) VALUES(?,?,?,?,?,1)", (a, lb, st, row, pos))
         for i, (code, name, flag, rtl) in enumerate(BUILTIN_LANGS):
             await self.conn.execute(
                 "INSERT OR IGNORE INTO languages(code,name,flag,rtl,sort,builtin) VALUES(?,?,?,?,?,1)", (code, name, flag, rtl, i))
