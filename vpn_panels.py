@@ -45,6 +45,25 @@ class PanelUser:
     online_at: int = 0
 
 
+@dataclass
+class PanelAdmin:
+    username: str
+    status: str = "active"          # active | disabled | limited
+    used: int = 0                   # مصرف کل کاربران ادمین (بایت)
+    total: int = 0                  # سقف حجم ادمین (بایت)؛ ۰ = نامحدود
+    users: int = 0                  # تعداد کاربران ادمین
+    max_users: int = 0              # ۰ = نامحدود
+
+
+def gen_password(n: int = 16) -> str:
+    """رمز قوی که قوانین همه‌ی پنل‌ها (پاسارگاد: ≥۱۲ حرف، ۲ رقم، ۲ بزرگ، ۲ کوچک، ۱ نماد، بدون ") را رعایت کند."""
+    rnd = secrets.SystemRandom()
+    chars = ([rnd.choice("ABCDEFGHJKLMNPQRSTUVWXYZ") for _ in range(3)] + [rnd.choice("abcdefghijkmnpqrstuvwxyz") for _ in range(n - 8)] +
+             [rnd.choice("23456789") for _ in range(3)] + [rnd.choice("@#%-_=+") for _ in range(2)])
+    rnd.shuffle(chars)
+    return "".join(chars)
+
+
 def gb_bytes(gb) -> int:
     return int(float(gb or 0) * GB)
 
@@ -194,14 +213,48 @@ class BasePanel:
     async def revoke(self, name, meta):
         raise PanelError("این پنل از ساخت لینک جدید پشتیبانی نمی‌کند")
 
+    # ---- نمایندگی (ساخت ادمین در پنل)؛ فقط پنل‌هایی که ADMIN=True دارند
+    ADMIN = False
+
+    def panel_url(self) -> str:
+        return self.url + "/dashboard/"
+
+    def _no_admin(self):
+        raise PanelError("این نوع پنل از ساخت ادمین/نماینده پشتیبانی نمی‌کند")
+
+    async def admin_role_options(self) -> list:
+        return []
+
+    async def admin_create(self, username, password, spec: dict) -> PanelAdmin:
+        self._no_admin()
+
+    async def admin_info(self, username) -> PanelAdmin:
+        self._no_admin()
+
+    async def admin_set_enabled(self, username, on: bool, password: str = ""):
+        self._no_admin()
+
+    async def admin_set_password(self, username, password: str):
+        self._no_admin()
+
+    async def admin_renew(self, username, spec: dict, password: str = ""):
+        self._no_admin()
+
+    async def admin_set_traffic(self, username, gb: float):
+        raise PanelError("این پنل سقف حجم برای ادمین ندارد")
+
+    async def admin_delete(self, username):
+        self._no_admin()
+
+
 
 # ======================================================================= مرزبان
 class Marzban(BasePanel):
     TYPE = "marzban"
-    LABEL = "Marzban (و فورک‌های سازگار مثل Rebecca)"
+    LABEL = "مرزبان ⁦Marzban⁩"
     NEEDS = ("url", "username", "password")
     OPTION_LABEL = "اینباند (tag)"
-    HELP = "آدرس پنل مثل https://panel.example.com:8000 ؛ اینباندها اختیاری (خالی = همه)"
+    HELP = "آدرس پنل را مثل https://panel.example.com:8000 بفرستید. انتخاب اینباند اختیاری است."
     API = "/api"
     TOKEN = "/admin/token"
     USER = "/user"
@@ -315,13 +368,55 @@ class Marzban(BasePanel):
         d = await self._call("POST", f"{self.USER}/{quote(name)}/revoke_sub")
         return self._parse(d).sub_url, meta
 
+    # ---- نمایندگی
+    ADMIN = True
+    ADMIN_PATH = "/admin"
+
+    def _admin_parse(self, d) -> PanelAdmin:
+        return PanelAdmin(d.get("username", ""), "active", int(d.get("users_usage") or 0), 0, 0, 0)
+
+    async def admin_create(self, username, password, spec):
+        body = {"username": username, "password": password, "is_sudo": False}
+        if spec.get("telegram_id"):
+            body["telegram_id"] = int(spec["telegram_id"])
+        d = await self._call("POST", self.ADMIN_PATH, json=body)
+        return self._admin_parse(d if isinstance(d, dict) else {"username": username})
+
+    async def admin_info(self, username):
+        d = await self._call("GET", "/admins", params={"username": username})
+        items = d.get("admins") if isinstance(d, dict) else d
+        for it in items or []:
+            if it.get("username") == username:
+                return self._admin_parse(it)
+        raise PanelError("ادمین در پنل پیدا نشد")
+
+    async def admin_set_password(self, username, password):
+        await self._call("PUT", f"{self.ADMIN_PATH}/{quote(username)}", json={"password": password, "is_sudo": False})
+
+    async def admin_set_enabled(self, username, on, password=""):
+        # مرزبان وضعیت ادمین ندارد: خاموش = رمز تصادفی (ورود ممکن نیست) + غیرفعال‌کردن کاربران؛ روشن = بازگرداندن رمز + فعال‌سازی کاربران
+        if on:
+            if password:
+                await self.admin_set_password(username, password)
+            await self._call("POST", f"{self.ADMIN_PATH}/{quote(username)}/users/activate", ok=(200, 201, 404))
+        else:
+            await self.admin_set_password(username, gen_password(24))
+            await self._call("POST", f"{self.ADMIN_PATH}/{quote(username)}/users/disable", ok=(200, 201, 404))
+
+    async def admin_renew(self, username, spec, password=""):
+        await self._call("POST", f"{self.ADMIN_PATH}/usage/reset/{quote(username)}", ok=(200, 201, 404))
+        await self.admin_set_enabled(username, True, password)
+
+    async def admin_delete(self, username):
+        await self._call("DELETE", f"{self.ADMIN_PATH}/{quote(username)}", ok=(200, 204, 404))
+
 
 # ======================================================================= پاسارگاد
 class PasarGuard(Marzban):
     TYPE = "pasarguard"
-    LABEL = "PasarGuard (پاسارگاد)"
+    LABEL = "پاسارگاد ⁦PasarGuard⁩"
     OPTION_LABEL = "گروه (id)"
-    HELP = "آدرس پنل مثل https://panel.example.com:8000 ؛ شناسه‌ی گروه‌ها (group id) را انتخاب کنید"
+    HELP = "آدرس پنل را مثل https://panel.example.com:8000 بفرستید و گروه‌ها را انتخاب کنید."
 
     async def options(self):
         d = await self._call("GET", "/groups")
@@ -361,11 +456,66 @@ class PasarGuard(Marzban):
                 return await super()._call(method, path, ok, retry, **kw)
             raise
 
+    # ---- نمایندگی (نقش‌ها، سقف حجم و تعداد کاربر)
+    async def admin_role_options(self):
+        d = await self._call("GET", "/admin-roles/simple")
+        items = d.get("roles") if isinstance(d, dict) else d
+        return [{"id": r.get("id"), "name": f"{r.get('name')} (#{r.get('id')})"} for r in (items or []) if not r.get("is_owner")]
+
+    @staticmethod
+    def _overrides(spec) -> dict:
+        o = {}
+        if spec.get("max_users"):
+            o["max_users"] = int(spec["max_users"])
+        for k, f in (("data_min_gb", "data_limit_min"), ("data_max_gb", "data_limit_max")):
+            if spec.get(k):
+                o[f] = gb_bytes(spec[k])
+        for k, f in (("expire_min_days", "expire_min"), ("expire_max_days", "expire_max")):
+            if spec.get(k):
+                o[f] = int(spec[k]) * 86400
+        return o
+
+    def _admin_parse(self, d) -> PanelAdmin:
+        lim = ((d.get("permission_overrides") or {}).get("max_users")) or ((d.get("role") or {}).get("limits") or {}).get("max_users") or 0
+        st = str(d.get("status") or ("disabled" if d.get("is_disabled") else "active"))   # نسخه‌های قدیمی: is_disabled
+        return PanelAdmin(d.get("username", ""), st, int(d.get("used_traffic") or 0), int(d.get("data_limit") or 0),
+                          int(d.get("total_users") or 0), int(lim or 0))
+
+    async def admin_create(self, username, password, spec):
+        body = {"username": username, "password": password, "note": spec.get("note") or ""}
+        if spec.get("role_id"):
+            body["role_id"] = int(spec["role_id"])
+            ov = self._overrides(spec)
+            if ov:
+                body["permission_overrides"] = ov
+        else:
+            body["is_sudo"] = False               # نسخه‌های قدیمی بدون نقش
+        if spec.get("traffic_gb"):
+            body["data_limit"] = gb_bytes(spec["traffic_gb"])
+        if spec.get("telegram_id"):
+            body["telegram_id"] = int(spec["telegram_id"])
+        d = await self._call("POST", self.ADMIN_PATH, json=body)
+        return self._admin_parse(d if isinstance(d, dict) else {"username": username})
+
+    async def admin_set_password(self, username, password):
+        await self._call("PUT", f"{self.ADMIN_PATH}/{quote(username)}", json={"password": password, "is_sudo": False})      # is_sudo: نسخه‌های قدیمی اجباری؛ نسخه‌ی جدید نادیده می‌گیرد
+
+    async def admin_set_enabled(self, username, on, password=""):
+        await self._call("PUT", f"{self.ADMIN_PATH}/{quote(username)}", json={"status": "active" if on else "disabled", "is_disabled": not on, "is_sudo": False})
+
+    async def admin_set_traffic(self, username, gb):
+        await self._call("PUT", f"{self.ADMIN_PATH}/{quote(username)}", json={"data_limit": gb_bytes(gb), "is_sudo": False})
+
+    async def admin_renew(self, username, spec, password=""):
+        await self._call("POST", f"{self.ADMIN_PATH}/{quote(username)}/reset", ok=(200, 201))
+        body = {"status": "active", "is_disabled": False, "is_sudo": False, "data_limit": gb_bytes(spec.get("traffic_gb") or 0)}
+        await self._call("PUT", f"{self.ADMIN_PATH}/{quote(username)}", json=body)
+
 
 # ======================================================================= مرزنشین
 class Marzneshin(Marzban):
     TYPE = "marzneshin"
-    LABEL = "Marzneshin (مرزنشین)"
+    LABEL = "مرزنشین ⁦Marzneshin⁩"
     OPTION_LABEL = "سرویس (id)"
     TOKEN = "/admins/token"
     USER = "/users"
@@ -433,16 +583,45 @@ class Marzneshin(Marzban):
         d = await self._call("POST", f"{self.USER}/{quote(name)}/revoke_sub")
         return self._parse(d).sub_url, meta
 
+    # ---- نمایندگی (دسترسی به سرویس‌ها؛ مرزنشین سقف حجم/تعداد برای ادمین ندارد)
+    ADMIN_PATH = "/admins"
+
+    async def admin_role_options(self):
+        return await self.options()
+
+    def _admin_parse(self, d) -> PanelAdmin:
+        return PanelAdmin(d.get("username", ""), "active" if d.get("enabled", True) else "disabled", int(d.get("users_data_usage") or 0), 0, 0, 0)
+
+    async def admin_create(self, username, password, spec):
+        ids = [int(x) for x in (spec.get("service_ids") or []) if str(x).isdigit()]
+        body = {"username": username, "password": password, "is_sudo": False, "enabled": True,
+                "all_services_access": bool(spec.get("all_services")) or not ids, "modify_users_access": bool(spec.get("modify_users", True)),
+                "service_ids": ids}
+        d = await self._call("POST", self.ADMIN_PATH, json=body)
+        return self._admin_parse(d if isinstance(d, dict) else {"username": username})
+
+    async def admin_info(self, username):
+        return self._admin_parse(await self._call("GET", f"{self.ADMIN_PATH}/{quote(username)}"))
+
+    async def admin_set_password(self, username, password):
+        await self._call("PUT", f"{self.ADMIN_PATH}/{quote(username)}", json={"password": password})
+
+    async def admin_set_enabled(self, username, on, password=""):
+        await self._call("PUT", f"{self.ADMIN_PATH}/{quote(username)}", json={"enabled": bool(on)})
+        await self._call("POST", f"{self.ADMIN_PATH}/{quote(username)}/{'enable_users' if on else 'disable_users'}", ok=(200, 201, 404))
+
+    async def admin_renew(self, username, spec, password=""):
+        await self.admin_set_enabled(username, True, password)
+
 
 # ======================================================================= 3x-ui / x-ui
 class XUI(BasePanel):
     TYPE = "xui"
-    LABEL = "3x-ui (ثنایی) / x-ui"
+    LABEL = "ثنایی ⁦3x-ui⁩"
     NEEDS = ("url", "inbound_ids")
     OPTION_LABEL = "اینباند (id)"
-    HELP = ("آدرس پنل همراه مسیر (WebBasePath) مثل https://host:2053/abc/ . ورود: «توکن API» (پنل نسخه‌ی جدید: تنظیمات ← API) "
-            "یا نام کاربری + رمز. در نسخه‌ی جدید چند اینباند (با ویرگول) و در نسخه‌ی قدیمی فقط یک اینباند استفاده می‌شود. "
-            "برای لینک اشتراک، «آدرس اشتراک» را مثل https://host:2096/sub بدهید (خالی = لینک مستقیم کانفیگ)")
+    HELP = ("آدرس پنل را با مسیر مخفی آن بفرستید، مثل https://host:2053/abc/. "
+            "برای ورود، «توکن API» یا نام کاربری و رمز را بدهید. آدرس اشتراک اختیاری است.")
     PREFIXES = ["/panel/api/inbounds", "/xui/API/inbounds", "/xui/inbound"]
 
     def __init__(self, cfg):
@@ -820,10 +999,10 @@ class XUI(BasePanel):
 # ======================================================================= هیدیفای
 class Hiddify(BasePanel):
     TYPE = "hiddify"
-    LABEL = "Hiddify (هیدیفای)"
+    LABEL = "هیدیفای ⁦Hiddify⁩"
     NEEDS = ("url", "token", "sub_url")
-    HELP = ("آدرس مدیریت: https://domain/{مسیر-ادمین} ؛ توکن: UUID ادمین (API key) ؛ آدرس اشتراک کاربر: https://domain/{مسیر-کاربر} "
-            "(لینک هر کاربر = آدرس اشتراک/UUID/)")
+    HELP = ("آدرس مدیریت را مثل https://domain/مسیر-ادمین بفرستید. توکن، همان کلید API ادمین است. "
+            "آدرس اشتراک را هم از صفحه‌ی کاربران بردارید.")
 
     async def _call(self, method, path, ok=(200, 201), **kw):
         st, d = await self._raw(method, f"{self.url}/api/v2/admin{path}", headers={"Hiddify-API-Key": self.cfg.get("token", ""), "Accept": "application/json"}, **kw)
@@ -910,9 +1089,9 @@ class Hiddify(BasePanel):
 # ======================================================================= فروش دستی
 class Manual(BasePanel):
     TYPE = "manual"
-    LABEL = "فروش دستی (بدون API؛ ادمین کانفیگ را می‌فرستد)"
+    LABEL = "فروش دستی"
     NEEDS = ()
-    HELP = "سفارش پرداخت‌شده به صف تحویل دستی می‌رود؛ ادمین لینک/کانفیگ را برای کاربر ثبت می‌کند"
+    HELP = "بدون اتصال به پنل. بعد از پرداخت، شما کانفیگ را خودتان برای کاربر می‌فرستید."
     manual = True
 
     async def test(self):
@@ -927,6 +1106,10 @@ class Manual(BasePanel):
 
 DRIVERS = {c.TYPE: c for c in (XUI, Marzban, PasarGuard, Marzneshin, Hiddify, Manual)}
 TYPES = [(c.TYPE, c.LABEL) for c in DRIVERS.values()]
+# پنل‌هایی که در میرزا هست ولی هنوز درایور ندارند (فقط برای نمایش؛ انتخابشان پیام «به‌زودی» می‌دهد)
+L, P = "\u2066", "\u2069"
+SOON = [("wgdashboard", f"وایرگارد {L}WGDashboard{P}"), ("sui", f"اس‌یو‌آی {L}S-UI{P}"), ("ibsng", f"آی‌بی‌اس {L}IBSng{P}"),
+        ("mikrotik", f"میکروتیک {L}Mikrotik{P}")]
 
 
 def make_driver(panel: dict) -> BasePanel:

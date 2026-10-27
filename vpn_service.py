@@ -4,6 +4,7 @@
     ref = vpn:new:{plan_id}[:{username}]  |  vpn:renew:{service_id}:{plan_id}  |  vpn:addon:{service_id}:{addon_id}
     qty = تعداد روز پلن
 """
+import asyncio
 import io
 import json
 import logging
@@ -70,6 +71,31 @@ def valid_name(n: str) -> bool:
     return bool(NAME_RE.match(n or ""))
 
 
+# تنظیمات هر پنل (داخل ستون extra؛ مثل «قابلیت‌های پنل» در میرزا). مقدار 1 = روشن
+PANEL_FLAGS = {"show": 1, "test": 1, "renew": 1, "addon": 1, "sub": 1, "config": 1, "qr": 1}
+PANEL_FLAG_TITLES = {"show": N_("نمایش پنل به کاربران"), "test": N_("اکانت تست"), "renew": N_("تمدید"), "addon": N_("حجم/زمان اضافه"),
+                     "sub": N_("ارسال لینک اشتراک"), "config": N_("ارسال کانفیگ مستقیم"), "qr": N_("دکمه‌ی QR کد")}
+
+
+def pextra(panel) -> dict:
+    raw = (panel or {}).get("panel_extra", (panel or {}).get("extra"))
+    if isinstance(raw, dict):
+        return raw
+    try:
+        d = json.loads(raw or "{}")
+        return d if isinstance(d, dict) else {}
+    except ValueError:
+        return {}
+
+
+def pflag(panel, key) -> bool:
+    return str(pextra(panel).get(key, PANEL_FLAGS.get(key, 1))) != "0"
+
+
+def hidden_for(panel, uid) -> bool:
+    return uid in [int(x) for x in pextra(panel).get("hidden", []) if str(x).lstrip("-").isdigit()]
+
+
 def parse_ref(ref: str) -> list[str]:
     return (ref or "").split(":")
 
@@ -80,6 +106,9 @@ class VPN:
         self.db = shop.db
         self._drivers: dict[int, tuple[tuple, vpn_panels.BasePanel]] = {}
         self._last_sync = 0.0
+        self._test_locks: dict[int, asyncio.Lock] = {}
+        from vpn_agent import AgentSales          # import تأخیری (جلوگیری از چرخه)
+        self.agents = AgentSales(self)
 
     # ------------------------------------------------------------------ تنظیمات و درایور
     @property
@@ -159,7 +188,12 @@ class VPN:
     # ------------------------------------------------------------------ پلن‌ها و قیمت
     async def plans_for(self, user: dict | None):
         out = []
+        uid = (user or {}).get("id")
+        panels = {x["id"]: x for x in await self.db.list_vpn_panels()}
         for p in await self.db.list_vpn_plans(active_only=True):
+            pn = panels.get(p["panel_id"])
+            if pn and (not pflag(pn, "show") or (uid and hidden_for(pn, uid))):
+                continue
             p = dict(p)
             p["user_price"] = self.shop._personal(p["price"], user)
             out.append(p)
@@ -194,6 +228,8 @@ class VPN:
         panel = await self.db.get_vpn_panel(plan["panel_id"]) if plan else None
         if not plan or not plan["active"] or not panel or not panel["enabled"]:
             raise VpnError(N_("این پلن دیگر در دسترس نیست."))
+        if not pflag(panel, "show") or hidden_for(panel, user_id):
+            raise VpnError(N_("این پلن دیگر در دسترس نیست."))
         if not await self._capacity_ok(panel):
             raise VpnError(N_("ظرفیت این سرور تکمیل است؛ پلن دیگری انتخاب کنید."))
         if name:
@@ -204,10 +240,17 @@ class VPN:
         return await self.db.create_vpn_order(user_id, plan["title"], plan["days"], ref, price, plan["cost"])
 
     async def renew_order(self, user_id: int, service_id: int, plan_id: int) -> int:
+        if not self.enabled():
+            raise VpnError(N_("فروش VPN فعال نیست."))
         svc = await self.db.get_vpn_service(service_id)
         plan = await self.db.get_vpn_plan(plan_id)
         if not svc or svc["user_id"] != user_id or svc["status"] in ("deleted", "pending_manual"):
             raise VpnError(N_("سرویس پیدا نشد."))
+        if not pflag(svc, "renew"):
+            raise VpnError(N_("تمدید برای این سرویس فعال نیست."))
+        panel = await self.db.get_vpn_panel(svc["panel_id"])
+        if not panel or not panel["enabled"]:
+            raise VpnError(N_("این پلن برای تمدید این سرویس مجاز نیست."))
         if not plan or not plan["active"] or plan["panel_id"] != svc["panel_id"]:
             raise VpnError(N_("این پلن برای تمدید این سرویس مجاز نیست."))
         user = await self.db.get_user(user_id)
@@ -222,6 +265,8 @@ class VPN:
         ad = await self.db.get_vpn_addon(addon_id)
         if not svc or svc["user_id"] != user_id or svc["status"] in ("deleted", "pending_manual"):
             raise VpnError(N_("سرویس پیدا نشد."))
+        if not pflag(svc, "addon"):
+            raise VpnError(N_("خرید بسته‌ی اضافه برای این سرویس فعال نیست."))
         if not ad or not ad["active"]:
             raise VpnError(N_("این بسته دیگر در دسترس نیست."))
         user = await self.db.get_user(user_id)
@@ -241,6 +286,8 @@ class VPN:
             await self._fulfil_renew(o, int(kind[2]), int(kind[3]))
         elif kind[1] == "addon":
             await self._fulfil_addon(o, int(kind[2]), int(kind[3]))
+        elif kind[1] in ("agent", "arenew"):
+            await self.agents.fulfil(o)
         else:
             raise VpnError("bad vpn ref")
 
@@ -262,7 +309,7 @@ class VPN:
                 await self.db.add_vpn_service(user_id=o["user_id"], panel_id=panel["id"], plan_id=plan_id, name=name, status="pending_manual",
                                               order_id=o["id"], title=plan["title"], total_bytes=int(plan["gb"] * GB),
                                               expires_at=0)
-            await shop._to_manual(o["id"], "ساخت دستی سرویس VPN", f"🛡 سفارش VPN (پنل دستی «{esc(panel['name'])}») — کانفیگ را از وب‌پنل ← VPN ← سرویس‌ها ثبت کنید:")
+            await shop._to_manual(o["id"], "ساخت دستی سرویس VPN", f"🛡 سفارش VPN (پنل دستی «{esc(panel['name'])}») — کانفیگ را از ربات (🛡 فروش VPN ← سرویس‌ها) یا وب‌پنل ثبت کنید:")
             return
         user_tg = o["user_id"]
         user, meta = None, None
@@ -316,6 +363,9 @@ class VPN:
         plan = await self.db.get_vpn_plan(plan_id)
         if not svc or not plan or svc["status"] == "deleted":
             raise VpnError("service/plan missing")
+        if (await self.driver(svc["panel_id"])).manual:
+            await self.shop._to_manual(o["id"], "تمدید دستی سرویس VPN", f"🔄 تمدید VPN (پنل دستی) — سرویس <code>{esc(svc['name'])}</code>، پلن «{esc(plan['title'])}»: {plan['days']} روز / {plan['gb']:g} گیگ. بعد از اعمال، «تحویل شد» را بزنید:")
+            return
         if not await self._applied(svc, o["id"]):
             drv = await self.driver(svc["panel_id"])
             meta = json.loads(svc["meta"] or "{}")
@@ -332,6 +382,9 @@ class VPN:
         ad = await self.db.get_vpn_addon(addon_id)
         if not svc or not ad or svc["status"] == "deleted":
             raise VpnError("service/addon missing")
+        if (await self.driver(svc["panel_id"])).manual:
+            await self.shop._to_manual(o["id"], "بسته‌ی دستی VPN", f"➕ بسته‌ی افزودنی VPN (پنل دستی) — سرویس <code>{esc(svc['name'])}</code>، «{esc(ad['title'])}»: {ad['gb']:g} گیگ / {ad['days']} روز. بعد از اعمال، «تحویل شد» را بزنید:")
+            return
         if not await self._applied(svc, o["id"]):
             drv = await self.driver(svc["panel_id"])
             meta = json.loads(svc["meta"] or "{}")
@@ -353,45 +406,54 @@ class VPN:
             await self.shop.notify_admins(text, perm="vpn", topic="sales")
 
     # ------------------------------------------------------------------ اکانت تست
+    async def _test_panel(self, user_id: int):
+        """پنلی که اکانت تست روی آن ساخته می‌شود: پنل انتخابی تنظیمات، وگرنه اولین پنل فعال و غیردستی که تست دارد."""
+        def ok(p):
+            return bool(p) and p["enabled"] and p["type"] != "manual" and pflag(p, "test") and not hidden_for(p, user_id)
+        pid = self._int("vpn_test_panel")
+        panel = await self.db.get_vpn_panel(pid) if pid else None
+        if ok(panel):
+            return panel
+        return next((p for p in await self.db.list_vpn_panels(only_enabled=True) if ok(p)), None)
+
     async def can_test(self, user_id: int) -> bool:
-        return self.enabled() and self._flag("vpn_test_enabled") and not await self.db.vpn_has_test(user_id)
+        return (self.enabled() and self._flag("vpn_test_enabled") and not await self.db.vpn_has_test(user_id)
+                and await self._test_panel(user_id) is not None)
 
     async def create_test(self, user_id: int) -> int:
         if not self.enabled() or not self._flag("vpn_test_enabled"):
             raise VpnError(N_("اکانت تست فعال نیست."))
-        if await self.db.vpn_has_test(user_id):
-            raise VpnError(N_("شما قبلاً اکانت تست گرفته‌اید."))
-        pid = self._int("vpn_test_panel")
-        panel = await self.db.get_vpn_panel(pid) if pid else None
-        if not panel or not panel["enabled"]:
-            panel = next((p for p in await self.db.list_vpn_panels(only_enabled=True) if p["type"] != "manual"), None)
-        if not panel:
-            raise VpnError(N_("اکانت تست در حال حاضر در دسترس نیست."))
-        if panel["type"] == "manual":
-            raise VpnError(N_("اکانت تست در حال حاضر در دسترس نیست."))
-        days, gb = max(self._int("vpn_test_days", 1), 1), float(self.s.get("vpn_test_gb") or 0)
-        drv = await self.driver(panel["id"])
-        # ثبت پیش از ساخت: جلوی دوبار گرفتن همزمان را می‌گیرد (ux_vpns_name + vpn_has_test)
-        for attempt in range(3):
-            name = await self.make_name(panel["id"], user_id)
+        lock = self._test_locks.setdefault(user_id, asyncio.Lock())
+        async with lock:                     # دو کلیک همزمان نباید دو اکانت تست بسازد
+            if await self.db.vpn_has_test(user_id):
+                raise VpnError(N_("شما قبلاً اکانت تست گرفته‌اید."))
+            panel = await self._test_panel(user_id)
+            if not panel:
+                raise VpnError(N_("اکانت تست در حال حاضر در دسترس نیست."))
+            ex = pextra(panel)
+            days = max(int(float(ex.get("test_days") or self._int("vpn_test_days", 1) or 1)), 1)
+            gb = float(ex.get("test_gb") if ex.get("test_gb") not in (None, "") else (self.s.get("vpn_test_gb") or 0))
+            drv = await self.driver(panel["id"])
+            for attempt in range(3):
+                name = await self.make_name(panel["id"], user_id)
+                try:
+                    u, meta = await drv.create(name, days, gb, note=f"tg:{user_id} test", tg_id=user_id)
+                    break
+                except PanelError as e:
+                    if attempt < 2 and any(w in str(e).lower() for w in ("exist", "duplicate", "already")):
+                        continue
+                    log.warning("vpn test create failed: %s", e)
+                    raise VpnError(N_("ساخت اکانت تست با خطا روبه‌رو شد؛ بعداً دوباره تلاش کنید.")) from e
             try:
-                u, meta = await drv.create(name, days, gb, note=f"tg:{user_id} test", tg_id=user_id)
-                break
-            except PanelError as e:
-                if attempt < 2 and any(w in str(e).lower() for w in ("exist", "duplicate", "already")):
-                    continue
-                log.warning("vpn test create failed: %s", e)
-                raise VpnError(N_("ساخت اکانت تست با خطا روبه‌رو شد؛ بعداً دوباره تلاش کنید.")) from e
-        try:
-            sid = await self.db.add_vpn_service(user_id=user_id, panel_id=panel["id"], name=name, status=u.status, expires_at=u.expire,
-                                                total_bytes=u.total or int(gb * GB), used_bytes=u.used, sub_url=u.sub_url, links=u.links or [],
-                                                meta=meta or {}, is_test=1, title="Test", last_sync=int(time.time()))
-        except Exception:
-            try:
-                await drv.delete(name, meta or {})
+                sid = await self.db.add_vpn_service(user_id=user_id, panel_id=panel["id"], name=name, status=u.status, expires_at=u.expire,
+                                                    total_bytes=u.total or int(gb * GB), used_bytes=u.used, sub_url=u.sub_url, links=u.links or [],
+                                                    meta=meta or {}, is_test=1, title="Test", last_sync=int(time.time()))
             except Exception:
-                pass
-            raise
+                try:
+                    await drv.delete(name, meta or {})
+                except Exception:
+                    pass
+                raise
         await self.db.log("vpn", "test_account", f"user {user_id} {name}")
         return sid
 
@@ -420,6 +482,10 @@ class VPN:
         return await self.db.get_vpn_service(svc["id"])
 
     async def tick(self):
+        try:
+            await self.agents.tick()
+        except Exception:
+            log.exception("agent tick failed")
         if not self.enabled() and not await self.db.one("SELECT 1 x FROM vpn_services LIMIT 1"):
             return
         every = max(self._int("vpn_sync_min", 10), 1) * 60
@@ -493,6 +559,8 @@ class VPN:
             return False, N_("این سرویس هنوز تحویل داده نشده است.")
         drv = await self.driver(svc["panel_id"])
         meta = json.loads(svc["meta"] or "{}")
+        if drv.manual and act != "delete":
+            return await self._manual_action(svc, act, value)
         try:
             if act == "sync":
                 await self.sync(svc)
@@ -528,6 +596,25 @@ class VPN:
         await self.db.update_vpn_service(sid, **f)
         return True, N_("انجام شد.")
 
+    async def _manual_action(self, svc, act, value):
+        """پنل «فروش دستی» API ندارد؛ فقط اطلاعات داخل ربات به‌روز می‌شود (ادمین خودش در پنل واقعی اعمال می‌کند)."""
+        f = {}
+        if act == "add_days":
+            base = svc["expires_at"] if svc["expires_at"] > time.time() else int(time.time())
+            f = dict(expires_at=base + int(value) * 86400, status="active")
+        elif act == "add_gb":
+            f = dict(total_bytes=(svc["total_bytes"] or 0) + int(float(value) * GB))
+        elif act == "reset":
+            f = dict(used_bytes=0)
+        elif act in ("enable", "disable"):
+            f = dict(status="active" if act == "enable" else "disabled")
+        elif act == "sync":
+            return True, N_("پنل دستی همگام نمی‌شود.")
+        else:
+            return False, N_("این عملیات برای پنل دستی ممکن نیست.")
+        await self.db.update_vpn_service(svc["id"], notified="", **f)
+        return True, N_("در ربات ثبت شد؛ در پنل واقعی هم اعمال کنید.")
+
     async def admin_delete(self, sid: int, refund=False, actor="admin"):
         svc = await self.db.get_vpn_service(sid)
         if not svc or svc["status"] == "deleted":
@@ -535,7 +622,8 @@ class VPN:
         if svc["status"] != "pending_manual":
             try:
                 drv = await self.driver(svc["panel_id"])
-                await drv.delete(svc["name"], json.loads(svc["meta"] or "{}"))
+                if not drv.manual:
+                    await drv.delete(svc["name"], json.loads(svc["meta"] or "{}"))
             except PanelError as e:
                 return False, f"{N_('خطای پنل')}: {str(e)[:200]}"
         await self.db.update_vpn_service(sid, status="deleted")
@@ -617,10 +705,11 @@ class VPN:
             lines.append(tr("زمان باقی‌مانده: {t}", t=tr("نامحدود") if left is None else tr("{d} روز", d=left)))
         else:
             lines.append(tr("سرویس شما پس از آماده‌سازی توسط پشتیبانی ارسال می‌شود."))
-        if svc["sub_url"]:
+        show_sub, show_cfg = pflag(svc, "sub"), pflag(svc, "config")
+        if svc["sub_url"] and show_sub:
             lines.append("\n" + tr("🔗 لینک اشتراک (روی آن بزنید تا کپی شود):") + f"\n<code>{esc(svc['sub_url'])}</code>")
-        links = json.loads(svc["links"] or "[]")
-        if links and not svc["sub_url"]:
+        links = json.loads(svc["links"] or "[]") if show_cfg else []
+        if links and not (svc["sub_url"] and show_sub):
             lines.append("\n" + tr("🔗 کانفیگ‌ها:"))
             lines += [f"<code>{esc(x)}</code>" for x in links[:6]]
         elif links:
@@ -634,11 +723,15 @@ class VPN:
             if svc["is_test"]:
                 rows.append([btn(tr("🛒 خرید سرویس"), "vpn", role="action")])
             else:
-                row = [btn(tr("🔄 تمدید"), f"vpn:rn:{sid}", role="action")]
-                if self._flag("vpn_allow_addon", "1"):
+                row = []
+                if pflag(svc, "renew"):
+                    row.append(btn(tr("🔄 تمدید"), f"vpn:rn:{sid}", role="action"))
+                if self._flag("vpn_allow_addon", "1") and pflag(svc, "addon"):
                     row.append(btn(tr("➕ حجم/زمان اضافه"), f"vpn:ad:{sid}", role="action"))
-                rows.append(row)
-            rows.append([btn(tr("📲 QR کد"), f"vpn:qr:{sid}", role="action"), btn(tr("♻️ بروزرسانی"), f"vpn:rf:{sid}", role="action")])
+                if row:
+                    rows.append(row)
+            row = [btn(tr("📲 QR کد"), f"vpn:qr:{sid}", role="action")] if pflag(svc, "qr") else []
+            rows.append(row + [btn(tr("♻️ بروزرسانی"), f"vpn:rf:{sid}", role="action")])
             if self._flag("vpn_allow_revoke", "1") and svc["sub_url"]:
                 rows.append([btn(tr("🔑 لینک جدید"), f"vpn:rv:{sid}", role="action")])
         rows.append([btn(tr("🔙 سرویس‌های من"), back, role="back")])

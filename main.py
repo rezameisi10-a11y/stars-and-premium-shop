@@ -11,6 +11,7 @@ from aiohttp import web
 import admin_manage
 import admin_settings
 import admin_vpn
+import admin_vpn_agent
 import handlers_admin
 import handlers_group
 import handlers_user
@@ -45,6 +46,7 @@ async def main() -> int:
     dp.include_router(admin_settings.router)
     dp.include_router(admin_manage.router)
     dp.include_router(admin_vpn.router)
+    dp.include_router(admin_vpn_agent.router)
     dp.include_router(handlers_user.router)
     dp.include_router(handlers_vpn.router)
 

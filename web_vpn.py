@@ -30,7 +30,7 @@ def gb_txt(v) -> str:
 
 def tabs(active: str) -> str:
     items = [("/vpn", NW_("پنل‌ها"), "panels"), ("/vpn/plans", NW_("پلن‌ها و بسته‌ها"), "plans"), ("/vpn/services", NW_("سرویس‌ها"), "services"),
-             ("/settings?g=vpn", NW_("تنظیمات VPN"), "settings")]
+             ("/vpn/agent-plans", NW_("پلن‌های نمایندگی"), "aplans"), ("/vpn/agents", NW_("نماینده‌ها"), "agents"), ("/settings?g=vpn", NW_("تنظیمات VPN"), "settings")]
     return "<div class='row' style='margin-bottom:14px'>" + " ".join(
         f"<a class='b sm {'pri' if k == active else ''}' href='{h}'>{e(_(l))}</a>" for h, l, k in items) + "</div>"
 
@@ -64,6 +64,7 @@ async def vpn_home(request):
     cards = (f"<div class='grid g4'><div class='stat'><small>{e(_('سرویس‌ها'))}</small><b>{fmt(st['total'])}</b><small>{e(_('فعال'))}: {st['active']} · {e(_('منقضی'))}: {st['expired']}</small></div>"
              f"<div class='stat ok'><small>{e(_('فروش VPN'))}</small><b>{fmt(st['revenue'])}</b><small>{e(_('تومان'))} · {st['orders']} {e(_('سفارش'))}</small></div>"
              f"<div class='stat ok'><small>{e(_('سود VPN'))}</small><b>{fmt(st['profit'])}</b><small>{e(_('تومان'))}</small></div>"
+             f"<div class='stat'><small>{e(_('نماینده‌ها'))}</small><b>{fmt(await shop.db.count_agents())}</b><a href='/vpn/agents'>{e(_('مشاهده'))} ←</a></div>"
              f"<div class='stat {'warn' if pend else ''}'><small>{e(_('منتظر تحویل دستی'))}</small><b>{pend}</b>"
              f"<a href='/vpn/services?status=pending_manual'>{e(_('بررسی'))} ←</a></div></div>")
     rows = []

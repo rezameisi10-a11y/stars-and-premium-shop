@@ -279,6 +279,7 @@ def create_web_app(shop: Shop) -> web.Application:
     import web_system  # noqa: F401
     import web_users  # noqa: F401
     import web_vpn  # noqa: F401
+    import web_vpn_agent  # noqa: F401
     import miniapp
     app = web.Application(middlewares=[security], client_max_size=MAX_UPLOAD + 1024 * 1024)
     app["shop"] = shop

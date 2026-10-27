@@ -23,6 +23,7 @@ from i18n import CATALOG, SRC_LANG
 from service import KIND_FA, METHOD_FA, PAY_STATUS_FA, STATUS_FA, Shop, normalize_url
 from ui import fmt
 from vpn_service import STATUS_FA as VPN_STATUS_FA
+from vpn_agent import AGENT_STATUS_FA
 from vpn_service import VpnError, bar, days_left, fmt_gb
 from webkit import set_session
 
@@ -192,6 +193,8 @@ async def a_init(ctx: Ctx, d: dict) -> dict:
             kinds.append(k)
     vpn_on = shop.vpn.enabled() and bool(await shop.db.list_vpn_plans(active_only=True))
     vpn_n = await shop.db.count_vpn_services(user_id=ctx.uid) if shop.vpn.enabled() else 0
+    ag_on = await shop.vpn.agents.available()
+    ag_n = await shop.db.count_agents(user_id=ctx.uid)
     support = s["support_username"].lstrip("@")
     ui = {k: ctx.tr(k) for k in ui_strings()}
     mui = miniapp_ui.load(s)
@@ -211,6 +214,7 @@ async def a_init(ctx: Ctx, d: dict) -> dict:
                   "support": shop.text("support_text", ctx.lang)},
         "support": support, "items": items, "bot": shop.bot_username,
         "vpn": {"on": vpn_on, "mine": vpn_n, "test": await shop.vpn.can_test(ctx.uid)},
+        "agent": {"on": ag_on, "mine": ag_n},
         "limits": {"min_topup": int(float(s["min_topup"])), "max_topup": int(float(s["max_topup"]))},
         "pay_step": s.get("pay_step", "1") == "1",
         "methods": [m["id"] for m in await _pay_methods(ctx)],
@@ -311,7 +315,7 @@ async def a_pay(ctx: Ctx, d: dict) -> dict:
     if method == "wallet":
         if not await shop.pay_with_wallet(order["id"], ctx.uid):
             raise ApiError(ctx.tr("موجودی کیف پول کافی نیست."))
-        return {"done": True, "kind": order["kind"], "message": ctx.tr("✅ پرداخت از کیف پول انجام شد؛ سفارش #{oid} در حال تحویل است.", oid=order["id"])}
+        return {"done": True, "kind": order["kind"], "agent": (order.get("ref") or "").startswith(("vpn:agent", "vpn:arenew")), "message": ctx.tr("✅ پرداخت از کیف پول انجام شد؛ سفارش #{oid} در حال تحویل است.", oid=order["id"])}
     try:
         pid, _text, kb = await shop.create_payment(method, ctx.uid, amount, order["id"] if order else None, ctx.tr)
     except ValueError as e:
@@ -529,9 +533,100 @@ async def a_vpn_send(ctx: Ctx, d: dict) -> dict:
     return {"ok": True, "message": ctx.tr("در چت ربات ارسال شد.")}
 
 
+# ------------------------------------------------------------------ پنل نمایندگی
+def _agent_plan_dict(ctx: Ctx, p: dict) -> dict:
+    return {"id": p["id"], "title": p["title"], "days": p["days"], "gb": p["traffic_gb"], "max_users": p["max_users"], "panel_id": p["panel_id"],
+            "price": _money(ctx, p["user_price"]), "note": p.get("note") or ""}
+
+
+def _agent_dict(ctx: Ctx, ag: dict, full=False) -> dict:
+    left = days_left(ag["expires_at"])
+    out = {"id": ag["id"], "username": ag["username"], "title": ag["title"] or "", "status": ag["status"],
+           "status_text": ctx.tr(AGENT_STATUS_FA.get(ag["status"], ag["status"])), "used_text": fmt_gb(ag["used_bytes"]),
+           "total_text": fmt_gb(ag["total_bytes"]) if ag["total_bytes"] else "", "percent": min(100, int(ag["used_bytes"] * 100 / ag["total_bytes"])) if ag["total_bytes"] else 0,
+           "days_left": left, "users": ag["users_count"], "max_users": ag["max_users"]}
+    if full:
+        out.update(panel_url=ctx.shop.vpn.agents.panel_link(ag), password=ag["password"],
+                   help=(ctx.shop.s.get("vpn_agent_help_text") or "").strip(), can_pw=ag["status"] not in ("expired", "disabled"))
+    return out
+
+
+async def _own_agent(ctx: Ctx, aid) -> dict:
+    ag = await ctx.shop.db.get_agent(int(aid or 0))
+    if not ag or ag["user_id"] != ctx.uid or ag["status"] == "deleted":
+        raise ApiError(ctx.tr("نماینده پیدا نشد."), 404)
+    return ag
+
+
+async def a_agent_plans(ctx: Ctx, d: dict) -> dict:
+    ag = ctx.shop.vpn.agents
+    if not ag.enabled():
+        raise ApiError(ctx.tr("فروش پنل نمایندگی فعال نیست."), 403)
+    u = await ctx.shop.db.get_user(ctx.uid)
+    return {"plans": [_agent_plan_dict(ctx, p) for p in await ag.plans_for(u)], "ask_name": (ctx.shop.s.get("vpn_agent_name_mode") or "random") == "ask",
+            "discount": (u or {}).get("personal_discount") or 0}
+
+
+async def a_agent_order(ctx: Ctx, d: dict) -> dict:
+    try:
+        oid = await ctx.shop.vpn.agents.create_order(ctx.uid, int(d.get("plan_id") or 0), str(d.get("name") or "").strip().lower() or None)
+    except VpnError as e:
+        raise _vpn_err(ctx, e)
+    return await a_order_get(ctx, {"order_id": oid})
+
+
+async def a_agent_list(ctx: Ctx, d: dict) -> dict:
+    rows = await ctx.shop.db.list_agents(user_id=ctx.uid, limit=50)
+    return {"agents": [_agent_dict(ctx, r) for r in rows]}
+
+
+async def a_agent_get(ctx: Ctx, d: dict) -> dict:
+    ag = await _own_agent(ctx, d.get("id"))
+    if d.get("refresh") or time.time() - (ag["last_sync"] or 0) > 60:
+        try:
+            ag = await ctx.shop.vpn.agents.sync(ag, force=bool(d.get("refresh")))
+        except Exception:  # noqa: BLE001
+            if d.get("refresh"):
+                raise ApiError(ctx.tr("ارتباط با سرور برقرار نشد؛ کمی بعد دوباره تلاش کنید."))
+    return _agent_dict(ctx, ag, full=True)
+
+
+async def a_agent_renew_plans(ctx: Ctx, d: dict) -> dict:
+    ag = await _own_agent(ctx, d.get("id"))
+    u = await ctx.shop.db.get_user(ctx.uid)
+    plans = [p for p in await ctx.shop.vpn.agents.plans_for(u) if p["panel_id"] == ag["panel_id"]]
+    return {"agent": _agent_dict(ctx, ag), "plans": [_agent_plan_dict(ctx, p) for p in plans]}
+
+
+async def a_agent_renew(ctx: Ctx, d: dict) -> dict:
+    try:
+        oid = await ctx.shop.vpn.agents.renew_order(ctx.uid, int(d.get("id") or 0), int(d.get("plan_id") or 0))
+    except VpnError as e:
+        raise _vpn_err(ctx, e)
+    return await a_order_get(ctx, {"order_id": oid})
+
+
+async def a_agent_pw(ctx: Ctx, d: dict) -> dict:
+    ag = await _own_agent(ctx, d.get("id"))
+    if ag["status"] in ("expired", "disabled"):
+        raise ApiError(ctx.tr("انجام نشد؛ بعداً دوباره تلاش کنید."))
+    ok, _m = await ctx.shop.vpn.agents.admin_action(ag["id"], "password", actor=f"user:{ctx.uid}")
+    if not ok:
+        raise ApiError(ctx.tr("انجام نشد؛ بعداً دوباره تلاش کنید."))
+    return await a_agent_get(ctx, {"id": ag["id"]})
+
+
+async def a_agent_send(ctx: Ctx, d: dict) -> dict:
+    ag = await _own_agent(ctx, d.get("id"))
+    await ctx.shop.vpn.agents.send_agent(ctx.uid, ag)
+    return {"ok": True, "message": ctx.tr("در چت ربات ارسال شد.")}
+
+
 ACTIONS = {"vpn_plans": a_vpn_plans, "vpn_order": a_vpn_order, "vpn_test": a_vpn_test, "vpn_services": a_vpn_services, "vpn_service": a_vpn_service,
            "vpn_renew_plans": a_vpn_renew_plans, "vpn_renew": a_vpn_renew, "vpn_addons": a_vpn_addons, "vpn_addon": a_vpn_addon,
            "vpn_revoke": a_vpn_revoke, "vpn_send": a_vpn_send,
+           "agent_plans": a_agent_plans, "agent_order": a_agent_order, "agent_list": a_agent_list, "agent_get": a_agent_get,
+           "agent_renew_plans": a_agent_renew_plans, "agent_renew": a_agent_renew, "agent_pw": a_agent_pw, "agent_send": a_agent_send,
            "init": a_init, "catalog": a_catalog, "order_create": a_order_create, "order_get": a_order_get, "discount": a_discount,
            "pay": a_pay, "receipt": a_receipt, "check": a_check, "wallet": a_wallet, "orders": a_orders,
            "referral": a_referral, "set_lang": a_set_lang}
