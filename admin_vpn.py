@@ -54,9 +54,20 @@ def _ask_kb(cancel="adm:vpn"):
 
 # ============================================================ خانه
 # قابلیت‌های کلی (جدول «عنوان | وضعیت | ⚙️» مثل میرزا)
-FEATURES = [("vpn_enabled", "فروش VPN"), ("vpn_test_enabled", "اکانت تست رایگان"), ("vpn_allow_addon", "خرید حجم/زمان اضافه"),
-            ("vpn_allow_revoke", "ساخت لینک جدید توسط کاربر"), ("vpn_stack", "جمع شدن روزهای باقی‌مانده در تمدید"),
-            ("vpn_notify_admin", "اعلان فروش به ادمین"), ("vpn_agent_enabled", "فروش پنل نمایندگی")]
+# (کلید، عنوان، نوع: bool=کلید روشن/خاموش | val=مقدار عددی/متنی، تنظیمات مرتبط با ⚙️)
+FEATURES = [("vpn_enabled", "فروش VPN", "bool", ["vpn_name_mode", "vpn_prefix", "vpn_sync_min"]),
+            ("vpn_test_enabled", "اکانت تست رایگان", "bool", ["vpn_test_days", "vpn_test_gb", "vpn_test_panel"]),
+            ("vpn_allow_addon", "خرید حجم/زمان اضافه", "bool", []),
+            ("vpn_allow_revoke", "ساخت لینک جدید توسط کاربر", "bool", []),
+            ("vpn_stack", "جمع شدن روزهای باقی‌مانده در تمدید", "bool", []),
+            ("vpn_notify_admin", "اعلان فروش به ادمین", "bool", []),
+            ("vpn_agent_enabled", "فروش پنل نمایندگی", "bool", ["vpn_agent_name_mode", "vpn_agent_prefix", "vpn_agent_remind_days", "vpn_agent_autodelete_days", "vpn_agent_help_text"]),
+            ("vpn_remind_days", "هشدار زمان", "val", ["vpn_remind_days"]),
+            ("vpn_remind_usage", "هشدار حجم", "val", ["vpn_remind_usage"]),
+            ("vpn_autodelete_days", "حذف خودکار سرویس منقضی", "val", ["vpn_autodelete_days"]),
+            ("vpn_help_text", "راهنمای اتصال", "val", ["vpn_help_text"])]
+FEATURE_BY_KEY = {f[0]: f for f in FEATURES}
+VPN_KEYS = [k for k, *_ in __import__("settings_schema").GROUP_IDS["vpn"][3]]
 
 
 async def hub(shop: Shop):
@@ -73,7 +84,8 @@ async def hub(shop: Shop):
             [btn("👤 مدیریت کاربران", "adm:vpn:us:0", role="admin"), btn("🔎 جستجو", "adm:vpn:find", role="admin")],
             [btn("🆕 ساخت سرویس دستی", "adm:vpn:new", role="admin")],
             [btn("🧑‍💼 پلن‌های نمایندگی", "adm:vpn:agp", role="admin"), btn("🗂 نماینده‌ها", "adm:vpn:agl:all:0", role="admin")],
-            [btn("📊 وضعیت قابلیت‌ها", "adm:vpn:ft", role="admin"), btn("⚙️ تنظیمات", "adm:sg:vpn", role="admin")]]
+            [btn("📊 وضعیت قابلیت‌ها", "adm:vpn:ft", role="admin"), btn("⚙️ تنظیمات", "adm:vpn:st", role="admin")],
+            [btn("🖼 پس‌زمینه QR", "adm:vpn:qb", role="admin")]]
     if pend:
         rows.insert(0, [btn(f"🕓 منتظر تحویل ({pend})", "adm:vpn:sv:pending_manual:0", role="action")])
     rows.append(back_row())
@@ -94,13 +106,18 @@ async def cb_noop(cb: CallbackQuery):
 
 
 # ---- جدول وضعیت قابلیت‌ها
+def _is_on(shop: Shop, key, kind) -> bool:
+    v = shop.s.get(key, "0")
+    return v == "1" if kind == "bool" else v not in ("", "0")
+
+
 async def _features(cb: CallbackQuery, shop: Shop):
     rows = [[btn("عنوان", "adm:vpn:noop", role="back"), btn("وضعیت", "adm:vpn:noop", role="back"), btn("تنظیمات", "adm:vpn:noop", role="back")]]
-    for key, title in FEATURES:
-        on = shop.s.get(key, "0") == "1"
-        rows.append([btn(title, "adm:vpn:noop", role="back"), btn(onoff(on), f"adm:vpn:ftg:{key}", role="action"), btn("⚙️", "adm:sg:vpn", role="admin")])
+    for key, title, kind, rel in FEATURES:
+        st = btn(onoff(_is_on(shop, key, kind)), f"adm:vpn:ftg:{key}" if kind == "bool" else f"adm:vpn:se:{key}:f", role="action")
+        rows.append([btn(title, "adm:vpn:noop", role="back"), st, btn("⚙️", f"adm:vpn:fs:{key}", role="admin")])
     rows.append(back_row("adm:vpn"))
-    await view(cb, "📊 <b>وضعیت قابلیت‌ها</b>\nبرای روشن یا خاموش کردن، روی وضعیت بزنید.", ikb(rows))
+    await view(cb, "📊 <b>وضعیت قابلیت‌ها</b>\nبرای روشن یا خاموش کردن، روی وضعیت بزنید. برای تنظیمات هر مورد، روی ⚙️ بزنید.", ikb(rows))
 
 
 @router.callback_query(F.data == "adm:vpn:ft")
@@ -112,12 +129,109 @@ async def cb_features(cb: CallbackQuery, shop: Shop):
 @router.callback_query(F.data.startswith("adm:vpn:ftg:"))
 async def cb_feature_toggle(cb: CallbackQuery, shop: Shop):
     key = cb.data.split(":")[3]
-    if key not in dict(FEATURES):
+    if key not in FEATURE_BY_KEY or FEATURE_BY_KEY[key][2] != "bool":
         await cb.answer("نامعتبر", show_alert=True)
         return
     await shop.set_setting(key, "0" if shop.s.get(key, "0") == "1" else "1", f"tg:{cb.from_user.id}")
     await _features(cb, shop)
     await cb.answer("انجام شد")
+
+
+# ---- تنظیمات مرتبط با یک قابلیت (فقط همان‌ها، نه همه‌ی تنظیمات)
+def _val_text(shop: Shop, key) -> str:
+    from settings_schema import FIELDS
+    typ = FIELDS[key][1]
+    v = shop.s.get(key, "")
+    if typ == "bool":
+        return onoff(v == "1")
+    if typ == "textarea":
+        return "✅ ثبت شده" if v else "—"
+    return v if v != "" else "—"
+
+
+async def _settings_list(cb: CallbackQuery, shop: Shop, keys, origin, title, back):
+    from settings_schema import FIELDS
+    rows = [[btn(f"{FIELDS[k][0]}: {_val_text(shop, k)}"[:64], f"adm:vpn:se:{k}:{origin}", role="admin")] for k in keys]
+    rows.append(back_row(back))
+    await view(cb, title, ikb(rows))
+
+
+@router.callback_query(F.data.startswith("adm:vpn:fs:"))
+async def cb_feature_settings(cb: CallbackQuery, shop: Shop):
+    key = cb.data.split(":")[3]
+    f = FEATURE_BY_KEY.get(key)
+    if not f:
+        await cb.answer("نامعتبر", show_alert=True)
+        return
+    if not f[3]:
+        await cb.answer("این مورد تنظیم دیگری ندارد.", show_alert=True)
+        return
+    await _settings_list(cb, shop, f[3], "f:" + key, f"⚙️ <b>تنظیمات «{f[1]}»</b>", "adm:vpn:ft")
+    await cb.answer()
+
+
+@router.callback_query(F.data == "adm:vpn:st")
+async def cb_settings(cb: CallbackQuery, shop: Shop):
+    await _settings_list(cb, shop, VPN_KEYS, "s", "⚙️ <b>تنظیمات فروش VPN</b>\nروی هر مورد بزنید تا تغییرش بدهید.", "adm:vpn")
+    await cb.answer()
+
+
+async def _back_of(origin: str) -> tuple[str, str]:
+    if origin.startswith("f:"):
+        return "adm:vpn:fs:" + origin[2:], "adm:vpn:fs:" + origin[2:]
+    if origin == "f":
+        return "adm:vpn:ft", "adm:vpn:ft"
+    return "adm:vpn:st", "adm:vpn:st"
+
+
+@router.callback_query(F.data.startswith("adm:vpn:se:"))
+async def cb_setting_edit(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    from settings_schema import FIELDS
+    from ui import hint_tg
+    parts = cb.data.split(":", 4)
+    key, origin = parts[3], parts[4] if len(parts) > 4 else "s"
+    if key not in FIELDS or key not in VPN_KEYS:
+        await cb.answer("نامعتبر", show_alert=True)
+        return
+    back, _ = await _back_of(origin)
+    label, typ, hint = FIELDS[key]
+    if typ == "bool":
+        await shop.set_setting(key, "0" if shop.s.get(key, "0") == "1" else "1", f"tg:{cb.from_user.id}")
+        await cb.answer("انجام شد")
+        if origin == "f":
+            await _features(cb, shop)
+        elif origin.startswith("f:"):
+            await _settings_list(cb, shop, FEATURE_BY_KEY[origin[2:]][3], origin, f"⚙️ <b>تنظیمات «{FEATURE_BY_KEY[origin[2:]][1]}»</b>", "adm:vpn:ft")
+        else:
+            await cb_settings(cb, shop)
+        return
+    if typ.startswith("select:"):
+        opts = typ.split(":", 1)[1].split("|")
+        rows = [[btn(("✅ " if shop.s.get(key) == o else "") + o, f"adm:vpn:ssv:{key}:{i}:{origin}", role="action")] for i, o in enumerate(opts)]
+        rows.append(back_row(back))
+        await view(cb, f"<b>{esc(label)}</b>\n{hint_tg(hint)}", ikb(rows))
+        await cb.answer()
+        return
+    await state.set_state(AV.wiz)
+    await state.update_data(flow="setting", key=key, origin=origin)
+    cur = shop.s.get(key, "")
+    await ans(cb.message, f"<b>{esc(label)}</b>\n{hint_tg(hint) if hint else ''}\n\nمقدار فعلی: <code>{esc(cur) if cur else '—'}</code>\nمقدار جدید را بفرستید. برای خالی کردن «-» بفرستید.", _ask_kb(back))
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("adm:vpn:ssv:"))
+async def cb_setting_select(cb: CallbackQuery, shop: Shop):
+    from settings_schema import FIELDS
+    parts = cb.data.split(":", 5)
+    key, idx, origin = parts[3], int(parts[4]), parts[5] if len(parts) > 5 else "s"
+    opts = FIELDS[key][1].split(":", 1)[1].split("|")
+    await shop.set_setting_validated(key, opts[idx], f"tg:{cb.from_user.id}")
+    await cb.answer("انجام شد")
+    back, _ = await _back_of(origin)
+    if origin.startswith("f:"):
+        await _settings_list(cb, shop, FEATURE_BY_KEY[origin[2:]][3], origin, f"⚙️ <b>تنظیمات «{FEATURE_BY_KEY[origin[2:]][1]}»</b>", "adm:vpn:ft")
+    else:
+        await cb_settings(cb, shop)
 
 
 # ============================================================ پنل‌ها
@@ -142,7 +256,7 @@ def panel_card(p) -> str:
             + (f"\n🚫 مخفی برای {len(ex.get('hidden', []))} کاربر" if ex.get("hidden") else ""))
 
 
-async def _show_panel(cb: CallbackQuery, shop: Shop, pid: int):
+async def _show_panel(cb: CallbackQuery, shop: Shop, pid: int, fresh=False):
     p = next((x for x in await shop.db.list_vpn_panels() if x["id"] == pid), None)
     if not p:
         await cb.answer("پیدا نشد", show_alert=True)
@@ -156,12 +270,23 @@ async def _show_panel(cb: CallbackQuery, shop: Shop, pid: int):
             [btn("🎁 روز تست", f"adm:vpn:pe:{pid}:test_days", role="admin"), btn("🎁 حجم تست", f"adm:vpn:pe:{pid}:test_gb", role="admin")],
             [btn("🚫 مخفی کردن برای کاربر", f"adm:vpn:ph:{pid}", role="admin")],
             [btn("🗑 حذف پنل", f"adm:vpn:pdel:{pid}", role="reject")], back_row("adm:vpn:pl")]
-    await view(cb, panel_card(p), ikb(rows))
+    if fresh:
+        await ans(cb.message, panel_card(p), ikb(rows))
+    else:
+        await view(cb, panel_card(p), ikb(rows))
 
 
 @router.callback_query(F.data.regexp(r"^adm:vpn:p:\d+$"))
 async def cb_panel(cb: CallbackQuery, shop: Shop):
-    await _show_panel(cb, shop, int(cb.data.split(":")[3]))
+    pid = int(cb.data.split(":")[3])
+    p = await shop.db.get_vpn_panel(pid)
+    if p and p["type"] != "manual":                # مثل میرزا: اول مانیتورینگ سرور، بعد منوی پنل
+        await cb.answer("در حال گرفتن وضعیت سرور...")
+        ok, txt = await shop.vpn.panel_status_text(pid)
+        await ans(cb.message, txt if ok else f"🖥 <b>وضعیت سرور</b>\n⚠️ مانیتورینگ در دسترس نیست:\n<code>{esc(txt)}</code>")
+        await _show_panel(cb, shop, pid, fresh=True)
+        return
+    await _show_panel(cb, shop, pid)
     await cb.answer()
 
 
@@ -260,15 +385,11 @@ async def cb_panel_status(cb: CallbackQuery, shop: Shop):
     if not p:
         await cb.answer("پیدا نشد", show_alert=True)
         return
-    await cb.answer("در حال بررسی...")
-    ok, info = await shop.vpn.test_panel(p)
+    await cb.answer("در حال گرفتن وضعیت سرور...")
+    ok, txt = await shop.vpn.panel_status_text(pid)
     load = await shop.db.panel_load(pid)
-    head = f"📈 <b>وضعیت پنل «{esc(p['name'])}»</b>\n"
-    if not ok:
-        await ans(cb.message, head + f"🔴 وصل نشد:\n<code>{esc(str(info)[:300])}</code>")
-        return
-    await ans(cb.message, head + "🟢 وصل است" + (f"\nنسخه: <code>{esc(str(info['version']))}</code>" if info.get("version") else "")
-              + f"\nگزینه‌های پنل: {info.get('options', 0)}\nسرویس‌های زنده‌ی ربات روی این پنل: {load}" + (f" از {p['capacity']}" if p["capacity"] else ""))
+    extra = f"\n\n📡 سرویس‌های زنده‌ی ربات روی این پنل: {load}" + (f" از {p['capacity']}" if p["capacity"] else "")
+    await ans(cb.message, (txt if ok else f"🖥 <b>وضعیت سرور «{esc(p['name'])}»</b>\n🔴 وصل نشد یا مانیتورینگ ندارد:\n<code>{esc(txt)}</code>") + extra)
 
 
 @router.callback_query(F.data.startswith("adm:vpn:pt:"))
@@ -411,6 +532,7 @@ async def _safe_delete(m: Message):
         pass
 
 
+@router.message(AV.wiz, F.text == "/all")
 @router.message(AV.wiz, TXT)
 async def wiz_text(m: Message, shop: Shop, state: FSMContext):
     d = await state.get_data()
@@ -453,6 +575,38 @@ async def wiz_text(m: Message, shop: Shop, state: FSMContext):
         await shop.vpn.forget(d["pid"])
         await ans(m, "✅ ذخیره شد.", ikb([back_row(f"adm:vpn:p:{d['pid']}")]))
         return
+    if flow == "np":
+        await _np_step(m, shop, state, d)
+        return
+    if flow == "uact":
+        await _uact_step(m, shop, state, d)
+        return
+    if flow == "gprice":
+        try:
+            pct = float(m.text.strip().translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٫", "0123456789.")))
+            if pct <= 0 or pct >= 1000 or (not d["up"] and pct >= 100):
+                raise ValueError
+        except ValueError:
+            await ans(m, "❌ یک عدد درست بفرستید (برای کاهش کمتر از ۱۰۰).")
+            return
+        await state.clear()
+        k = 1 + pct / 100 if d["up"] else 1 - pct / 100
+        plans = await shop.db.list_vpn_plans()
+        for p in plans:
+            await shop.db.update_vpn_plan(p["id"], price=max(int(round(p["price"] * k / 100.0)) * 100, 0))
+        await shop.db.log(f"tg:{m.from_user.id}", "vpn_group_price", f"{'+' if d['up'] else '-'}{pct}%")
+        await ans(m, f"✅ قیمت {len(plans)} محصول {'بیشتر' if d['up'] else 'کمتر'} شد (گرد‌شده به ۱۰۰ تومان).", ikb([back_row("adm:vpn:pn")]))
+        return
+    if flow == "setting":
+        raw = "" if m.text.strip() == "-" else m.text.strip()
+        ok, res = await shop.set_setting_validated(d["key"], raw, f"tg:{m.from_user.id}")
+        if not ok:
+            await ans(m, f"❌ {esc(res)}")
+            return
+        await state.clear()
+        back, _ = await _back_of(d["origin"])
+        await ans(m, "✅ ذخیره شد.", ikb([back_row(back)]))
+        return
     if flow == "hide":
         t = m.text.strip().translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789"))
         if not t.isdigit():
@@ -486,12 +640,43 @@ async def wiz_text(m: Message, shop: Shop, state: FSMContext):
 
 # ============================================================ پلن‌ها
 @router.callback_query(F.data == "adm:vpn:pn")
-async def cb_plans(cb: CallbackQuery, shop: Shop):
+async def cb_plans(cb: CallbackQuery, shop: Shop, state: FSMContext = None):
+    if state:
+        await state.clear()
+    n = len(await shop.db.list_vpn_plans())
+    rows = [[btn("🛍 اضافه کردن محصول", "adm:vpn:pna", role="confirm"), btn("❌ حذف محصول", "adm:vpn:pnd", role="reject")],
+            [btn("✏️ ویرایش محصول", "adm:vpn:pne", role="admin")],
+            [btn("⬆️ افزایش گروهی قیمت", "adm:vpn:pgi", role="admin"), btn("⬇️ کاهش گروهی قیمت", "adm:vpn:pgd", role="admin")],
+            back_row("adm:vpn", "🔙 بازگشت به منوی فروش")]
+    await view(cb, f"🛍 <b>مدیریت محصولات</b> — {n} محصول\nیک گزینه را انتخاب کنید.", ikb(rows))
+    await cb.answer()
+
+
+async def _plan_list(cb: CallbackQuery, shop: Shop, mode):
     plans = await shop.db.list_vpn_plans()
-    rows = [[btn(f"{'🟢' if p['active'] else '⚫️'} {p['title']} · {p['panel_name']} · {fmt(p['price'])}", f"adm:vpn:n:{p['id']}", role="admin")] for p in plans[:40]]
-    rows.append([btn("➕ پلن جدید", "adm:vpn:pna", role="confirm")])
-    rows.append(back_row("adm:vpn"))
-    await view(cb, "📦 <b>محصولات (پلن‌ها)</b>\nقیمت‌ها به تومان است.", ikb(rows))
+    pre = "adm:vpn:n:" if mode == "e" else "adm:vpn:ndel:"
+    rows = [[btn(f"{'🟢' if p['active'] else '⚫️'} {p['title']} · {p['panel_name']} · {fmt(p['price'])} · {p.get('utype') or 'f'}", f"{pre}{p['id']}", role="admin" if mode == "e" else "reject")] for p in plans[:40]]
+    rows.append(back_row("adm:vpn:pn", "▶️ بازگشت به منوی قبل"))
+    await view(cb, "✏️ کدام محصول را ویرایش می‌کنید؟" if mode == "e" else "❌ کدام محصول حذف شود؟" if plans else "هنوز محصولی ندارید.", ikb(rows))
+    await cb.answer()
+
+
+@router.callback_query(F.data == "adm:vpn:pne")
+async def cb_plans_edit(cb: CallbackQuery, shop: Shop):
+    await _plan_list(cb, shop, "e")
+
+
+@router.callback_query(F.data == "adm:vpn:pnd")
+async def cb_plans_del(cb: CallbackQuery, shop: Shop):
+    await _plan_list(cb, shop, "d")
+
+
+@router.callback_query(F.data.in_({"adm:vpn:pgi", "adm:vpn:pgd"}))
+async def cb_group_price(cb: CallbackQuery, state: FSMContext):
+    up = cb.data.endswith("pgi")
+    await state.set_state(AV.wiz)
+    await state.update_data(flow="gprice", up=up)
+    await ans(cb.message, f"قیمت همه‌ی محصولات چند درصد {'بیشتر' if up else 'کمتر'} شود؟ (فقط عدد، مثلاً 10)", _ask_kb("adm:vpn:pn"))
     await cb.answer()
 
 
@@ -504,12 +689,14 @@ async def cb_plan(cb: CallbackQuery, shop: Shop):
         return
     txt = (f"📦 <b>{esc(p['title'])}</b> — {'✅ فعال' if p['active'] else '⚫️ غیرفعال'}\nپنل: {esc(p['panel_name'])}\n"
            f"مدت: {p['days'] or '∞'} روز | حجم: {p['gb']:g} GB {'(نامحدود)' if not p['gb'] else ''} | محدودیت IP: {p['ip_limit'] or '∞'}\n"
-           f"قیمت: {fmt(p['price'])} | هزینه: {fmt(p['cost'])} | سود: {fmt(p['price'] - p['cost'])}")
+           f"قیمت: {fmt(p['price'])} | هزینه: {fmt(p['cost'])} | سود: {fmt(p['price'] - p['cost'])}\n"
+           f"نوع کاربر: <code>{p.get('utype') or 'f'}</code>" + (f"\n📝 {esc(p['note'])}" if p.get("note") else ""))
     rows = [[btn("⏯ فعال/غیرفعال", f"adm:vpn:ntg:{pid}", role="action"), btn("🗑 حذف", f"adm:vpn:ndel:{pid}", role="reject")],
             [btn("✏️ قیمت", f"adm:vpn:ne:{pid}:price", role="admin"), btn("✏️ هزینه", f"adm:vpn:ne:{pid}:cost", role="admin")],
             [btn("✏️ روز", f"adm:vpn:ne:{pid}:days", role="admin"), btn("✏️ حجم", f"adm:vpn:ne:{pid}:gb", role="admin")],
             [btn("✏️ عنوان", f"adm:vpn:ne:{pid}:title", role="admin"), btn("✏️ محدودیت IP", f"adm:vpn:ne:{pid}:ip_limit", role="admin")],
-            back_row("adm:vpn:pn")]
+            [btn("✏️ نوع کاربر", f"adm:vpn:ne:{pid}:utype", role="admin"), btn("📝 یادداشت", f"adm:vpn:ne:{pid}:note", role="admin")],
+            back_row("adm:vpn:pne", "▶️ بازگشت به منوی قبل")]
     await view(cb, txt, ikb(rows))
     await cb.answer()
 
@@ -520,8 +707,7 @@ async def cb_plan_toggle(cb: CallbackQuery, shop: Shop):
     p = await shop.db.get_vpn_plan(pid)
     if p:
         await shop.db.update_vpn_plan(pid, active=0 if p["active"] else 1)
-    await cb.answer("انجام شد")
-    await cb_plans(cb, shop)
+    await cb_plan(cb, shop)
 
 
 @router.callback_query(F.data.startswith("adm:vpn:ndel:"))
@@ -530,7 +716,7 @@ async def cb_plan_del(cb: CallbackQuery, shop: Shop):
     await shop.db.delete_vpn_plan(pid)
     await shop.db.log(f"tg:{cb.from_user.id}", "vpn_plan_delete", f"#{pid}")
     await cb.answer("حذف شد")
-    await cb_plans(cb, shop)
+    await _plan_list(cb, shop, "d")
 
 
 PLAN_STEPS = [("title", "اسم پلن را بنویسید (مثلاً «۳۰ روزه ۵۰ گیگ»):", "text"), ("days", "چند روز؟ (۰ یعنی بدون انقضا):", "int"),
@@ -539,12 +725,19 @@ PLAN_STEPS = [("title", "اسم پلن را بنویسید (مثلاً «۳۰ ر
               ("ip_limit", "حداکثر چند نفر همزمان؟ (۰ یعنی نامحدود):", "int")]
 ADDON_STEPS = [("title", "اسم بسته را بنویسید (مثلاً «۱۰ گیگ اضافه»):", "text"), ("gb", "چند گیگ اضافه شود؟ (اگر فقط زمان است ۰):", "float"),
                ("days", "چند روز اضافه شود؟ (اگر فقط حجم است ۰):", "int"), ("price", "قیمت به تومان:", "int"), ("cost", "قیمت تمام‌شده به تومان:", "int")]
-KIND_OF = {k: t for k, _, t in PLAN_STEPS + ADDON_STEPS}
-PROMPT_OF = {k: p for k, p, _ in PLAN_STEPS + ADDON_STEPS}
+KIND_OF = {k: t for k, _, t in PLAN_STEPS + ADDON_STEPS} | {"utype": "utype", "note": "note"}
+PROMPT_OF = {k: p for k, p, _ in PLAN_STEPS + ADDON_STEPS} | {"utype": "نوع کاربر را بفرستید: f (عادی)، n (نماینده نوع ۲) یا n2 (نماینده نوع ۳):",
+                                                               "note": "یادداشت محصول را بفرستید (در پیش‌فاکتور کاربر نشان داده می‌شود). برای پاک کردن «-» بفرستید:"}
 
 
 def _num(kind, text):
     t = (text or "").strip().translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٫٬", "0123456789.,")).replace(",", "")
+    if kind == "utype":
+        if t.lower() not in ("f", "n", "n2"):
+            raise ValueError("فقط f یا n یا n2.")
+        return t.lower()
+    if kind == "note":
+        return "" if t == "-" else (text or "").strip()[:300]
     if kind == "text":
         if not t:
             raise ValueError("متن خالی است.")
@@ -558,24 +751,100 @@ def _num(kind, text):
     return v
 
 
+# ---- افزودن محصول (مرحله‌به‌مرحله و با همان متن‌های میرزا)
+NP_BACK_MENU, NP_BACK_PREV = "🏠 بازگشت به منوی مدیریت", "▶️ بازگشت به منوی قبل"
+NP_TEXT = {
+    "title": "ابتدا نام اشتراک خود را ارسال نمایید\n⚠️ نکات هنگام وارد کردن نام محصول:\n• در کنار نام اشتراک حتما قیمت اشتراک را هم وارد کنید.\n• در کنار نام اشتراک حتما زمان اشتراک را هم وارد کنید.",
+    "utype": "محصول برای چه کاربری نشان داده شود\nنوع اول <code>f</code> : کاربر عادی می باشد\nنوع دوم <code>n</code> : نماینده نوع دوم می باشد با قابلیت های محدود\nنوع سوم <code>n2</code> : نماینده نوع سوم می باشد که قابلیت های بیشتر",
+    "panel": "📌 موقعیت محصول خود را انتخاب کنید\n\n⭕ برای تعریف محصول در همه موقعیت ها دستور /all را ارسال کنید",
+    "gb": "حجم اشتراک را ارسال کنید توجه واحد حجم گیگابایت است\n\nاگر میخواهید حجم نامحدود باشد عدد 0 ارسال کنید",
+    "days": "زمان اشتراک را وارد نمایید توجه واحد زمان اشتراک روز است\nاگر می‌خواهید زمان نامحدود باشد عدد 0 را ارسال کنید",
+    "price": "قیمت اشتراک را ارسال کنید.\nتوجه:\nمحصول براساس تومان است و قیمت را بدون هیچ کاراکتر اضافی ارسال نمایید.",
+    "note": "📝 یادداشت را برای محصول ارسال کنید. این یادداشت در پیش فاکتور کاربر نشان داده می شود.",
+}
+NP_ORDER = ["title", "utype", "panel", "gb", "days", "price", "note"]
+
+
+def _np_kb(step, panels=()):
+    from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+    rows = []
+    if step == "utype":
+        rows = [[KeyboardButton(text="f"), KeyboardButton(text="n"), KeyboardButton(text="n2")]]
+    elif step == "panel":
+        names = [p["name"] for p in panels]
+        rows = [[KeyboardButton(text=n) for n in names[i:i + 2]] for i in range(0, len(names), 2)] + [[KeyboardButton(text="/all")]]
+    rows.append([KeyboardButton(text=NP_BACK_PREV), KeyboardButton(text=NP_BACK_MENU)])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+async def _np_ask(msg, shop: Shop, state: FSMContext, step):
+    panels = await shop.db.list_vpn_panels() if step == "panel" else ()
+    await state.update_data(flow="np", step=step)
+    await ans(msg, NP_TEXT[step], _np_kb(step, panels))
+
+
 @router.callback_query(F.data == "adm:vpn:pna")
-async def cb_plan_add(cb: CallbackQuery, shop: Shop):
-    panels = await shop.db.list_vpn_panels()
-    if not panels:
+async def cb_plan_add(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    if not await shop.db.list_vpn_panels():
         await cb.answer("ابتدا یک پنل اضافه کنید.", show_alert=True)
         return
-    rows = [[btn(f"{p['name']}", f"adm:vpn:pnp:{p['id']}", role="admin")] for p in panels]
-    rows.append(back_row("adm:vpn:pn"))
-    await view(cb, "پلن برای کدام پنل ساخته شود؟", ikb(rows))
-    await cb.answer()
-
-
-@router.callback_query(F.data.startswith("adm:vpn:pnp:"))
-async def cb_plan_panel(cb: CallbackQuery, state: FSMContext):
     await state.set_state(AV.wiz)
-    await state.update_data(flow="plan", steps=[s[0] for s in PLAN_STEPS], i=0, vals={"panel_id": int(cb.data.split(":")[3])})
-    await ans(cb.message, f"<b>1/{len(PLAN_STEPS)}</b> — {PLAN_STEPS[0][1]}", _ask_kb("adm:vpn:pn"))
+    await state.update_data(vals={})
+    await _np_ask(cb.message, shop, state, "title")
     await cb.answer()
+
+
+async def _np_step(m: Message, shop: Shop, state: FSMContext, d):
+    from aiogram.types import ReplyKeyboardRemove
+    t = (m.text or "").strip()
+    step, vals = d["step"], dict(d.get("vals") or {})
+    if t in (NP_BACK_MENU, NP_BACK_PREV):
+        await state.clear()
+        await m.answer("↩️", reply_markup=ReplyKeyboardRemove())
+        if t == NP_BACK_MENU:
+            text, kb = await hub(shop)
+            await ans(m, text, kb)
+        else:
+            await ans(m, "🛍 یک گزینه را انتخاب کنید.", ikb([[btn("🛍 اضافه کردن محصول", "adm:vpn:pna", role="confirm")], back_row("adm:vpn:pn")]))
+        return
+    try:
+        if step == "title":
+            if not t:
+                raise ValueError("متن خالی است.")
+            vals["title"] = t[:80]
+        elif step == "utype":
+            if t.lower() not in ("f", "n", "n2"):
+                raise ValueError("فقط یکی از f یا n یا n2 را بفرستید.")
+            vals["utype"] = t.lower()
+        elif step == "panel":
+            panels = await shop.db.list_vpn_panels()
+            if t == "/all":
+                vals["panels"] = [p["id"] for p in panels]
+            else:
+                hit = next((p for p in panels if p["name"] == t), None)
+                if not hit:
+                    raise ValueError("از دکمه‌های پایین یکی را انتخاب کنید.")
+                vals["panels"] = [hit["id"]]
+        elif step in ("gb", "days", "price"):
+            vals[step] = _num("float" if step == "gb" else "int", t)
+            if step == "price" and not vals[step]:
+                raise ValueError("قیمت باید بیشتر از صفر باشد.")
+        elif step == "note":
+            vals["note"] = "" if t in ("0", "-") else t[:300]
+    except ValueError as e:
+        await ans(m, f"❌ {e}")
+        return
+    nxt = NP_ORDER.index(step) + 1
+    if nxt < len(NP_ORDER):
+        await state.update_data(vals=vals)
+        await _np_ask(m, shop, state, NP_ORDER[nxt])
+        return
+    await state.clear()
+    for pid in vals["panels"]:
+        await shop.db.add_vpn_plan(title=vals["title"], panel_id=pid, days=vals["days"], gb=vals["gb"], price=vals["price"], utype=vals["utype"], note=vals["note"])
+    await shop.db.log(f"tg:{m.from_user.id}", "vpn_plan_add", f"{vals['title']} x{len(vals['panels'])}")
+    await m.answer("🎉😋 محصول با موفقیت ذخیره شد", reply_markup=ReplyKeyboardRemove())
+    await ans(m, "🛍 یک گزینه را انتخاب کنید.", ikb([[btn("🛍 اضافه کردن محصول", "adm:vpn:pna", role="confirm")], back_row("adm:vpn:pn", "🔙 بازگشت به منوی محصولات")]))
 
 
 @router.callback_query(F.data.startswith("adm:vpn:ne:"))
@@ -899,9 +1168,10 @@ async def cb_users(cb: CallbackQuery, shop: Shop):
     await cb.answer()
 
 
-@router.callback_query(F.data.regexp(r"^adm:vpn:u:\d+$"))
-async def cb_user(cb: CallbackQuery, shop: Shop):
-    uid = int(cb.data.split(":")[3])
+LEVEL_TXT = {"f": "کاربر عادی (f)", "n": "نماینده نوع ۲ (n)", "n2": "نماینده نوع ۳ (n2)"}
+
+
+async def _user_card(cb, shop: Shop, uid: int):
     u = await shop.db.get_user(uid)
     if not u:
         await cb.answer("کاربر پیدا نشد", show_alert=True)
@@ -910,15 +1180,124 @@ async def cb_user(cb: CallbackQuery, shop: Shop):
     n_all = await shop.db.count_vpn_services(user_id=uid)
     n_live = await shop.db.count_vpn_services(user_id=uid, status="active")
     joined = time.strftime("%Y-%m-%d %H:%M", time.localtime(u["created_at"])) if u.get("created_at") else "-"
-    text = (f"👀 <b>اطلاعات کاربر</b>\n\n"
-            f"🔴 وضعیت: {'🚫 مسدود' if u['banned'] else '🟢 فعال'}\n🔴 نام کاربری: {('@' + esc(u['username'])) if u.get('username') else 'ندارد'}\n"
-            f"🔴 آیدی عددی: <code>{uid}</code>\n🔴 تاریخ عضویت: {joined}\n🔴 تخفیف شخصی: {u.get('personal_discount') or 0}٪\n\n"
-            f"💎 <b>گزارش مالی</b>\n\n🔰 موجودی: {fmt(u['balance'])} تومان\n🔰 تعداد خرید: {st['done']}\n🔰 جمع خرید: {fmt(st['spent'])} تومان\n\n"
+    seen = time.strftime("%Y-%m-%d %H:%M", time.localtime(u["last_seen"])) if u.get("last_seen") else "-"
+    text = (f"👀 <b>اطلاعات کاربر</b>\n\n🔗 <b>اطلاعات کاربری</b>\n\n"
+            f"⭕ وضعیت کاربر: {'🚫 مسدود' if u['banned'] else '🟢 فعال'}\n⭕ نام کاربری: {('@' + esc(u['username'])) if u.get('username') else 'ندارد'}\n"
+            f"⭕ آیدی عددی: <code>{uid}</code>\n⭕ زمان عضویت: {joined}\n⭕ آخرین بازدید: {seen}\n"
+            f"⭕ نوع کاربری: {LEVEL_TXT.get(u.get('vpn_level') or 'f', 'f')}\n⭕ درصد تخفیف: {u.get('personal_discount') or 0}٪\n\n"
+            f"💎 <b>گزارشات مالی</b>\n\n🔰 موجودی کاربر: {fmt(u['balance'])} تومان\n🔰 تعداد خرید کل: {st['done']}\n🔰 جمع کل خرید: {fmt(st['spent'])} تومان\n\n"
             f"📡 <b>سرویس‌های VPN</b>\n\n🔰 همه: {n_all}\n🔰 فعال: {n_live}")
-    rows = [[btn("📡 سرویس‌های این کاربر", f"adm:vpn:uv:{uid}", role="admin"), btn("🆕 ساخت سرویس", f"adm:vpn:ucn:{uid}", role="confirm")],
-            [btn("♻️ بروزرسانی", f"adm:vpn:u:{uid}", role="action")], back_row("adm:vpn:us:0")]
+    a = f"adm:vpn:ua:{uid}:"
+    rows = [[btn("♻️ بروزرسانی اطلاعات", f"adm:vpn:u:{uid}", role="action")],
+            [btn("👇 کم کردن موجودی", a + "bm", role="reject"), btn("☝️ افزایش موجودی", a + "bp", role="confirm")],
+            [btn("🔓 رفع مسدودی کاربر" if u["banned"] else "🔒 مسدود کردن کاربر", a + ("unban" if u["banned"] else "ban"), role="action")],
+            [btn("🤖 افزودن نماینده", a + "ag", role="admin"), btn("🤖 حذف نماینده", a + "agx", role="reject")],
+            [btn("🎁 درصد تخفیف", a + "disc", role="admin"), btn("✍️ ارسال پیام به کاربر", a + "msg", role="admin")],
+            [btn("🛍 مشاهده سفارشات کاربر", a + "ord", role="admin")],
+            [btn("➕ محدودیت اکانت تست (یک تست دیگر)", a + "test", role="admin")],
+            [btn("💰 مشاهده پرداختی کاربر", a + "pay", role="admin"), btn("0️⃣ صفر کردن موجودی", a + "b0", role="reject")],
+            [btn("💡 روشن کردن اکانت‌ها", a + "on", role="action"), btn("💡 خاموش کردن اکانت‌ها", a + "off", role="action")],
+            [btn("📡 سرویس‌های این کاربر", f"adm:vpn:uv:{uid}", role="admin"), btn("🆕 ساخت سرویس", f"adm:vpn:ucn:{uid}", role="confirm")],
+            back_row("adm:vpn:us:0")]
     await view(cb, text, ikb(rows))
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:u:\d+$"))
+async def cb_user(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    await state.clear()
+    await _user_card(cb, shop, int(cb.data.split(":")[3]))
     await cb.answer()
+
+
+UA_PROMPT = {"bp": "چند تومان به موجودی کاربر اضافه شود؟", "bm": "چند تومان از موجودی کاربر کم شود؟",
+             "disc": "درصد تخفیف شخصی کاربر؟ (۰ تا ۹۰؛ ۰ یعنی بدون تخفیف)", "msg": "متن پیام را بفرستید:"}
+
+
+@router.callback_query(F.data.startswith("adm:vpn:ua:"))
+async def cb_user_action(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    _, _, _, uid, act = cb.data.split(":")[:5]
+    uid = int(uid)
+    actor = f"tg:{cb.from_user.id}"
+    u = await shop.db.get_user(uid)
+    if not u:
+        await cb.answer("کاربر پیدا نشد", show_alert=True)
+        return
+    if act in UA_PROMPT:
+        await state.set_state(AV.wiz)
+        await state.update_data(flow="uact", uid=uid, act=act)
+        await ans(cb.message, UA_PROMPT[act], _ask_kb(f"adm:vpn:u:{uid}"))
+        await cb.answer()
+        return
+    if act in ("ban", "unban"):
+        await shop.db.set_banned(uid, act == "ban", "VPN admin")
+        await shop.db.log(actor, f"user_{act}", str(uid))
+    elif act == "b0":
+        await shop.db.set_balance_exact(uid, 0, "admin: zero balance")
+        await shop.db.log(actor, "user_balance_zero", str(uid))
+    elif act == "ag":
+        await ans(cb.message, "نوع نماینده را انتخاب کنید:", ikb([[btn("n — نماینده نوع ۲", f"adm:vpn:ua:{uid}:lvn", role="admin"), btn("n2 — نماینده نوع ۳", f"adm:vpn:ua:{uid}:lvn2", role="admin")], back_row(f"adm:vpn:u:{uid}")]))
+        await cb.answer()
+        return
+    elif act in ("lvn", "lvn2", "agx"):
+        await shop.db.set_vpn_level(uid, {"lvn": "n", "lvn2": "n2", "agx": "f"}[act])
+        await shop.db.log(actor, "vpn_level", f"{uid} {act}")
+    elif act == "test":
+        await shop.db.run("UPDATE vpn_services SET is_test=2 WHERE user_id=? AND is_test=1", (uid,))
+        await cb.answer("کاربر می‌تواند یک اکانت تست دیگر بگیرد.", show_alert=True)
+        return
+    elif act == "ord":
+        rows = await shop.db.user_orders(uid, 10)
+        txt = "🛍 <b>آخرین سفارش‌های کاربر</b>\n\n" + ("\n".join(f"#{o['id']} | {esc(o['title'])} | {fmt(o['amount'])} ت | {o['status']}" for o in rows) or "سفارشی ندارد.")
+        await ans(cb.message, txt)
+        await cb.answer()
+        return
+    elif act == "pay":
+        rows = await shop.db.user_payments(uid, 10)
+        txt = "💰 <b>آخرین پرداخت‌های کاربر</b>\n\n" + ("\n".join(f"#{x['id']} | {fmt(x['amount'])} ت | {x['status']}" for x in rows) or "پرداختی ندارد.")
+        await ans(cb.message, txt)
+        await cb.answer()
+        return
+    elif act in ("on", "off"):
+        n = 0
+        for svc in await shop.db.list_vpn_services(user_id=uid, limit=200):
+            if svc["status"] in ("active", "disabled", "limited"):
+                ok, _m = await shop.vpn.admin_action(svc["id"], "enable" if act == "on" else "disable", actor=actor)
+                n += 1 if ok else 0
+        await cb.answer(f"روی {n} سرویس انجام شد.", show_alert=True)
+        return
+    await _user_card(cb, shop, uid)
+    await cb.answer("انجام شد")
+
+
+async def _uact_step(m: Message, shop: Shop, state: FSMContext, d):
+    uid, act = d["uid"], d["act"]
+    actor = f"tg:{m.from_user.id}"
+    t = (m.text or "").strip()
+    if act == "msg":
+        await state.clear()
+        await shop.safe_send(uid, t)
+        await ans(m, "✅ پیام ارسال شد.", ikb([back_row(f"adm:vpn:u:{uid}")]))
+        return
+    try:
+        v = _num("int", t)
+    except ValueError as e:
+        await ans(m, f"❌ {e}")
+        return
+    if act in ("bp", "bm") and not v:
+        await ans(m, "❌ مبلغ باید بیشتر از صفر باشد.")
+        return
+    if act == "disc" and v > 90:
+        await ans(m, "❌ عدد بین ۰ و ۹۰ بفرستید.")
+        return
+    await state.clear()
+    if act == "disc":
+        await shop.db.set_personal_discount(uid, v)
+    elif act == "bp":
+        await shop.db.add_balance(uid, v, "admin: add (vpn menu)")
+    else:
+        await shop.db.add_balance(uid, -v, "admin: sub (vpn menu)")
+    await shop.db.log(actor, f"user_{act}", f"{uid} {v}")
+    await ans(m, "✅ انجام شد.", ikb([back_row(f"adm:vpn:u:{uid}")]))
 
 
 @router.callback_query(F.data.startswith("adm:vpn:uv:"))
@@ -937,3 +1316,70 @@ async def cb_user_new(cb: CallbackQuery, shop: Shop):
     rows.append(back_row(f"adm:vpn:u:{uid}"))
     await view(cb, "پلن را انتخاب کنید:", ikb(rows))
     await cb.answer()
+
+
+# ============================================================ پس‌زمینه‌ی QR (مثل میرزا)
+async def _qr_screen(cb: CallbackQuery, shop: Shop):
+    import vpn_qr
+    cur = shop.s.get("vpn_qr_bg", "")
+    rows, line = [], []
+    for k, (label, *_c) in vpn_qr.PRESETS.items():
+        line.append(btn(("✅ " if cur == k else "") + label, f"adm:vpn:qbs:{k}", role="action"))
+        if len(line) == 2:
+            rows.append(line)
+            line = []
+    if line:
+        rows.append(line)
+    rows.append([btn(("✅ " if cur == "custom" else "") + "📤 تصویر دلخواه من", "adm:vpn:qbc", role="confirm")])
+    rows.append([btn(("✅ " if not cur else "") + "⚪️ بدون پس‌زمینه", "adm:vpn:qbs:none", role="action"), btn("👁 پیش‌نمایش", "adm:vpn:qbp", role="admin")])
+    rows.append(back_row("adm:vpn"))
+    await view(cb, "🖼 <b>پس‌زمینه‌ی QR کد</b>\nQR هر سرویس روی این پس‌زمینه ساخته می‌شود. یکی را انتخاب کنید یا عکس خودتان را بفرستید.", ikb(rows))
+
+
+@router.callback_query(F.data == "adm:vpn:qb")
+async def cb_qr(cb: CallbackQuery, shop: Shop):
+    await _qr_screen(cb, shop)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("adm:vpn:qbs:"))
+async def cb_qr_set(cb: CallbackQuery, shop: Shop):
+    import vpn_qr
+    k = cb.data.split(":")[3]
+    if k != "none" and k not in vpn_qr.PRESETS:
+        await cb.answer("نامعتبر", show_alert=True)
+        return
+    await shop.set_setting("vpn_qr_bg", "" if k == "none" else k, f"tg:{cb.from_user.id}")
+    await _qr_screen(cb, shop)
+    await cb.answer("انجام شد")
+
+
+@router.callback_query(F.data == "adm:vpn:qbp")
+async def cb_qr_preview(cb: CallbackQuery, shop: Shop):
+    from aiogram.types import BufferedInputFile
+    png = await shop.vpn.qr_png("https://example.com/sub/preview")
+    if not png:
+        await cb.answer("ساخت QR ممکن نیست (کتابخانه‌ی segno نصب نیست).", show_alert=True)
+        return
+    await cb.message.answer_photo(BufferedInputFile(png, "preview.png"), caption="👁 پیش‌نمایش")
+    await cb.answer()
+
+
+@router.callback_query(F.data == "adm:vpn:qbc")
+async def cb_qr_custom(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(AV.wiz)
+    await state.update_data(flow="qrbg")
+    await ans(cb.message, "عکس پس‌زمینه را بفرستید (به‌صورت عکس، نه فایل). بهتر است مربعی باشد و وسطش شلوغ نباشد.", _ask_kb("adm:vpn:qb"))
+    await cb.answer()
+
+
+@router.message(AV.wiz, F.photo)
+async def wiz_photo(m: Message, shop: Shop, state: FSMContext):
+    d = await state.get_data()
+    if d.get("flow") != "qrbg":
+        return
+    path = shop.vpn.qr_bg_path()
+    await shop.bot.download(m.photo[-1], destination=path)
+    await state.clear()
+    await shop.set_setting("vpn_qr_bg", "custom", f"tg:{m.from_user.id}")
+    await ans(m, "✅ پس‌زمینه ذخیره شد.", ikb([[btn("👁 پیش‌نمایش", "adm:vpn:qbp", role="admin")], back_row("adm:vpn:qb")]))

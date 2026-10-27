@@ -177,6 +177,11 @@ class BasePanel:
     async def options(self) -> list:
         return []
 
+    async def status(self) -> dict:
+        """وضعیت سرور برای مانیتورینگ؛ کلیدهای دلخواه: cpu cores cpu_mhz load[3] mem_used mem_total disk_used disk_total up_speed down_speed
+        sent recv tcp udp xray_state xray_version version uptime ipv4 ipv6 users users_active (بایت/ثانیه، بایت)"""
+        raise PanelError("این پنل مانیتورینگ سرور ندارد")
+
     async def create(self, name, days, gb, note="", tg_id=0, limit_ip=0):
         raise NotImplementedError
 
@@ -303,6 +308,19 @@ class Marzban(BasePanel):
         n = len(await self.options())
         return {"ok": True, "version": (info or {}).get("version", "") if isinstance(info, dict) else "", "users": (info or {}).get("total_user", "") if isinstance(info, dict) else "",
                 "options": n}
+
+    async def status(self):
+        d = await self._call("GET", "/system")
+        if not isinstance(d, dict):
+            raise PanelError("پاسخ نامعتبر")
+        out = {"version": d.get("version", ""), "cores": d.get("cpu_cores"), "cpu": d.get("cpu_usage"), "mem_used": d.get("mem_used"), "mem_total": d.get("mem_total"),
+               "up_speed": d.get("outgoing_bandwidth_speed"), "down_speed": d.get("incoming_bandwidth_speed"), "sent": d.get("outgoing_bandwidth"),
+               "recv": d.get("incoming_bandwidth"), "users": d.get("total_user"), "users_active": d.get("users_active") if d.get("users_active") is not None else d.get("online_users")}
+        try:
+            out["up_speed"], out["down_speed"] = int(out["up_speed"] or 0), int(out["down_speed"] or 0)
+        except (TypeError, ValueError):
+            pass
+        return {k: v for k, v in out.items() if v not in (None, "")}
 
     async def _create_body(self, name, days, gb, note):
         raw = await self._inbounds_raw()
@@ -698,6 +716,36 @@ class XUI(BasePanel):
     async def options(self):
         return [{"id": i.get("id"), "name": f"#{i.get('id')} {i.get('remark', '')} ({i.get('protocol')}:{i.get('port')})"} for i in await self._inbounds()]
 
+    async def status(self):
+        if not self._logged:
+            await self._login()
+        obj, err = None, None
+        for path in ("/panel/api/server/status", "/server/status", "/panel/server/status"):
+            for method in ("POST", "GET"):
+                st, d = await self._raw(method, self.url + path)
+                if st in (401, 404, 405):
+                    continue
+                if st == 200 and isinstance(d, dict) and isinstance(d.get("obj"), dict):
+                    obj = d["obj"]
+                    break
+                err = self._err(st, d)
+            if obj:
+                break
+        if not obj:
+            raise PanelError(err or "مسیر وضعیت سرور در پنل پیدا نشد")
+        mem, disk, xray = obj.get("mem") or {}, obj.get("disk") or {}, obj.get("xray") or {}
+        net, traffic, ip = obj.get("netIO") or {}, obj.get("netTraffic") or {}, obj.get("publicIP") or {}
+        out = {"cpu": obj.get("cpu"), "cores": obj.get("cpuCores"), "logical": obj.get("logicalPro"), "cpu_mhz": obj.get("cpuSpeedMhz"), "load": obj.get("loads"),
+               "mem_used": mem.get("current"), "mem_total": mem.get("total"), "disk_used": disk.get("current"), "disk_total": disk.get("total"),
+               "up_speed": net.get("up"), "down_speed": net.get("down"), "sent": traffic.get("sent"), "recv": traffic.get("recv"),
+               "tcp": obj.get("tcpCount"), "udp": obj.get("udpCount"), "xray_state": xray.get("state"), "xray_version": xray.get("version"),
+               "uptime": obj.get("uptime"), "ipv4": ip.get("ipv4"), "ipv6": ip.get("ipv6")}
+        try:
+            out["version"] = ((await self._raw("GET", self.url + "/panel/api/server/getPanelUpdateInfo"))[1] or {}).get("obj", {}).get("currentVersion", "")
+        except Exception:  # noqa: BLE001
+            pass
+        return {k: v for k, v in out.items() if v not in (None, "")}
+
     def _inbound_id(self) -> int:
         ids = [x for x in (self.cfg.get("inbound_ids") or []) if str(x).isdigit()]
         if not ids:
@@ -1003,6 +1051,17 @@ class Hiddify(BasePanel):
     NEEDS = ("url", "token", "sub_url")
     HELP = ("آدرس مدیریت را مثل https://domain/مسیر-ادمین بفرستید. توکن، همان کلید API ادمین است. "
             "آدرس اشتراک را هم از صفحه‌ی کاربران بردارید.")
+
+    async def status(self):
+        d = await self._call("GET", "/server_status/")
+        sysd = (d.get("stats") or {}).get("system") if isinstance(d, dict) else None
+        if not isinstance(sysd, dict):
+            raise PanelError("پاسخ وضعیت سرور نامعتبر است")
+        out = {"cpu": sysd.get("cpu_percent"), "mem_used": sysd.get("ram_used"), "mem_total": sysd.get("ram_total"), "disk_used": sysd.get("disk_used"),
+               "disk_total": sysd.get("disk_total"), "up_speed": sysd.get("bytes_sent_cumulative"), "sent": sysd.get("bytes_sent_cumulative"),
+               "recv": sysd.get("bytes_recv_cumulative"), "load": [sysd.get(k) for k in ("load_avg_1min", "load_avg_5min", "load_avg_15min") if sysd.get(k) is not None] or None}
+        out.pop("up_speed", None)
+        return {k: v for k, v in out.items() if v not in (None, "")}
 
     async def _call(self, method, path, ok=(200, 201), **kw):
         st, d = await self._raw(method, f"{self.url}/api/v2/admin{path}", headers={"Hiddify-API-Key": self.cfg.get("token", ""), "Accept": "application/json"}, **kw)

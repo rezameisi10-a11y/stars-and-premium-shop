@@ -475,7 +475,7 @@ async def a_vpn_service(ctx: Ctx, d: dict) -> dict:
                 raise ApiError(ctx.tr("ارتباط با سرور برقرار نشد؛ کمی بعد دوباره تلاش کنید."))
     out = _svc_dict(ctx, sv, full=True)
     data = sv["sub_url"] or (out["links"][0] if out["links"] else "")
-    png = ctx.shop.vpn.qr_png(data) if data else None
+    png = await ctx.shop.vpn.qr_png(data) if data else None
     out["qr"] = "data:image/png;base64," + base64.b64encode(png).decode() if png else ""
     return out
 
@@ -529,7 +529,6 @@ async def a_vpn_send(ctx: Ctx, d: dict) -> dict:
     if sv["status"] == "pending_manual":
         raise ApiError(ctx.tr("سرویس شما پس از آماده‌سازی توسط پشتیبانی ارسال می‌شود."))
     await ctx.shop.vpn.send_service(ctx.uid, sv, new=False)
-    await ctx.shop.vpn.send_qr(ctx.uid, sv)
     return {"ok": True, "message": ctx.tr("در چت ربات ارسال شد.")}
 
 

@@ -98,6 +98,8 @@ MIGRATIONS = [
     ("users", "note", "TEXT"),
     ("users", "ban_reason", "TEXT"),
     ("users", "personal_discount", "INTEGER NOT NULL DEFAULT 0"),
+    ("users", "vpn_level", "TEXT NOT NULL DEFAULT 'f'"),
+    ("vpn_plans", "utype", "TEXT NOT NULL DEFAULT 'f'"),
     ("orders", "orig_amount", "INTEGER"),
     ("orders", "discount_code", "TEXT"),
     ("orders", "cost", "INTEGER NOT NULL DEFAULT 0"),

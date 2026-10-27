@@ -47,7 +47,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_vpns_name ON vpn_services(panel_id, name) W
 """
 
 PANEL_FIELDS = {"name", "type", "url", "username", "password", "token", "sub_url", "inbound_ids", "extra", "capacity", "enabled", "sort", "note"}
-PLAN_FIELDS = {"title", "panel_id", "days", "gb", "price", "cost", "ip_limit", "active", "sort", "note"}
+PLAN_FIELDS = {"title", "panel_id", "days", "gb", "price", "cost", "ip_limit", "active", "sort", "note", "utype"}
 ADDON_FIELDS = {"title", "gb", "days", "price", "cost", "active", "sort"}
 SERVICE_FIELDS = {"panel_id", "plan_id", "name", "status", "expires_at", "total_bytes", "used_bytes", "sub_url", "links", "meta", "title",
                   "notified", "note", "last_sync", "user_id", "is_test"}
@@ -195,6 +195,10 @@ class VpnDB:
     async def count_vpn_services(self, user_id=None, status=None, q="", panel_id=None):
         w, a = self._svc_where(user_id, status, q, panel_id)
         return (await self.one(f"SELECT COUNT(*) c FROM vpn_services s{w}", a))["c"]
+
+    async def set_vpn_level(self, uid, level):
+        if level in ("f", "n", "n2"):
+            await self.run("UPDATE users SET vpn_level=? WHERE id=?", (level, uid))
 
     async def vpn_users(self, limit=10, offset=0):
         return await self.all("SELECT u.id, u.username, u.first_name, COUNT(s.id) AS n FROM users u JOIN vpn_services s ON s.user_id=u.id AND s.status!='deleted' "

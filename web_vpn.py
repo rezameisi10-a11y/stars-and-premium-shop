@@ -197,13 +197,16 @@ def plan_inputs(p=None) -> str:
             f"<label class='mini'>{T('قیمت (ت)')}{inp('price', p.get('price', ''), '', 'm', 'number')}</label> "
             f"<label class='mini'>{T('هزینه (ت)')}{inp('cost', p.get('cost', 0), '', 'm', 'number')}</label> "
             f"<label class='mini'>{T('محدودیت IP')}{inp('ip_limit', p.get('ip_limit', 0), '', 's', 'number')}</label> "
+            f"<label class='mini'>{T('نوع کاربر')}{sel('utype', [('f', 'f — ' + _('کاربر عادی')), ('n', 'n — ' + _('نماینده نوع ۲')), ('n2', 'n2 — ' + _('نماینده نوع ۳'))], p.get('utype', 'f'))}</label> "
+            f"<label class='mini'>{T('یادداشت (در پیش‌فاکتور)')}{inp('note', p.get('note', ''), '', 'm', 'text')}</label> "
             f"<label class='mini'>{T('ترتیب')}{inp('sort', p.get('sort', 100), '', 's', 'number')}</label>")
 
 
 def _read_plan(d) -> dict:
     return {"title": str(d.get("title", "")).strip()[:80], "days": max(to_int(d.get("days"), 0) or 0, 0), "gb": max(to_float(d.get("gb"), 0) or 0, 0),
             "price": max(to_int(d.get("price"), 0) or 0, 0), "cost": max(to_int(d.get("cost"), 0) or 0, 0),
-            "ip_limit": max(to_int(d.get("ip_limit"), 0) or 0, 0), "sort": to_int(d.get("sort"), 100) or 100}
+            "ip_limit": max(to_int(d.get("ip_limit"), 0) or 0, 0), "sort": to_int(d.get("sort"), 100) or 100,
+            "utype": d.get("utype") if d.get("utype") in ("f", "n", "n2") else "f", "note": str(d.get("note", "")).strip()[:300]}
 
 
 @get("/vpn/plans", "vpn")
@@ -218,7 +221,7 @@ async def plans_page(request):
         rows.append([p["id"], f"<b>{e(p['title'])}</b><br><span class='hint'>{e(p['panel_name'])}</span>", f"{p['days'] or '∞'} {T('روز')} · {ltr(gb_txt(p['gb']) + ' GB')}",
                      f"{fmt(p['price'])}<br><span class='hint'>{T('سود')}: {fmt(p['price'] - p['cost'])}</span>",
                      badge(_("فعال"), "ok") if p["active"] else badge(_("غیرفعال"), ""), f"<details><summary>{T('ویرایش')}</summary>{edit}</details>", acts])
-    add = (pform(request, "/vpn/plans/add", f"<label class='mini'>{T('پنل')}{sel('panel_id', [(p['id'], p['name']) for p in panels])}</label> " + plan_inputs()
+    add = (pform(request, "/vpn/plans/add", f"<label class='mini'>{T('پنل')}{sel('panel_id', [(0, _('همه‌ی پنل‌ها')), *[(p['id'], p['name']) for p in panels]])}</label> " + plan_inputs()
                  + f"<button class='b pri'>➕ {T('افزودن پلن')}</button>", cls="") if panels else f"<p class='hint'>{T('ابتدا یک پنل اضافه کنید.')}</p>")
     arows = []
     for a in await shop.db.list_vpn_addons():
@@ -258,10 +261,15 @@ async def plan_add(request):
     d = await request.post()
     f = _read_plan(d)
     pid = to_int(d.get("panel_id"))
-    if not f["title"] or not f["price"] or not await shop.db.get_vpn_panel(pid):
+    if pid:
+        targets = [pid] if await shop.db.get_vpn_panel(pid) else []
+    else:                                                    # «همه‌ی پنل‌ها»: برای هر پنل یک پلن (مثل /all در میرزا)
+        targets = [p["id"] for p in await shop.db.list_vpn_panels()]
+    if not f["title"] or not f["price"] or not targets:
         raise redirect("/vpn/plans", err=_("پنل، عنوان و قیمت را وارد کنید."))
-    nid = await shop.db.add_vpn_plan(panel_id=pid, **f)
-    await shop.db.log(actor(request), "vpn_plan_add", f"#{nid}")
+    for t in targets:
+        nid = await shop.db.add_vpn_plan(panel_id=t, **f)
+        await shop.db.log(actor(request), "vpn_plan_add", f"#{nid}")
     raise redirect("/vpn/plans", ok=_("پلن ثبت شد."))
 
 

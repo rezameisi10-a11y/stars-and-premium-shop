@@ -155,7 +155,7 @@ async def vpn_show(cb: CallbackQuery, shop: Shop, tr):
             svc = await shop.vpn.sync(svc, force=False)
         except Exception:
             pass
-    await cb.message.answer(await shop.vpn.service_text(svc, tr), reply_markup=shop.vpn.service_kb(svc, tr), disable_web_page_preview=True)
+    await shop.vpn.send_service(cb.from_user.id, svc, tr=tr)
     await cb.answer()
 
 
@@ -170,7 +170,10 @@ async def vpn_refresh(cb: CallbackQuery, shop: Shop, tr):
         await cb.answer(tr("ارتباط با سرور برقرار نشد؛ کمی بعد دوباره تلاش کنید."), show_alert=True)
         return
     try:
-        await cb.message.edit_text(await shop.vpn.service_text(svc, tr), reply_markup=shop.vpn.service_kb(svc, tr), disable_web_page_preview=True)
+        if cb.message.photo:
+            await cb.message.edit_caption(caption=(await shop.vpn.service_text(svc, tr, compact=True))[:1024], reply_markup=shop.vpn.service_kb(svc, tr))
+        else:
+            await cb.message.edit_text(await shop.vpn.service_text(svc, tr), reply_markup=shop.vpn.service_kb(svc, tr), disable_web_page_preview=True)
     except Exception:
         pass
     await cb.answer(tr("بروزرسانی شد."))
@@ -210,8 +213,7 @@ async def vpn_revoke(cb: CallbackQuery, shop: Shop, tr):
         await cb.answer(tr("انجام نشد؛ بعداً دوباره تلاش کنید."), show_alert=True)
         return
     svc = await shop.db.get_vpn_service(svc["id"])
-    await shop.vpn.send_service(cb.from_user.id, svc)
-    await shop.vpn.send_qr(cb.from_user.id, svc)
+    await shop.vpn.send_service(cb.from_user.id, svc, tr=tr)
     await cb.answer()
 
 

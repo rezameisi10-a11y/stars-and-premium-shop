@@ -7,6 +7,7 @@
 import asyncio
 import io
 import json
+import os
 import logging
 import re
 import secrets
@@ -16,6 +17,7 @@ from typing import TYPE_CHECKING
 from aiogram.types import BufferedInputFile
 
 import vpn_panels
+import vpn_qr
 from i18n import N_
 from ui import btn, esc, fmt, ikb
 from vpn_panels import GB, PanelError
@@ -98,6 +100,76 @@ def hidden_for(panel, uid) -> bool:
 
 def parse_ref(ref: str) -> list[str]:
     return (ref or "").split(":")
+
+
+def _hb(n) -> str:
+    """بایت → «۱.۸۷ گیگابایت» (فارسی)."""
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return "-"
+    for unit, div in (("ترابایت", 1024 ** 4), ("گیگابایت", 1024 ** 3), ("مگابایت", 1024 ** 2), ("کیلوبایت", 1024)):
+        if n >= div:
+            return f"{ltr(f'{n / div:.2f}')} {unit}"
+    return f"{ltr(int(n))} بایت"
+
+
+def _tree(rows: list) -> str:
+    out = []
+    for i, r in enumerate(rows):
+        out.append(("└ " if i == len(rows) - 1 else "├ ") + r)
+    return "\n".join(out)
+
+
+def _uptime(sec) -> str:
+    try:
+        sec = int(sec)
+    except (TypeError, ValueError):
+        return "-"
+    d, r = divmod(sec, 86400)
+    h, r = divmod(r, 3600)
+    return (f"{d} روز و " if d else "") + f"{h} ساعت و {r // 60} دقیقه"
+
+
+def render_status(st: dict) -> str:
+    """متن مانیتورینگ سرور؛ فقط بخش‌هایی که پنل داده نشان داده می‌شود."""
+    L = ["🖥 <b>وضعیت سرور</b>"]
+    if "cpu" in st or st.get("cores"):
+        rows = []
+        if "cpu" in st:
+            rows.append(f"مصرف: {ltr(str(round(float(st['cpu']), 1)) + '%')}")
+        if st.get("cores"):
+            rows.append(f"هسته‌ها: {ltr(st['cores'])}" + (f" (منطقی: {ltr(st['logical'])})" if st.get("logical") else ""))
+        if st.get("cpu_mhz"):
+            rows.append(f"فرکانس: {ltr(str(round(float(st['cpu_mhz']) / 1000, 1)) + ' GHz')}")
+        L.append("\n⚙️ <b>پردازنده</b>\n" + _tree(rows))
+    if st.get("load"):
+        L.append("\n📊 <b>بار سیستم (۱/۵/۱۵ دقیقه)</b>\n" + _tree([ltr(" | ".join(f"{float(x):.2f}" for x in st["load"][:3]))]))
+    for key, title, icon in (("mem", "رم", "🧠"), ("disk", "دیسک", "💾")):
+        u, t = st.get(key + "_used"), st.get(key + "_total")
+        if u is not None and t:
+            L.append(f"\n{icon} <b>{title}</b>\n" + _tree([f"{_hb(u)} / {_hb(t)} ({ltr('%.1f%%' % (float(u) * 100 / float(t)))})"]))
+    if "up_speed" in st or "down_speed" in st:
+        L.append("\n🌐 <b>شبکه (لحظه‌ای)</b>\n" + _tree([f"آپلود: {_hb(st.get('up_speed', 0))}{ltr('/s')}", f"دانلود: {_hb(st.get('down_speed', 0))}{ltr('/s')}"]))
+    if "sent" in st or "recv" in st:
+        L.append("\n📡 <b>ترافیک کل</b>\n" + _tree([f"ارسالی: {_hb(st.get('sent', 0))}", f"دریافتی: {_hb(st.get('recv', 0))}"]))
+    if "tcp" in st or "udp" in st:
+        L.append("\n🔌 <b>اتصالات</b>\n" + _tree([ltr(f"TCP: {st.get('tcp', 0)} | UDP: {st.get('udp', 0)}")]))
+    if st.get("users") is not None:
+        L.append("\n👥 <b>کاربران پنل</b>\n" + _tree([f"کل: {ltr(st['users'])}"] + ([f"فعال: {ltr(st['users_active'])}"] if st.get("users_active") is not None else [])))
+    if st.get("xray_state"):
+        run = str(st["xray_state"]).lower() == "running"
+        L.append("\n🛡 <b>Xray</b>\n" + _tree([f"وضعیت: {'🟢 فعال' if run else '🔴 ' + esc(st['xray_state'])}"] + ([f"نسخه: {ltr(st['xray_version'])}"] if st.get("xray_version") else [])))
+    tail = []
+    if st.get("version"):
+        tail.append(f"🏷 <b>نسخه پنل:</b> {ltr(st['version'])}")
+    if st.get("uptime"):
+        tail.append(f"⏱ <b>آپتایم:</b> {_uptime(st['uptime'])}")
+    if tail:
+        L.append("\n" + "\n".join(tail))
+    if st.get("ipv4") or st.get("ipv6"):
+        L.append("\n🔗 <b>IP عمومی</b>\n" + _tree([f"IPv4: {ltr(st.get('ipv4') or 'N/A')}", f"IPv6: {ltr(st.get('ipv6') or 'N/A')}"]))
+    return "\n".join(L)
 
 
 class VPN:
@@ -189,9 +261,12 @@ class VPN:
     async def plans_for(self, user: dict | None):
         out = []
         uid = (user or {}).get("id")
+        level = (user or {}).get("vpn_level") or "f"
         panels = {x["id"]: x for x in await self.db.list_vpn_panels()}
         for p in await self.db.list_vpn_plans(active_only=True):
             pn = panels.get(p["panel_id"])
+            if (p.get("utype") or "f") != level:
+                continue
             if pn and (not pflag(pn, "show") or (uid and hidden_for(pn, uid))):
                 continue
             p = dict(p)
@@ -229,6 +304,8 @@ class VPN:
         if not plan or not plan["active"] or not panel or not panel["enabled"]:
             raise VpnError(N_("این پلن دیگر در دسترس نیست."))
         if not pflag(panel, "show") or hidden_for(panel, user_id):
+            raise VpnError(N_("این پلن دیگر در دسترس نیست."))
+        if (plan.get("utype") or "f") != ((await self.db.get_user(user_id)) or {}).get("vpn_level", "f"):
             raise VpnError(N_("این پلن دیگر در دسترس نیست."))
         if not await self._capacity_ok(panel):
             raise VpnError(N_("ظرفیت این سرور تکمیل است؛ پلن دیگری انتخاب کنید."))
@@ -694,7 +771,7 @@ class VPN:
         t = tr("نامحدود") if left is None else tr("{d} روز", d=left)
         return f"{tr(STATUS_FA.get(svc['status'], svc['status']))} | " + tr("حجم: {u}", u=used) + " | " + tr("زمان باقی‌مانده: {t}", t=t)
 
-    async def service_text(self, svc, tr) -> str:
+    async def service_text(self, svc, tr, compact=False) -> str:
         left = days_left(svc["expires_at"])
         total = svc["total_bytes"]
         lines = [f"🛡 <b>{esc(svc['title'] or tr('سرویس VPN'))}</b>",
@@ -709,7 +786,7 @@ class VPN:
         if svc["sub_url"] and show_sub:
             lines.append("\n" + tr("🔗 لینک اشتراک (روی آن بزنید تا کپی شود):") + f"\n<code>{esc(svc['sub_url'])}</code>")
         links = json.loads(svc["links"] or "[]") if show_cfg else []
-        if links and not (svc["sub_url"] and show_sub):
+        if links and not compact:
             lines.append("\n" + tr("🔗 کانفیگ‌ها:"))
             lines += [f"<code>{esc(x)}</code>" for x in links[:6]]
         elif links:
@@ -737,29 +814,51 @@ class VPN:
         rows.append([btn(tr("🔙 سرویس‌های من"), back, role="back")])
         return ikb(rows)
 
-    def qr_png(self, text: str) -> bytes | None:
-        try:
-            import segno
-        except ImportError:
-            return None
-        buf = io.BytesIO()
-        segno.make(text, error="m").save(buf, kind="png", scale=8, border=3, dark="#111111", light="#ffffff")
-        return buf.getvalue()
+    def qr_bg_path(self) -> str:
+        return os.path.join(os.path.dirname(os.path.abspath(self.shop.cfg.db_path)), "vpn_qr_bg.jpg")
 
-    async def send_service(self, uid, svc, new=False):
-        tr = await self.shop.tr_for(uid)
-        text = (tr("✅ سرویس شما آماده است!") + "\n\n" if new else "") + await self.service_text(svc, tr)
-        help_t = (self.s.get("vpn_help_text") or "").strip()
-        if new and help_t:
-            text += "\n\n" + help_t
+    async def qr_png(self, text: str, bg: str | None = None) -> bytes | None:
+        bg = self.s.get("vpn_qr_bg", "") if bg is None else bg
+        return await asyncio.to_thread(vpn_qr.render, text, bg, self.qr_bg_path())
+
+    def _qr_data(self, svc) -> str:
+        return svc["sub_url"] or ((json.loads(svc["links"] or "[]") or [""])[0])
+
+    async def send_service(self, uid, svc, new=False, tr=None):
+        """مشخصات سرویس + QR در یک پیام (عکس با کپشن). اگر کپشن از ۱۰۲۴ حرف بیشتر شود، متن کامل جدا فرستاده می‌شود."""
+        tr = tr or await self.shop.tr_for(uid)
+        head = (tr("✅ سرویس شما آماده است!") + "\n\n" if new else "")
         kb = self.service_kb(svc, tr)
-        await self.shop.safe_send(uid, text, reply_markup=kb, disable_web_page_preview=True)
-        if new and svc["sub_url"]:
-            await self.send_qr(uid, svc)
+        data = self._qr_data(svc) if (pflag(svc, "qr") and svc["status"] != "pending_manual") else ""
+        png = await self.qr_png(data) if data else None
+        help_t = (self.s.get("vpn_help_text") or "").strip() if new else ""
+        full = head + await self.service_text(svc, tr)
+        cap = head + await self.service_text(svc, tr, compact=True)
+        extra = []
+        if png:
+            if len(cap) > 1024:
+                cap = cap[:1000].rsplit("\n", 1)[0]
+                extra.append(full)
+            elif json.loads(svc["links"] or "[]") and pflag(svc, "config"):
+                extra.append(await self._links_text(svc, tr))
+            try:
+                await self.shop.bot.send_photo(uid, BufferedInputFile(png, filename=f"{svc['name']}.png"), caption=cap, reply_markup=kb)
+            except Exception as e:  # noqa: BLE001
+                log.warning("qr photo send failed: %s", e)
+                png = None
+                extra = []
+        if not png:
+            await self.shop.safe_send(uid, full, reply_markup=kb, disable_web_page_preview=True)
+        for t in extra + ([help_t] if help_t else []):
+            await self.shop.safe_send(uid, t, disable_web_page_preview=True)
+
+    async def _links_text(self, svc, tr) -> str:
+        links = json.loads(svc["links"] or "[]")
+        return tr("🔗 کانفیگ‌ها:") + "\n" + "\n".join(f"<code>{esc(x)}</code>" for x in links[:6])
 
     async def send_qr(self, uid, svc):
-        data = svc["sub_url"] or ((json.loads(svc["links"] or "[]") or [""])[0])
-        png = self.qr_png(data) if data else None
+        data = self._qr_data(svc)
+        png = await self.qr_png(data) if data else None
         if not png:
             return False
         try:
@@ -768,3 +867,12 @@ class VPN:
         except Exception as e:
             log.warning("qr send failed: %s", e)
             return False
+
+    # ------------------------------------------------------------------ مانیتورینگ سرور (مثل میرزا)
+    async def panel_status_text(self, panel_id: int) -> tuple[bool, str]:
+        try:
+            drv = await self.driver(panel_id)
+            st = await asyncio.wait_for(drv.status(), 20)
+        except (PanelError, asyncio.TimeoutError, Exception) as e:  # noqa: BLE001
+            return False, str(e)[:200] or "timeout"
+        return True, render_status(st)
