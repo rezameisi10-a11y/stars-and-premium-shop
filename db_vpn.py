@@ -37,6 +37,11 @@ CREATE TABLE IF NOT EXISTS vpn_agents(
   users_count INTEGER NOT NULL DEFAULT 0, max_users INTEGER NOT NULL DEFAULT 0, order_id INTEGER, title TEXT NOT NULL DEFAULT '',
   notified TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
   last_sync INTEGER NOT NULL DEFAULT 0, meta TEXT NOT NULL DEFAULT '{}');
+CREATE TABLE IF NOT EXISTS vpn_stock(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, panel_id INTEGER NOT NULL, plan_id INTEGER NOT NULL DEFAULT 0,
+  name TEXT NOT NULL DEFAULT '', config TEXT NOT NULL, used INTEGER NOT NULL DEFAULT 0, service_id INTEGER,
+  created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS ix_vpnst_free ON vpn_stock(panel_id, plan_id, used);
 CREATE INDEX IF NOT EXISTS ix_vpna_user ON vpn_agents(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_vpna_order ON vpn_agents(order_id) WHERE order_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_vpna_name ON vpn_agents(panel_id, username) WHERE status != 'deleted';
@@ -59,6 +64,78 @@ LIVE = ("active", "disabled", "limited", "expired", "on_hold", "pending_manual")
 
 
 class VpnDB:
+    # ---------- موجودی کانفیگ برای پنل دستی (plan_id: >0 همان پلن، 0 = هر پلن این پنل، -1 = اکانت تست)
+    async def add_vpn_stock(self, panel_id: int, plan_id: int, items: list) -> int:
+        now = int(time.time())
+        n = 0
+        async with self.lock:
+            for name, config in items:
+                await self.conn.execute("INSERT INTO vpn_stock(panel_id,plan_id,name,config,created_at) VALUES(?,?,?,?,?)",
+                                        (panel_id, plan_id, (name or "")[:80], config, now))
+                n += 1
+            await self.conn.commit()
+        return n
+
+    async def vpn_stock_free(self, panel_id: int, plan_id: int) -> int:
+        """تعداد موجودی قابل فروش برای یک پلن (اختصاصی + عمومی پنل)؛ برای تست (-1) فقط موجودی تست."""
+        if plan_id < 0:
+            r = await self.one("SELECT COUNT(*) c FROM vpn_stock WHERE panel_id=? AND plan_id=-1 AND used=0", (panel_id,))
+        else:
+            r = await self.one("SELECT COUNT(*) c FROM vpn_stock WHERE panel_id=? AND plan_id IN (?,0) AND used=0", (panel_id, plan_id))
+        return r["c"]
+
+    async def vpn_stock_mode(self, panel_id: int) -> bool:
+        """پنل دستی‌ای که تا حالا موجودی ثبت شده دارد، فروشش با موجودی است (تمام‌شدن = ناموجود)."""
+        return bool(await self.one("SELECT 1 x FROM vpn_stock WHERE panel_id=? LIMIT 1", (panel_id,)))
+
+    async def vpn_stock_summary(self, panel_id: int) -> list:
+        return await self.all(
+            "SELECT plan_id, SUM(used=0) AS free, SUM(used=1) AS sold FROM vpn_stock WHERE panel_id=? GROUP BY plan_id ORDER BY plan_id DESC", (panel_id,))
+
+    async def list_vpn_stock(self, panel_id: int, plan_id: int, free_only=True, limit=10, offset=0) -> list:
+        w = " AND used=0" if free_only else ""
+        return await self.all(f"SELECT * FROM vpn_stock WHERE panel_id=? AND plan_id=?{w} ORDER BY id LIMIT ? OFFSET ?", (panel_id, plan_id, limit, offset))
+
+    async def count_vpn_stock(self, panel_id: int, plan_id: int, free_only=True) -> int:
+        w = " AND used=0" if free_only else ""
+        return (await self.one(f"SELECT COUNT(*) c FROM vpn_stock WHERE panel_id=? AND plan_id=?{w}", (panel_id, plan_id)))["c"]
+
+    async def get_vpn_stock(self, sid: int):
+        return await self.one("SELECT * FROM vpn_stock WHERE id=?", (sid,))
+
+    async def update_vpn_stock(self, sid: int, name: str, config: str) -> bool:
+        cur = await self.run("UPDATE vpn_stock SET name=?, config=? WHERE id=? AND used=0", ((name or "")[:80], config, sid))
+        return cur.rowcount == 1
+
+    async def delete_vpn_stock(self, sid: int) -> bool:
+        cur = await self.run("DELETE FROM vpn_stock WHERE id=? AND used=0", (sid,))
+        return cur.rowcount == 1
+
+    async def clear_vpn_stock(self, panel_id: int, plan_id: int) -> int:
+        cur = await self.run("DELETE FROM vpn_stock WHERE panel_id=? AND plan_id=? AND used=0", (panel_id, plan_id))
+        return cur.rowcount
+
+    async def claim_vpn_stock(self, panel_id: int, plan_id: int):
+        """یک کانفیگ آزاد را اتمیک برمی‌دارد (اول موجودی اختصاصی همان پلن، بعد عمومی). خروجی ردیف یا None."""
+        async with self.lock:
+            if plan_id < 0:
+                cur = await self.conn.execute("SELECT id FROM vpn_stock WHERE panel_id=? AND plan_id=-1 AND used=0 ORDER BY id LIMIT 1", (panel_id,))
+            else:
+                cur = await self.conn.execute(
+                    "SELECT id FROM vpn_stock WHERE panel_id=? AND plan_id IN (?,0) AND used=0 ORDER BY (plan_id=?) DESC, id LIMIT 1",
+                    (panel_id, plan_id, plan_id))
+            r = await cur.fetchone()
+            if not r:
+                return None
+            cur = await self.conn.execute("UPDATE vpn_stock SET used=1 WHERE id=? AND used=0", (r[0],))
+            await self.conn.commit()
+            if cur.rowcount != 1:
+                return None
+        return await self.get_vpn_stock(r[0])
+
+    async def release_vpn_stock(self, sid: int, service_id: int | None = None):
+        await self.run("UPDATE vpn_stock SET used=?, service_id=? WHERE id=?", (1 if service_id else 0, service_id, sid))
+
     # ---------- پنل‌ها
     async def add_vpn_panel(self, **f) -> int:
         f = {k: v for k, v in f.items() if k in PANEL_FIELDS}
@@ -155,7 +232,7 @@ class VpnDB:
         return await self.one("SELECT s.*, p.name AS panel_name, p.type AS panel_type, p.extra AS panel_extra FROM vpn_services s LEFT JOIN vpn_panels p ON p.id=s.panel_id WHERE s.id=?", (sid,))
 
     async def vpn_service_by_order(self, oid):
-        return await self.one("SELECT * FROM vpn_services WHERE order_id=?", (oid,))
+        return await self.one("SELECT s.*, p.name AS panel_name, p.type AS panel_type, p.extra AS panel_extra FROM vpn_services s LEFT JOIN vpn_panels p ON p.id=s.panel_id WHERE s.order_id=?", (oid,))
 
     async def update_vpn_service(self, sid, **f):
         f = {k: v for k, v in f.items() if k in SERVICE_FIELDS}

@@ -158,7 +158,7 @@ async def apply_restore(shop, staged_path: str, env_text: str | None = None) -> 
     info = inspect_db_file(staged_path)
     bdir = os.path.join(os.path.dirname(os.path.abspath(shop.db.path)), "backups")
     os.makedirs(bdir, exist_ok=True)
-    safety = os.path.join(bdir, f"pre-restore-{datetime.now():%Y%m%d-%H%M%S}.db")
+    safety = os.path.join(bdir, f"pre-restore-{datetime.now():%Y%m%d-%H%M%S}-{os.getpid() % 1000:03d}{int(time.time() * 1000) % 1000:03d}.db")
     await shop.db.backup_to(safety)
     await shop.db.replace_file(staged_path)
     await shop.reload_after_restore()

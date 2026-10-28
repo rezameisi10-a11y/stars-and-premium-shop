@@ -327,7 +327,7 @@ async def a_pay(ctx: Ctx, d: dict) -> dict:
     elif method == "zarinpal":
         out["url"] = f"https://payment.zarinpal.com/pg/StartPay/{p['ref']}"
     elif method == "ton":
-        out.update(address=shop.gw("ton_wallet"), crypto=p["crypto_amount"], memo=f"P{pid}")
+        out.update(address=shop.gw("ton_wallet"), crypto=round(p["crypto_amount"], 5))
     elif method == "usdt":
         out.update(address=shop.gw("usdt_wallet"), crypto=round(p["crypto_amount"], 3))
     return out

@@ -1,4 +1,5 @@
 """بخش VPN در ربات برای کاربر: خرید، سرویس‌های من، تمدید، حجم/زمان اضافه، QR، لینک جدید و اکانت تست."""
+import json
 import time
 
 from aiogram import F, Router
@@ -26,7 +27,8 @@ class VpnSt(StatesGroup):
 
 def _plan_label(p, tr, price) -> str:
     gb = tr("نامحدود") if not p["gb"] else ltr(f"{p['gb']:g} GB")
-    return f"{p['title']} | {tr('{d} روز', d=p['days']) if p['days'] else tr('بدون انقضا')} | {gb} | {fmt(price)} {tr('ت')}"
+    lab = f"{p['title']} | {tr('{d} روز', d=p['days']) if p['days'] else tr('بدون انقضا')} | {gb} | {fmt(price)} {tr('ت')}"
+    return lab + (" | " + tr("❌ ناموجود") if p.get("out_of_stock") else "")
 
 
 async def _offer(target, shop: Shop, tr, oid: int, uid: int):
@@ -239,6 +241,49 @@ async def vpn_renew_pick(cb: CallbackQuery, shop: Shop, tr):
     _, _, sid, pid = cb.data.split(":")
     try:
         oid = await shop.vpn.renew_order(cb.from_user.id, int(sid), int(pid))
+    except VpnError as e:
+        await cb.answer(tr(str(e)), show_alert=True)
+        return
+    await _offer(cb, shop, tr, oid, cb.from_user.id)
+    await cb.answer()
+
+
+# ---------- تمدید خودکار (انتخاب کاربر) و تمدید یک‌کلیکی ----------
+@router.callback_query(F.data.startswith("vpn:au:"))
+async def vpn_auto_toggle(cb: CallbackQuery, shop: Shop, tr):
+    svc = await _own(cb, shop, tr, cb.data.split(":")[2])
+    if not svc:
+        return
+    if not shop.vpn._can_auto(svc):
+        await cb.answer(tr("تمدید خودکار برای این سرویس در دسترس نیست."), show_alert=True)
+        return
+    on = not bool(json.loads(svc["meta"] or "{}").get("auto"))
+    await shop.vpn.set_auto(svc, on)
+    svc = await shop.db.get_vpn_service(svc["id"])
+    try:
+        await cb.message.edit_reply_markup(reply_markup=shop.vpn.service_kb(svc, tr))
+    except Exception:  # noqa: BLE001
+        pass
+    if on:
+        plan = await shop.db.get_vpn_plan(svc["plan_id"])
+        user = await shop.db.get_user(cb.from_user.id)
+        price = shop._personal(plan["price"], user) if plan else 0
+        await cb.answer(tr("🔁 تمدید خودکار روشن شد. {d} روز مانده به پایان، {p} تومان از کیف پول کم می‌شود؛ موجودی را نگه دارید.",
+                           d=max(int(float(shop.s.get("vpn_autorenew_days") or 1)), 0), p=fmt(price)), show_alert=True)
+    else:
+        await cb.answer(tr("تمدید خودکار خاموش شد."))
+
+
+@router.callback_query(F.data.startswith("vpn:qk:"))
+async def vpn_quick_renew(cb: CallbackQuery, shop: Shop, tr):
+    svc = await _own(cb, shop, tr, cb.data.split(":")[2])
+    if not svc:
+        return
+    if not svc["plan_id"]:
+        await cb.answer(tr("پلنی برای تمدید این سرویس موجود نیست."), show_alert=True)
+        return
+    try:
+        oid = await shop.vpn.renew_order(cb.from_user.id, svc["id"], svc["plan_id"])
     except VpnError as e:
         await cb.answer(tr(str(e)), show_alert=True)
         return

@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING
 
 from aiogram.types import BufferedInputFile
 
+import aiohttp
+
 import vpn_panels
 import vpn_qr
 from i18n import N_
@@ -28,6 +30,63 @@ if TYPE_CHECKING:  # pragma: no cover
 log = logging.getLogger("vpn")
 
 NAME_RE = re.compile(r"^[a-z0-9_]{3,24}$")
+SCHEME_RE = re.compile(r"^(vless|vmess|trojan|ss|ssr|hysteria2?|hy2|tuic|wireguard|socks5?)://\S+", re.I)
+
+
+def parse_stock_text(text: str) -> list[tuple[str, str]]:
+    """متن ورودی ادمین → [(نام, کانفیگ)]. قالب میرزا: خط «# نام» و زیرش کانفیگ (یک یا چند خط). بدون «#»: هر خط یک کانفیگ."""
+    lines = [x.strip() for x in (text or "").replace("\r", "").split("\n")]
+    if not any(x.startswith("#") for x in lines):
+        return [("", x) for x in lines if x]
+    items, name, buf = [], "", []
+
+    def flush():
+        nonlocal name, buf
+        cfg = "\n".join(x for x in buf if x).strip()
+        if cfg:
+            items.append((name, cfg))
+        name, buf = "", []
+
+    for x in lines:
+        if x.startswith("#"):
+            flush()
+            name = x.lstrip("#").strip()
+        elif x:
+            buf.append(x)
+    flush()
+    return items
+
+
+def split_config(config: str) -> tuple[str, list[str]]:
+    """متن کانفیگ ذخیره‌شده → (لینک اشتراک یا خالی, لیست کانفیگ‌ها)."""
+    lines = [x.strip() for x in (config or "").split("\n") if x.strip()]
+    sub = ""
+    if lines and re.match(r"^https?://", lines[0], re.I):
+        sub = lines.pop(0)
+    return sub, lines
+
+
+def parse_sub_body(raw: bytes) -> list[str]:
+    """محتوای لینک ساب (متن ساده یا base64) → کانفیگ‌ها."""
+    import base64
+    txt = raw.decode("utf-8", "ignore").strip()
+    if txt and not SCHEME_RE.search(txt.replace("\r", "").split("\n")[0] if txt else ""):
+        comp = re.sub(r"\s+", "", txt)
+        for dec in (base64.b64decode, base64.urlsafe_b64decode):
+            try:
+                out = dec(comp + "=" * (-len(comp) % 4)).decode("utf-8", "ignore")
+                if "://" in out:
+                    txt = out
+                    break
+            except Exception:  # noqa: BLE001
+                continue
+    seen, res = set(), []
+    for x in txt.replace("\r", "").split("\n"):
+        x = x.strip()
+        if SCHEME_RE.match(x) and x not in seen:
+            seen.add(x)
+            res.append(x)
+    return res[:100]
 STATUS_FA = {"active": N_("🟢 فعال"), "disabled": N_("⚫️ غیرفعال"), "limited": N_("🟠 حجم تمام شده"), "expired": N_("🔴 منقضی"),
              "on_hold": N_("⏸ در انتظار شروع"), "pending_manual": N_("🕓 در انتظار تحویل"), "deleted": N_("🗑 حذف شده")}
 LIVE_OK = ("active", "on_hold")
@@ -178,6 +237,8 @@ class VPN:
         self.db = shop.db
         self._drivers: dict[int, tuple[tuple, vpn_panels.BasePanel]] = {}
         self._last_sync = 0.0
+        self._last_health = 0.0
+        self._health: dict = {}
         self._test_locks: dict[int, asyncio.Lock] = {}
         from vpn_agent import AgentSales          # import تأخیری (جلوگیری از چرخه)
         self.agents = AgentSales(self)
@@ -267,10 +328,12 @@ class VPN:
             pn = panels.get(p["panel_id"])
             if (p.get("utype") or "f") != level:
                 continue
-            if pn and (not pflag(pn, "show") or (uid and hidden_for(pn, uid))):
+            if pn and (not pflag(pn, "show") or (uid and hidden_for(pn, uid)) or self.is_down(pn["id"])):
                 continue
             p = dict(p)
             p["user_price"] = self.shop._personal(p["price"], user)
+            p["out_of_stock"] = bool(pn and pn["type"] == "manual" and await self.db.vpn_stock_mode(pn["id"])
+                                     and not await self.db.vpn_stock_free(pn["id"], p["id"]))
             out.append(p)
         return out
 
@@ -309,6 +372,10 @@ class VPN:
             raise VpnError(N_("این پلن دیگر در دسترس نیست."))
         if not await self._capacity_ok(panel):
             raise VpnError(N_("ظرفیت این سرور تکمیل است؛ پلن دیگری انتخاب کنید."))
+        if panel["type"] == "manual" and await self.db.vpn_stock_mode(panel["id"]) and not await self.db.vpn_stock_free(panel["id"], plan_id):
+            raise VpnError(N_("موجودی این محصول تمام شده است."))
+        if self.is_down(panel["id"]):
+            raise VpnError(N_("این پنل موقتاً در دسترس نیست؛ کمی بعد دوباره تلاش کنید یا پلن دیگری را انتخاب کنید."))
         if name:
             name = await self.make_name(panel["id"], user_id, name)
         user = await self.db.get_user(user_id)
@@ -381,12 +448,33 @@ class VPN:
             raise VpnError("plan/panel missing")
         drv = await self.driver(panel["id"])
         if drv.manual:
+            st = await self.db.claim_vpn_stock(panel["id"], plan_id)          # تحویل خودکار از موجودی کانفیگ
+            if st:
+                try:
+                    if existing:
+                        sub, links = split_config(st["config"])
+                        ok, _m = await self.deliver_manual(existing["id"], sub, "\n".join(links), actor="stock")
+                        if not ok:
+                            raise VpnError("deliver failed")
+                        await self.db.release_vpn_stock(st["id"], existing["id"])
+                    else:
+                        sid = await self._stock_service(o["user_id"], panel, plan, o["id"], st)
+                        svc = await self.db.get_vpn_service(sid)
+                        await self.send_service(o["user_id"], svc, new=True)
+                        await self.shop.finish_order(o["id"], f"vpn #{sid} (stock)")
+                except Exception:
+                    await self.db.release_vpn_stock(st["id"], None)              # برگرداندن کانفیگ به موجودی
+                    raise
+                left = await self.db.vpn_stock_free(panel["id"], plan_id)
+                await self._notify_admin(f"🛡 فروش VPN (از موجودی)\nسفارش #{o['id']} | {esc(plan['title'])} | پنل: {esc(panel['name'])}\n"
+                                         f"کاربر: <code>{o['user_id']}</code> | مبلغ: {fmt(o['amount'])} تومان\n📦 موجودی باقی‌مانده: {left}" + (" ⚠️ کم است!" if left <= 3 else ""))
+                return
             if not existing:
                 name = await self.make_name(panel["id"], o["user_id"], asked)
                 await self.db.add_vpn_service(user_id=o["user_id"], panel_id=panel["id"], plan_id=plan_id, name=name, status="pending_manual",
                                               order_id=o["id"], title=plan["title"], total_bytes=int(plan["gb"] * GB),
                                               expires_at=0)
-            await shop._to_manual(o["id"], "ساخت دستی سرویس VPN", f"🛡 سفارش VPN (پنل دستی «{esc(panel['name'])}») — کانفیگ را از ربات (🛡 فروش VPN ← سرویس‌ها) یا وب‌پنل ثبت کنید:")
+            await shop._to_manual(o["id"], "ساخت دستی سرویس VPN", f"🛡 سفارش VPN (پنل دستی «{esc(panel['name'])}») — موجودی کانفیگ ندارد؛ کانفیگ را از ربات (🛡 فروش VPN ← سرویس‌ها) یا وب‌پنل ثبت کنید، یا موجودی اضافه کنید تا خودکار تحویل شود:")
             return
         user_tg = o["user_id"]
         user, meta = None, None
@@ -486,12 +574,19 @@ class VPN:
     async def _test_panel(self, user_id: int):
         """پنلی که اکانت تست روی آن ساخته می‌شود: پنل انتخابی تنظیمات، وگرنه اولین پنل فعال و غیردستی که تست دارد."""
         def ok(p):
-            return bool(p) and p["enabled"] and p["type"] != "manual" and pflag(p, "test") and not hidden_for(p, user_id)
+            return bool(p) and p["enabled"] and pflag(p, "test") and not hidden_for(p, user_id) and not self.is_down(p["id"])
+        async def usable(p):
+            if not ok(p):
+                return False
+            return await self.db.vpn_stock_free(p["id"], -1) > 0 if p["type"] == "manual" else True
         pid = self._int("vpn_test_panel")
         panel = await self.db.get_vpn_panel(pid) if pid else None
-        if ok(panel):
+        if panel and await usable(panel):
             return panel
-        return next((p for p in await self.db.list_vpn_panels(only_enabled=True) if ok(p)), None)
+        for p in await self.db.list_vpn_panels(only_enabled=True):
+            if await usable(p):
+                return p
+        return None
 
     async def can_test(self, user_id: int) -> bool:
         return (self.enabled() and self._flag("vpn_test_enabled") and not await self.db.vpn_has_test(user_id)
@@ -510,6 +605,17 @@ class VPN:
             ex = pextra(panel)
             days = max(int(float(ex.get("test_days") or self._int("vpn_test_days", 1) or 1)), 1)
             gb = float(ex.get("test_gb") if ex.get("test_gb") not in (None, "") else (self.s.get("vpn_test_gb") or 0))
+            if panel["type"] == "manual":                       # تست از موجودی «تست»
+                st = await self.db.claim_vpn_stock(panel["id"], -1)
+                if not st:
+                    raise VpnError(N_("اکانت تست در حال حاضر در دسترس نیست."))
+                try:
+                    sid = await self._stock_service(user_id, panel, None, None, st, test=True, days=days, gb=gb)
+                except Exception:
+                    await self.db.release_vpn_stock(st["id"], None)
+                    raise
+                await self.db.log("vpn", "test_account", f"user {user_id} stock {st['id']}")
+                return sid
             drv = await self.driver(panel["id"])
             for attempt in range(3):
                 name = await self.make_name(panel["id"], user_id)
@@ -563,6 +669,10 @@ class VPN:
             await self.agents.tick()
         except Exception:
             log.exception("agent tick failed")
+        try:
+            await self.health_tick()
+        except Exception:
+            log.exception("vpn health tick failed")
         if not self.enabled() and not await self.db.one("SELECT 1 x FROM vpn_services LIMIT 1"):
             return
         every = max(self._int("vpn_sync_min", 10), 1) * 60
@@ -577,16 +687,205 @@ class VPN:
                 log.exception("vpn sync %s failed", svc["id"])
         await self._autodelete()
 
+    # ------------------------------------------------------------------ پایش سلامت پنل‌ها
+    def down_ids(self) -> dict:
+        try:
+            d = json.loads(self.s.get("vpn_down") or "{}")
+            return d if isinstance(d, dict) else {}
+        except ValueError:
+            return {}
+
+    def is_down(self, panel_id) -> bool:
+        """پنلِ قطع که ادمین «بستن خودکار فروش» را روشن کرده است."""
+        return self._flag("vpn_health_autoclose") and str(panel_id) in self.down_ids()
+
+    async def _set_down(self, panel_id, down: bool):
+        d = self.down_ids()
+        if down:
+            d[str(panel_id)] = int(time.time())
+        else:
+            d.pop(str(panel_id), None)
+        await self.shop.set_setting("vpn_down", json.dumps(d), "system")
+
+    async def health_tick(self, force=False):
+        if not force and not self._flag("vpn_health_on", "1"):
+            return
+        every = max(self._int("vpn_health_min", 5), 1) * 60
+        if not force and time.time() - self._last_health < every:
+            return
+        self._last_health = time.time()
+        for p in await self.db.list_vpn_panels(only_enabled=True):
+            if p["type"] == "manual":
+                continue
+            try:
+                await self.check_panel_health(p)
+            except Exception:
+                log.exception("health check %s failed", p["id"])
+
+    async def check_panel_health(self, p: dict):
+        pid = p["id"]
+        h = self._health.setdefault(pid, {"fails": 0, "down": str(pid) in self.down_ids(), "last": 0, "ok": None, "err": "", "m": {}})
+        ok, err, m = True, "", {}
+        try:
+            drv = await self.driver(pid)
+            await asyncio.wait_for(drv.test(), 25)
+            try:
+                m = await asyncio.wait_for(drv.status(), 20) or {}
+            except Exception:  # noqa: BLE001 - مانیتورینگ همه‌ی پنل‌ها پشتیبانی نمی‌شود؛ اتصال سالم است
+                m = {}
+        except Exception as e:  # noqa: BLE001
+            ok, err = False, (str(e) or type(e).__name__)[:200]
+        h.update(last=int(time.time()), ok=ok, err=err, m=m)
+        name = esc(p["name"])
+        if not ok:
+            h["fails"] += 1
+            if h["fails"] >= max(self._int("vpn_health_fails", 2), 1) and not h["down"]:
+                h["down"] = True
+                closed = self._flag("vpn_health_autoclose")
+                if closed:
+                    await self._set_down(pid, True)
+                await self._notify_alert(f"🔴 <b>پنل «{name}» از دسترس خارج شد</b>\n<code>{esc(err)}</code>"
+                                         + ("\n⛔️ فروش این پنل تا برگشتن خودکار بسته شد." if closed else ""))
+            return
+        h["fails"] = 0
+        if h["down"] or str(pid) in self.down_ids():
+            h["down"] = False
+            was_closed = str(pid) in self.down_ids()
+            if was_closed:
+                await self._set_down(pid, False)
+            await self._notify_alert(f"🟢 <b>پنل «{name}» دوباره در دسترس است</b>" + ("\n✅ فروش این پنل باز شد." if was_closed else ""))
+        await self._check_thresholds(p, h, m)
+
+    @staticmethod
+    def _pct(used, total):
+        try:
+            used, total = float(used), float(total)
+            return used * 100 / total if total > 0 else None
+        except (TypeError, ValueError):
+            return None
+
+    async def _check_thresholds(self, p, h, m):
+        pid, name = p["id"], esc(p["name"])
+        checks = []
+        try:
+            cpu = float(m.get("cpu")) if m.get("cpu") is not None else None
+        except (TypeError, ValueError):
+            cpu = None
+        checks.append(("cpu", cpu, self._int("vpn_health_cpu", 90), "پردازنده (CPU)"))
+        checks.append(("mem", self._pct(m.get("mem_used"), m.get("mem_total")), self._int("vpn_health_mem", 90), "حافظه (RAM)"))
+        checks.append(("disk", self._pct(m.get("disk_used"), m.get("disk_total")), self._int("vpn_health_disk", 90), "دیسک"))
+        cap = p.get("capacity") or 0
+        if cap:
+            checks.append(("cap", await self.db.panel_load(pid) * 100 / cap, self._int("vpn_health_cap", 90), "ظرفیت کاربران"))
+        for key, val, limit, label in checks:
+            if val is None or limit <= 0 or val < limit:
+                continue
+            if self.shop.warn_once(f"vpnh:{pid}:{key}", 6):
+                await self._notify_alert(f"⚠️ <b>پنل «{name}»</b>: {label} در حد <b>{val:.0f}٪</b> است (آستانه {limit}٪).")
+
+    async def _notify_alert(self, text):
+        await self.shop.notify_admins(text, perm="vpn", topic="alerts")
+
+    def health_overview(self) -> list:
+        return [(pid, h) for pid, h in self._health.items()]
+
+    # ------------------------------------------------------------------ تمدید خودکار / تمدید یک‌کلیکی / تخفیف بازگشت
+    def _can_auto(self, svc) -> bool:
+        """گزینه‌ی تمدید خودکار فقط برای سرویس‌های واقعی پنل‌های غیر دستی که تمدیدشان فعال است."""
+        if not self._flag("vpn_autorenew_on", "1") or svc["is_test"] or not svc["plan_id"] or svc["status"] in ("deleted", "pending_manual"):
+            return False
+        return pflag(svc, "renew")
+
+    async def set_auto(self, svc, on: bool):
+        meta = json.loads(svc["meta"] or "{}")
+        if on:
+            meta["auto"] = 1
+        else:
+            meta.pop("auto", None)
+        await self.db.update_vpn_service(svc["id"], meta=meta)
+
+    async def quick_kb(self, svc, tr):
+        """دکمه‌های پیام یادآوری: تمدید همین پلن با یک کلیک + مشاهده."""
+        rows = []
+        plan = await self.db.get_vpn_plan(svc["plan_id"]) if svc["plan_id"] else None
+        if plan and plan["active"] and plan["panel_id"] == svc["panel_id"] and pflag(svc, "renew") and not svc["is_test"]:
+            user = await self.db.get_user(svc["user_id"])
+            rows.append([btn(f"{tr('⚡ تمدید همین پلن')} | {fmt(self.shop._personal(plan['price'], user))} {tr('ت')}", f"vpn:qk:{svc['id']}", role="action")])
+        rows.append([btn(tr("🔄 تمدید / مشاهده"), f"vpn:s:{svc['id']}", role="action")])
+        return ikb(rows)
+
+    async def _auto_renew(self, svc, notified: set) -> bool:
+        """اگر کاربر تمدید خودکار را روشن کرده و موجودی کافی است، از کیف پول تمدید می‌کند. خروجی: True اگر تمدید شد."""
+        meta = json.loads(svc["meta"] or "{}")
+        if not meta.get("auto") or not self._can_auto(svc):
+            return False
+        left = days_left(svc["expires_at"])
+        if not (svc["status"] == "expired" or (left is not None and left <= max(self._int("vpn_autorenew_days", 1), 0))):
+            return False
+        uid = svc["user_id"]
+        plan = await self.db.get_vpn_plan(svc["plan_id"])
+        tr = await self.shop.tr_for(uid)
+        kb = await self.quick_kb(svc, tr)
+        if not plan or not plan["active"] or plan["panel_id"] != svc["panel_id"]:
+            if "autofail" not in notified:
+                await self.shop.say(uid, "⚠️ تمدید خودکار سرویس <code>{name}</code> انجام نشد: پلن قبلی دیگر موجود نیست. لطفاً دستی تمدید کنید.", kb, name=esc(svc["name"]))
+                notified.add("autofail")
+                return None
+            return False
+        user = await self.db.get_user(uid)
+        price = self.shop._personal(plan["price"], user)
+        if (user["balance"] or 0) < price:
+            if "autofail" not in notified:
+                await self.shop.say(uid, "⚠️ تمدید خودکار سرویس <code>{name}</code> انجام نشد: موجودی کیف پول کافی نیست (نیاز: {p} تومان). کیف پول را شارژ کنید تا خودکار تمدید شود.", kb, name=esc(svc["name"]), p=fmt(price))
+                notified.add("autofail")
+                return None
+            return False
+        try:
+            oid = await self.renew_order(uid, svc["id"], plan["id"])
+        except VpnError:
+            return False
+        if await self.shop.pay_with_wallet(oid, uid):
+            await self.db.log("auto", "vpn_autorenew", f"#{svc['id']} order {oid}")
+            return True
+        return False
+
+    async def _winback(self, svc, notified: set) -> bool:
+        """چند روز بعد از انقضا، یک کد تخفیف شخصی و یک‌بارمصرف می‌فرستد (اگر ادمین روشن کرده باشد)."""
+        if not self._flag("vpn_winback_on") or svc["is_test"] or svc["status"] != "expired" or "winback" in notified:
+            return False
+        pct = min(max(self._int("vpn_winback_percent", 0), 0), 100)
+        after = max(self._int("vpn_winback_after", 2), 0)
+        if pct <= 0 or not svc["expires_at"] or time.time() - svc["expires_at"] < after * 86400:
+            return False
+        valid = max(self._int("vpn_winback_valid", 3), 1)
+        code = f"WB{secrets.token_hex(3).upper()}"
+        if not await self.db.create_discount(code, pct, 0, 1, int(time.time()) + valid * 86400, per_user=1, applies_to="vpn",
+                                             users=[svc["user_id"]], note=f"vpn winback #{svc['id']}"):
+            return False
+        tr = await self.shop.tr_for(svc["user_id"])
+        await self.shop.say(svc["user_id"], "🎁 دلتنگتان شدیم! برای تمدید سرویس <code>{name}</code> یک کد تخفیف <b>{p}٪</b> مخصوص شما ساخته شد:\n<code>{code}</code>\n(یک‌بار مصرف، تا {d} روز معتبر؛ هنگام پرداخت وارد کنید)",
+                            await self.quick_kb(svc, tr), name=esc(svc["name"]), p=pct, code=code, d=valid)
+        notified.add("winback")
+        return True
+
     async def _remind(self, svc):
         if svc["status"] not in ("active", "limited", "expired"):
             return
+        notified = set(filter(None, (svc["notified"] or "").split(",")))
+        before = set(notified)
+        r = await self._auto_renew(svc, notified)
+        if r:
+            return                                     # تمدید شد؛ پیام تمدید خودش فرستاده می‌شود
+        if await self._winback(svc, notified) or notified != before:
+            await self.db.update_vpn_service(svc["id"], notified=",".join(sorted(notified)))
+        svc = await self.db.get_vpn_service(svc["id"])
         notified = set(filter(None, (svc["notified"] or "").split(",")))
         new = set(notified)
         uid = svc["user_id"]
         rd, ru = self._int("vpn_remind_days"), self._int("vpn_remind_usage")
         left = days_left(svc["expires_at"])
         tr = await self.shop.tr_for(uid)
-        kb = ikb([[btn(tr("🔄 تمدید / مشاهده"), f"vpn:s:{svc['id']}", role="action")]])
+        kb = await self.quick_kb(svc, tr)
         sent = False
         if svc["status"] == "expired" or (left is not None and left <= 0):
             if "expired" not in notified:
@@ -714,6 +1013,58 @@ class VPN:
         await self.db.log(actor, "vpn_delete", f"#{sid} {svc['name']}")
         return True, msg
 
+    async def _stock_service(self, user_id, panel, plan, order_id, st, test=False, days=0, gb=0.0):
+        """از یک ردیف موجودی، سرویس فعال می‌سازد. خروجی: service_id."""
+        base = re.sub(r"\s+", " ", st["name"] or "").strip()[:60] or await self.make_name(panel["id"], user_id)
+        name, k = base, 1
+        while await self.db.one("SELECT 1 x FROM vpn_services WHERE panel_id=? AND name=? AND status!='deleted'", (panel["id"], name)):
+            k += 1
+            name = f"{base}-{k}"
+        sub, links = split_config(st["config"])
+        d = int(days or (plan["days"] if plan else 0))
+        g = float(gb or (plan["gb"] if plan else 0))
+        now = int(time.time())
+        sid = await self.db.add_vpn_service(
+            user_id=user_id, panel_id=panel["id"], plan_id=plan["id"] if plan else None, name=name, status="active",
+            expires_at=now + d * 86400 if d else 0, total_bytes=int(g * GB), sub_url=sub, links=links, meta={"stock": st["id"]},
+            order_id=order_id, is_test=1 if test else 0, title=plan["title"] if plan else "Test", last_sync=now)
+        await self.db.release_vpn_stock(st["id"], sid)
+        return sid
+
+    async def stock_add(self, panel_id: int, plan_id: int, text: str) -> tuple[int, int, int]:
+        """افزودن موجودی؛ خروجی (اضافه‌شده، تکراری، تحویل‌شده‌به‌سفارش‌های منتظر)."""
+        items = parse_stock_text(text)
+        fresh, dup = [], 0
+        seen = set()
+        for name, cfg in items:
+            if cfg in seen or await self.db.one("SELECT 1 x FROM vpn_stock WHERE panel_id=? AND config=?", (panel_id, cfg)):
+                dup += 1
+                continue
+            seen.add(cfg)
+            fresh.append((name, cfg))
+        n = await self.db.add_vpn_stock(panel_id, plan_id, fresh) if fresh else 0
+        delivered = await self.deliver_pending_from_stock(panel_id) if n and plan_id >= 0 else 0
+        return n, dup, delivered
+
+    async def deliver_pending_from_stock(self, panel_id: int) -> int:
+        n = 0
+        for svc in await self.db.all("SELECT * FROM vpn_services WHERE panel_id=? AND status='pending_manual' ORDER BY id", (panel_id,)):
+            st = await self.db.claim_vpn_stock(panel_id, svc["plan_id"] or 0)
+            if not st:
+                continue
+            sub, links = split_config(st["config"])
+            try:
+                ok, _m = await self.deliver_manual(svc["id"], sub, "\n".join(links), actor="stock")
+            except Exception:  # noqa: BLE001
+                log.exception("stock deliver failed")
+                ok = False
+            if ok:
+                await self.db.release_vpn_stock(st["id"], svc["id"])
+                n += 1
+            else:
+                await self.db.release_vpn_stock(st["id"], None)
+        return n
+
     async def deliver_manual(self, sid: int, sub_url="", links_text="", days=0, gb=0.0, actor="admin"):
         """تحویل سرویس «پنل دستی»: ادمین لینک/کانفیگ را وارد می‌کند و برای کاربر ارسال می‌شود."""
         svc = await self.db.get_vpn_service(sid)
@@ -807,6 +1158,9 @@ class VPN:
                     row.append(btn(tr("➕ حجم/زمان اضافه"), f"vpn:ad:{sid}", role="action"))
                 if row:
                     rows.append(row)
+                if self._can_auto(svc):
+                    on = bool(json.loads(svc["meta"] or "{}").get("auto"))
+                    rows.append([btn(tr("🔁 تمدید خودکار: روشن ✅") if on else tr("🔁 تمدید خودکار: خاموش"), f"vpn:au:{sid}", role="action")])
             row = [btn(tr("📲 QR کد"), f"vpn:qr:{sid}", role="action")] if pflag(svc, "qr") else []
             rows.append(row + [btn(tr("♻️ بروزرسانی"), f"vpn:rf:{sid}", role="action")])
             if self._flag("vpn_allow_revoke", "1") and svc["sub_url"]:
@@ -824,37 +1178,74 @@ class VPN:
     def _qr_data(self, svc) -> str:
         return svc["sub_url"] or ((json.loads(svc["links"] or "[]") or [""])[0])
 
+    async def fetch_sub_configs(self, sub_url: str) -> list[str]:
+        """محتوای لینک ساب را می‌خواند و کانفیگ‌های داخلش را برمی‌گرداند (متن ساده یا base64)."""
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15), connector=aiohttp.TCPConnector(ssl=False)) as ses:
+                async with ses.get(sub_url, headers={"User-Agent": "v2rayN/6.45", "Accept": "*/*"}) as r:
+                    if r.status != 200:
+                        return []
+                    raw = await r.content.read(1_000_000)
+        except Exception as e:  # noqa: BLE001
+            log.warning("sub fetch failed: %s", e)
+            return []
+        return parse_sub_body(raw)
+
+    async def refresh_links(self, svc):
+        """اگر «ارسال کانفیگ مستقیم» روشن و ساب موجود باشد، کانفیگ‌های داخل ساب را تازه می‌خواند و ذخیره می‌کند."""
+        if not pflag(svc, "config") or not svc["sub_url"] or svc["status"] == "pending_manual":
+            return svc
+        links = await self.fetch_sub_configs(svc["sub_url"])
+        if links and links != json.loads(svc["links"] or "[]"):
+            await self.db.update_vpn_service(svc["id"], links=links)
+            svc = await self.db.get_vpn_service(svc["id"])
+        return svc
+
+    def _config_msgs(self, links: list, tr) -> list[str]:
+        """کانفیگ‌ها در چند پیام (هر پیام کمتر از حد تلگرام)."""
+        msgs, cur, head = [], [], tr("🔗 کانفیگ‌ها:")
+        size = len(head)
+        for x in links[:100]:
+            line = f"<code>{esc(x)}</code>"
+            if cur and size + len(line) > 3500:
+                msgs.append("\n".join(cur))
+                cur, size = [], 0
+            cur.append(line)
+            size += len(line) + 1
+        if cur:
+            msgs.append("\n".join(cur))
+        if msgs:
+            msgs[0] = head + "\n" + msgs[0]
+        return msgs
+
     async def send_service(self, uid, svc, new=False, tr=None):
-        """مشخصات سرویس + QR در یک پیام (عکس با کپشن). اگر کپشن از ۱۰۲۴ حرف بیشتر شود، متن کامل جدا فرستاده می‌شود."""
+        """مشخصات سرویس + QR در یک پیام (عکس با کپشن). کانفیگ‌ها (در صورت روشن بودن گزینه‌ی پنل) در پیام‌های جدا می‌آیند."""
         tr = tr or await self.shop.tr_for(uid)
         head = (tr("✅ سرویس شما آماده است!") + "\n\n" if new else "")
+        svc = await self.refresh_links(svc)
         kb = self.service_kb(svc, tr)
         data = self._qr_data(svc) if (pflag(svc, "qr") and svc["status"] != "pending_manual") else ""
         png = await self.qr_png(data) if data else None
         help_t = (self.s.get("vpn_help_text") or "").strip() if new else ""
-        full = head + await self.service_text(svc, tr)
-        cap = head + await self.service_text(svc, tr, compact=True)
+        body = head + await self.service_text(svc, tr, compact=True)
+        links = json.loads(svc["links"] or "[]") if ((pflag(svc, "config") or not svc["sub_url"]) and svc["status"] != "pending_manual") else []
         extra = []
+        sent = False
         if png:
+            cap = body
             if len(cap) > 1024:
                 cap = cap[:1000].rsplit("\n", 1)[0]
-                extra.append(full)
-            elif json.loads(svc["links"] or "[]") and pflag(svc, "config"):
-                extra.append(await self._links_text(svc, tr))
+                extra.append(body)
             try:
                 await self.shop.bot.send_photo(uid, BufferedInputFile(png, filename=f"{svc['name']}.png"), caption=cap, reply_markup=kb)
+                sent = True
             except Exception as e:  # noqa: BLE001
                 log.warning("qr photo send failed: %s", e)
-                png = None
                 extra = []
-        if not png:
-            await self.shop.safe_send(uid, full, reply_markup=kb, disable_web_page_preview=True)
-        for t in extra + ([help_t] if help_t else []):
+        if not sent:
+            await self.shop.safe_send(uid, body, reply_markup=kb, disable_web_page_preview=True)
+        for t in extra + self._config_msgs(links, tr) + ([help_t] if help_t else []):
             await self.shop.safe_send(uid, t, disable_web_page_preview=True)
-
-    async def _links_text(self, svc, tr) -> str:
-        links = json.loads(svc["links"] or "[]")
-        return tr("🔗 کانفیگ‌ها:") + "\n" + "\n".join(f"<code>{esc(x)}</code>" for x in links[:6])
 
     async def send_qr(self, uid, svc):
         data = self._qr_data(svc)

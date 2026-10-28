@@ -275,6 +275,7 @@ def create_web_app(shop: Shop) -> web.Application:
     import web_group  # noqa: F401
     import web_marketing  # noqa: F401  (ثبت مسیرها)
     import web_miniapp  # noqa: F401
+    import web_reports  # noqa: F401
     import web_shop  # noqa: F401
     import web_system  # noqa: F401
     import web_users  # noqa: F401

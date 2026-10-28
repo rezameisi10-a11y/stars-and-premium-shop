@@ -12,7 +12,7 @@ import vpn_panels
 from admin_common import TXT, back_row, make_router, view
 from service import Shop
 from ui import btn, esc, fmt, ikb, rtl_fix
-from vpn_service import PANEL_FLAG_TITLES, PANEL_FLAGS, STATUS_FA, bar, days_left, fmt_gb, hidden_for, pextra, pflag
+from vpn_service import PANEL_FLAG_TITLES, PANEL_FLAGS, STATUS_FA, bar, days_left, fmt_gb, hidden_for, parse_stock_text, pextra, pflag
 
 router = make_router()
 PER = 8
@@ -85,7 +85,7 @@ async def hub(shop: Shop):
             [btn("🆕 ساخت سرویس دستی", "adm:vpn:new", role="admin")],
             [btn("🧑‍💼 پلن‌های نمایندگی", "adm:vpn:agp", role="admin"), btn("🗂 نماینده‌ها", "adm:vpn:agl:all:0", role="admin")],
             [btn("📊 وضعیت قابلیت‌ها", "adm:vpn:ft", role="admin"), btn("⚙️ تنظیمات", "adm:vpn:st", role="admin")],
-            [btn("🖼 پس‌زمینه QR", "adm:vpn:qb", role="admin")]]
+            [btn("🖼 پس‌زمینه QR", "adm:vpn:qb", role="admin"), btn("🩺 سلامت پنل‌ها", "adm:vpn:hl", role="admin")]]
     if pend:
         rows.insert(0, [btn(f"🕓 منتظر تحویل ({pend})", "adm:vpn:sv:pending_manual:0", role="action")])
     rows.append(back_row())
@@ -268,8 +268,11 @@ async def _show_panel(cb: CallbackQuery, shop: Shop, pid: int, fresh=False):
             [btn("🗝 توکن", f"adm:vpn:pe:{pid}:token", role="admin"), btn("🌐 آدرس اشتراک", f"adm:vpn:pe:{pid}:sub_url", role="admin")],
             [btn("🔀 اینباند/گروه", f"adm:vpn:pe:{pid}:inbound_ids", role="admin"), btn("📊 ظرفیت", f"adm:vpn:pe:{pid}:capacity", role="admin")],
             [btn("🎁 روز تست", f"adm:vpn:pe:{pid}:test_days", role="admin"), btn("🎁 حجم تست", f"adm:vpn:pe:{pid}:test_gb", role="admin")],
-            [btn("🚫 مخفی کردن برای کاربر", f"adm:vpn:ph:{pid}", role="admin")],
-            [btn("🗑 حذف پنل", f"adm:vpn:pdel:{pid}", role="reject")], back_row("adm:vpn:pl")]
+            [btn("🚫 مخفی کردن برای کاربر", f"adm:vpn:ph:{pid}", role="admin")]]
+    if p["type"] == "manual":
+        rows += [[btn("➕ اضافه کردن کانفیگ", f"adm:vpn:cfa:{pid}", role="confirm"), btn("📦 موجودی کانفیگ", f"adm:vpn:cfs:{pid}", role="action")],
+                 [btn("🗑 حذف کانفیگ", f"adm:vpn:cfd:{pid}", role="reject"), btn("✏️ ویرایش کانفیگ", f"adm:vpn:cfe:{pid}", role="admin")]]
+    rows += [[btn("🗑 حذف پنل", f"adm:vpn:pdel:{pid}", role="reject")], back_row("adm:vpn:pl")]
     if fresh:
         await ans(cb.message, panel_card(p), ikb(rows))
     else:
@@ -537,6 +540,12 @@ async def _safe_delete(m: Message):
 async def wiz_text(m: Message, shop: Shop, state: FSMContext):
     d = await state.get_data()
     flow = d.get("flow")
+    if flow == "stock_add":
+        await _stock_ingest(m, shop, d, m.text)
+        return
+    if flow == "stock_edit":
+        await _stock_edit_save(m, shop, state, d)
+        return
     if flow == "padd":
         key = d["steps"][d["i"]]
         try:
@@ -1357,9 +1366,14 @@ async def cb_qr_set(cb: CallbackQuery, shop: Shop):
 @router.callback_query(F.data == "adm:vpn:qbp")
 async def cb_qr_preview(cb: CallbackQuery, shop: Shop):
     from aiogram.types import BufferedInputFile
+    import vpn_qr
+    miss = vpn_qr.missing_libs()
+    if miss:
+        await cb.answer("کتابخانه نصب نیست: " + ", ".join(miss) + "\nروی سرور بزنید: pip install " + " ".join(miss) + " و ربات را ریستارت کنید (یا آپدیت بدهید).", show_alert=True)
+        return
     png = await shop.vpn.qr_png("https://example.com/sub/preview")
     if not png:
-        await cb.answer("ساخت QR ممکن نیست (کتابخانه‌ی segno نصب نیست).", show_alert=True)
+        await cb.answer("ساخت QR ممکن نیست.", show_alert=True)
         return
     await cb.message.answer_photo(BufferedInputFile(png, "preview.png"), caption="👁 پیش‌نمایش")
     await cb.answer()
@@ -1383,3 +1397,259 @@ async def wiz_photo(m: Message, shop: Shop, state: FSMContext):
     await state.clear()
     await shop.set_setting("vpn_qr_bg", "custom", f"tg:{m.from_user.id}")
     await ans(m, "✅ پس‌زمینه ذخیره شد.", ikb([[btn("👁 پیش‌نمایش", "adm:vpn:qbp", role="admin")], back_row("adm:vpn:qb")]))
+
+
+# ============================================================ موجودی کانفیگ پنل دستی (مثل میرزا)
+STOCK_HELP = ("📤 کانفیگ‌های خود را مثل مثال زیر بفرستید (می‌توانید ده‌ها یا صدها کانفیگ را در یک پیام یا چند پیام، یا یک فایل txt بفرستید):\n\n"
+              "<code># نام کانفیگ (فقط در یک خط، با # اول نام)\nکانفیگ (یک یا چند خط)\n\n"
+              "# نام کانفیگ دوم\nکانفیگ دوم</code>\n\n"
+              "اگر «#» ننویسید، هر خط یک کانفیگ حساب می‌شود. لینک اشتراک (http...) هم می‌تواند کانفیگ باشد.\n"
+              "کانفیگ تکراری اضافه نمی‌شود. بعد از هر پیام نتیجه را می‌بینید؛ در پایان «✅ پایان» را بزنید.")
+
+
+async def _stock_groups(shop: Shop, pid: int):
+    """گروه‌های موجودی یک پنل: [(plan_id, عنوان)] — پلن‌های پنل + «هر محصول» + «تست»."""
+    plans = await shop.db.list_vpn_plans(panel_id=pid)
+    return [(p["id"], p["title"]) for p in plans] + [(0, "📦 هر محصول این پنل"), (-1, "🎁 اکانت تست")]
+
+
+def _gname(groups, plan_id) -> str:
+    return next((t for i, t in groups if i == plan_id), f"#{plan_id}")
+
+
+async def _stock_pick(cb: CallbackQuery, shop: Shop, pid: int, nxt: str, title: str, only_with_stock=False):
+    groups = await _stock_groups(shop, pid)
+    summ = {r["plan_id"]: r for r in await shop.db.vpn_stock_summary(pid)}
+    rows = []
+    for i, t in groups:
+        free = (summ.get(i) or {}).get("free") or 0
+        if only_with_stock and not free:
+            continue
+        rows.append([btn(f"{t} ({free})", f"adm:vpn:{nxt}:{pid}:{i}", role="action")])
+    if not rows:
+        await cb.answer("موجودی‌ای ثبت نشده.", show_alert=True)
+        return
+    rows.append(back_row(f"adm:vpn:p:{pid}"))
+    await view(cb, title, ikb(rows))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:cfs:\d+$"))
+async def cb_stock_summary(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    await state.clear()
+    pid = int(cb.data.split(":")[3])
+    groups = await _stock_groups(shop, pid)
+    summ = {r["plan_id"]: r for r in await shop.db.vpn_stock_summary(pid)}
+    lines = ["📦 <b>موجودی کانفیگ</b>", "عنوان | آزاد | فروخته‌شده"]
+    for i, t in groups:
+        r = summ.get(i)
+        if r:
+            lines.append(f"{esc(t)} | <b>{r['free'] or 0}</b> | {r['sold'] or 0}")
+    if len(lines) == 2:
+        lines.append("هنوز موجودی ثبت نشده. با «➕ اضافه کردن کانفیگ» اضافه کنید؛ بعد از آن فروش این پنل با موجودی انجام می‌شود (تمام شدن = «ناموجود»).")
+    await view(cb, "\n".join(lines), ikb([[btn("➕ اضافه کردن کانفیگ", f"adm:vpn:cfa:{pid}", role="confirm")], back_row(f"adm:vpn:p:{pid}")]))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:cfa:\d+$"))
+async def cb_stock_add(cb: CallbackQuery, shop: Shop):
+    pid = int(cb.data.split(":")[3])
+    await _stock_pick(cb, shop, pid, "cfa2", "➕ <b>اضافه کردن کانفیگ</b>\nکانفیگ‌ها برای کدام محصول است؟ (عدد داخل پرانتز = موجودی فعلی)")
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:cfa2:\d+:-?\d+$"))
+async def cb_stock_add2(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    _, _, _, pid, plan = cb.data.split(":")
+    pid, plan = int(pid), int(plan)
+    await state.set_state(AV.wiz)
+    await state.update_data(flow="stock_add", panel_id=pid, plan_id=plan, added=0)
+    kb = ikb([[btn("✅ پایان", f"adm:vpn:cfs:{pid}", role="confirm")]])
+    groups = await _stock_groups(shop, pid)
+    await cb.message.answer(rtl_fix(f"محصول: <b>{esc(_gname(groups, plan))}</b>\n\n" + STOCK_HELP), reply_markup=kb)
+    await cb.answer()
+
+
+async def _stock_ingest(m: Message, shop: Shop, d: dict, text: str):
+    pid, plan = d["panel_id"], d["plan_id"]
+    items = parse_stock_text(text)
+    if not items:
+        await m.answer("❌ کانفیگی در پیام پیدا نشد. مثال را دوباره ببینید.")
+        return
+    n, dup, delivered = await shop.vpn.stock_add(pid, plan, text)
+    await shop.db.log(f"tg:{m.from_user.id}", "vpn_stock_add", f"panel {pid} plan {plan}: +{n} dup {dup}")
+    free = await shop.db.count_vpn_stock(pid, plan)
+    msg = f"✅ <b>{n}</b> کانفیگ اضافه شد" + (f" | ⚠️ {dup} تکراری رد شد" if dup else "") + f"\n📦 موجودی این محصول: {free}"
+    if delivered:
+        msg += f"\n🚚 {delivered} سفارش منتظر هم خودکار تحویل شد."
+    await m.answer(rtl_fix(msg + "\nکانفیگ‌های بعدی را بفرستید یا «✅ پایان» را بزنید."),
+                   reply_markup=ikb([[btn("✅ پایان", f"adm:vpn:cfs:{pid}", role="confirm")]]))
+
+
+@router.message(AV.wiz, F.document)
+async def wiz_document(m: Message, shop: Shop, state: FSMContext):
+    d = await state.get_data()
+    if d.get("flow") != "stock_add":
+        return
+    doc = m.document
+    if (doc.file_size or 0) > 2_000_000:
+        await m.answer("❌ فایل بزرگ است (حداکثر ۲ مگابایت).")
+        return
+    import io
+    buf = io.BytesIO()
+    await shop.bot.download(doc, destination=buf)
+    await _stock_ingest(m, shop, d, buf.getvalue().decode("utf-8", "ignore"))
+
+
+# ---- حذف
+@router.callback_query(F.data.regexp(r"^adm:vpn:cfd:\d+$"))
+async def cb_stock_del(cb: CallbackQuery, shop: Shop):
+    pid = int(cb.data.split(":")[3])
+    await _stock_pick(cb, shop, pid, "cfd2", "🗑 <b>حذف کانفیگ</b>\nمحصول را انتخاب کنید:", only_with_stock=True)
+
+
+async def _stock_list(cb: CallbackQuery, shop: Shop, pid: int, plan: int, page: int, mode: str):
+    total = await shop.db.count_vpn_stock(pid, plan)
+    items = await shop.db.list_vpn_stock(pid, plan, limit=PER, offset=page * PER)
+    act = "cfdx" if mode == "del" else "cfe3"
+    rows = [[btn(("❌ " if mode == "del" else "✏️ ") + (it["name"] or f"#{it['id']}"), f"adm:vpn:{act}:{it['id']}", role="reject" if mode == "del" else "admin")] for it in items]
+    nav = []
+    if page > 0:
+        nav.append(btn("◀️", f"adm:vpn:{'cfd2' if mode == 'del' else 'cfe2'}:{pid}:{plan}:{page - 1}", role="back"))
+    if (page + 1) * PER < total:
+        nav.append(btn("▶️", f"adm:vpn:{'cfd2' if mode == 'del' else 'cfe2'}:{pid}:{plan}:{page + 1}", role="action"))
+    if nav:
+        rows.append(nav)
+    if mode == "del" and total:
+        rows.append([btn(f"🗑 حذف همه‌ی {total} کانفیگ آزاد", f"adm:vpn:cfda:{pid}:{plan}", role="reject")])
+    rows.append(back_row(f"adm:vpn:{'cfd' if mode == 'del' else 'cfe'}:{pid}"))
+    groups = await _stock_groups(shop, pid)
+    await view(cb, f"{'🗑 حذف' if mode == 'del' else '✏️ ویرایش'} کانفیگ — <b>{esc(_gname(groups, plan))}</b>\nآزاد: {total}" + ("\nروی هر کانفیگ بزنید." if total else "\nکانفیگ آزادی نیست."), ikb(rows))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:cfd2:\d+:-?\d+(:\d+)?$"))
+async def cb_stock_del2(cb: CallbackQuery, shop: Shop):
+    p = cb.data.split(":")
+    await _stock_list(cb, shop, int(p[3]), int(p[4]), int(p[5]) if len(p) > 5 else 0, "del")
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:cfdx:\d+$"))
+async def cb_stock_del_one(cb: CallbackQuery, shop: Shop):
+    st = await shop.db.get_vpn_stock(int(cb.data.split(":")[3]))
+    if not st:
+        await cb.answer("پیدا نشد.", show_alert=True)
+        return
+    if not await shop.db.delete_vpn_stock(st["id"]):
+        await cb.answer("این کانفیگ فروخته شده و حذف نمی‌شود.", show_alert=True)
+        return
+    await shop.db.log(f"tg:{cb.from_user.id}", "vpn_stock_del", f"#{st['id']}")
+    await _stock_list(cb, shop, st["panel_id"], st["plan_id"], 0, "del")
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:cfda:\d+:-?\d+(:y)?$"))
+async def cb_stock_del_all(cb: CallbackQuery, shop: Shop):
+    p = cb.data.split(":")
+    pid, plan = int(p[3]), int(p[4])
+    if len(p) < 6:
+        n = await shop.db.count_vpn_stock(pid, plan)
+        await view(cb, f"⚠️ همه‌ی <b>{n}</b> کانفیگ آزاد این محصول حذف شود؟ (کانفیگ‌های فروخته‌شده می‌مانند)",
+                   ikb([[btn("✅ بله، حذف شود", f"adm:vpn:cfda:{pid}:{plan}:y", role="reject")], back_row(f"adm:vpn:cfd2:{pid}:{plan}")]))
+        await cb.answer()
+        return
+    n = await shop.db.clear_vpn_stock(pid, plan)
+    await shop.db.log(f"tg:{cb.from_user.id}", "vpn_stock_clear", f"panel {pid} plan {plan}: {n}")
+    await cb.answer(f"{n} کانفیگ حذف شد.", show_alert=True)
+    await cb_stock_summary_for(cb, shop, pid)
+
+
+async def cb_stock_summary_for(cb: CallbackQuery, shop: Shop, pid: int):
+    await _show_panel(cb, shop, pid)
+
+
+# ---- ویرایش
+@router.callback_query(F.data.regexp(r"^adm:vpn:cfe:\d+$"))
+async def cb_stock_edit(cb: CallbackQuery, shop: Shop):
+    pid = int(cb.data.split(":")[3])
+    await _stock_pick(cb, shop, pid, "cfe2", "✏️ <b>ویرایش کانفیگ</b>\nمحصول را انتخاب کنید:", only_with_stock=True)
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:cfe2:\d+:-?\d+(:\d+)?$"))
+async def cb_stock_edit2(cb: CallbackQuery, shop: Shop):
+    p = cb.data.split(":")
+    await _stock_list(cb, shop, int(p[3]), int(p[4]), int(p[5]) if len(p) > 5 else 0, "edit")
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:cfe3:\d+$"))
+async def cb_stock_edit3(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    st = await shop.db.get_vpn_stock(int(cb.data.split(":")[3]))
+    if not st or st["used"]:
+        await cb.answer("پیدا نشد یا فروخته شده است.", show_alert=True)
+        return
+    await state.set_state(AV.wiz)
+    await state.update_data(flow="stock_edit", stock_id=st["id"], panel_id=st["panel_id"], plan_id=st["plan_id"])
+    cur = f"# {st['name']}\n{st['config']}" if st["name"] else st["config"]
+    await cb.message.answer(rtl_fix("✏️ کانفیگ فعلی:\n<code>" + esc(cur[:3000]) + "</code>\n\nمتن جدید را با همان قالب بفرستید (خط اول «# نام» و زیرش کانفیگ)."),
+                            reply_markup=_ask_kb(f"adm:vpn:cfe2:{st['panel_id']}:{st['plan_id']}"))
+    await cb.answer()
+
+
+async def _stock_edit_save(m: Message, shop: Shop, state: FSMContext, d: dict):
+    st = await shop.db.get_vpn_stock(d["stock_id"])
+    items = parse_stock_text(m.text)
+    if not st or st["used"] or not items:
+        await m.answer("❌ متن نامعتبر است یا این کانفیگ دیگر قابل ویرایش نیست.")
+        return
+    name, cfg = items[0]
+    if not any(x.strip().startswith("#") for x in m.text.split("\n")):
+        name, cfg = st["name"], m.text.strip()
+    await shop.db.update_vpn_stock(st["id"], name, cfg)
+    await shop.db.log(f"tg:{m.from_user.id}", "vpn_stock_edit", f"#{st['id']}")
+    await state.clear()
+    await m.answer("✅ ویرایش شد.", reply_markup=ikb([back_row(f"adm:vpn:cfe2:{st['panel_id']}:{st['plan_id']}")]))
+
+
+# ============================================================ سلامت پنل‌ها
+def _ago(ts) -> str:
+    d = int(time.time() - (ts or 0))
+    return "هرگز" if not ts else (f"{d} ثانیه پیش" if d < 90 else f"{d // 60} دقیقه پیش" if d < 5400 else f"{d // 3600} ساعت پیش")
+
+
+async def _health_screen(cb: CallbackQuery, shop: Shop):
+    v = shop.vpn
+    lines = ["🩺 <b>سلامت پنل‌ها</b>" + (" — پایش روشن" if v._flag("vpn_health_on", "1") else " — ⚠️ پایش خاموش است (تنظیمات)")]
+    panels = [p for p in await shop.db.list_vpn_panels(only_enabled=True) if p["type"] != "manual"]
+    if not panels:
+        lines.append("\nپنل غیردستی فعالی وجود ندارد.")
+    for p in panels:
+        h = v._health.get(p["id"])
+        closed = " ⛔️ فروش بسته" if v.is_down(p["id"]) else ""
+        if not h or h["ok"] is None:
+            lines.append(f"\n⚪️ <b>{esc(p['name'])}</b> — هنوز بررسی نشده")
+            continue
+        m = h.get("m") or {}
+        bits = []
+        if m.get("cpu") is not None:
+            bits.append(f"CPU {float(m['cpu']):.0f}٪")
+        for k, lb in (("mem", "RAM"), ("disk", "دیسک")):
+            pc = v._pct(m.get(k + "_used"), m.get(k + "_total"))
+            if pc is not None:
+                bits.append(f"{lb} {pc:.0f}٪")
+        if p.get("capacity"):
+            bits.append(f"ظرفیت {await shop.db.panel_load(p['id'])}/{p['capacity']}")
+        lines.append(f"\n{'🟢' if h['ok'] else '🔴'} <b>{esc(p['name'])}</b> — {_ago(h['last'])}{closed}"
+                     + (f"\n   {' | '.join(bits)}" if bits else "") + (f"\n   <code>{esc(h['err'])}</code>" if h["err"] else ""))
+    kb = ikb([[btn("🔄 بررسی همین الان", "adm:vpn:hlr", role="action")], back_row("adm:vpn")])
+    await view(cb, rtl_fix("\n".join(lines)), kb)
+
+
+@router.callback_query(F.data == "adm:vpn:hl")
+async def cb_health(cb: CallbackQuery, shop: Shop):
+    await _health_screen(cb, shop)
+    await cb.answer()
+
+
+@router.callback_query(F.data == "adm:vpn:hlr")
+async def cb_health_run(cb: CallbackQuery, shop: Shop):
+    await cb.answer("در حال بررسی...")
+    await shop.vpn.health_tick(force=True)
+    await _health_screen(cb, shop)

@@ -964,10 +964,20 @@ class Shop:
             rate = self.pricing.ton_toman()
             if not (self.gw("ton_wallet") and rate > 0):
                 raise ValueError(tr("پرداخت با تون فعال نیست."))
-            ton = max(round(amount / float(rate), 4), 0.01)
+            base = max(round(amount / float(rate), 3), 0.01)
+            used = {round(p["crypto_amount"], 5) for p in await self.db.pending_payments("ton")}
+            ton = None
+            for k in range(1, 100):  # مبلغ یکتا (اعشار صدهزارم) تا بدون Comment هم تراکنش شناسایی شود
+                cand = round(base + k * 0.00001, 5)
+                if cand not in used:
+                    ton = cand
+                    break
+            if ton is None:
+                raise ValueError(tr("ترافیک زیاد است، چند دقیقه بعد دوباره تلاش کنید."))
             pid = await self.db.create_payment(user_id, order_id, "ton", amount, ton)
-            text = (tr("💎 مقدار <b>{ton}</b> TON را به آدرس زیر ارسال کنید:", ton=ton) + f"\n<code>{esc(self.gw('ton_wallet'))}</code>\n\n"
-                    + tr("⚠️ حتماً در بخش <b>Comment/Memo</b> این متن را وارد کنید:") + f"\n<code>P{pid}</code>\n\n"
+            text = (tr("💎 دقیقاً مقدار <b>{ton}</b> TON را به آدرس زیر ارسال کنید:", ton=f"{ton:.5f}") + f"\n<code>{esc(self.gw('ton_wallet'))}</code>\n\n"
+                    + tr("⚠️ مقدار باید با همین اعشار ارسال شود تا پرداخت شما خودکار شناسایی شود (تغییر ندهید).") + "\n"
+                    + tr("اگر کیف‌پولتان فیلد Comment/Memo دارد، می‌توانید این متن را هم بنویسید (اختیاری):") + f" <code>P{pid}</code>\n\n"
                     + tr("پس از تأیید شبکه، خودکار ثبت می‌شود."))
             return pid, text, ikb([[btn(tr("🔄 بررسی پرداخت"), f"chk:{pid}", role="action")]])
 
@@ -1474,11 +1484,22 @@ class Shop:
                 comment = (msg.get("message") or "").strip()
                 value = int(msg.get("value") or 0)
                 txhash = (tx.get("transaction_id") or {}).get("hash")
-                if not comment or not txhash:
+                ts = int(tx.get("utime") or 0)
+                if not txhash or value <= 0 or not msg.get("source"):
                     continue
-                for p in pend:
-                    if comment == f"P{p['id']}" and value >= int(p["crypto_amount"] * 1e9 * 0.99):
-                        await self.confirm_payment(p["id"], ref=txhash)
+                hit = None
+                for p in pend:                       # ۱) با Comment (مبلغ حداقل ۹۹٪)
+                    if comment == f"P{p['id']}" and ts >= p["created_at"] - 60 and value >= int(p["crypto_amount"] * 1e9 * 0.99):
+                        hit = p
+                        break
+                if hit is None:                      # ۲) بدون Comment: فقط مبلغ یکتای دقیق
+                    for p in pend:
+                        if ts >= p["created_at"] - 60 and abs(value - p["crypto_amount"] * 1e9) <= 3000:
+                            hit = p
+                            break
+                if hit is not None:
+                    await self.confirm_payment(hit["id"], ref=txhash)
+                    pend = [p for p in pend if p["id"] != hit["id"]]
         except Exception as e:
             log.warning("ton check failed: %s", e)
 

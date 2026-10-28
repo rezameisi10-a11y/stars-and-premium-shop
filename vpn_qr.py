@@ -1,6 +1,9 @@
 """ساخت تصویر QR با پس‌زمینه (مثل میرزا): چند پس‌زمینه‌ی آماده + تصویر دلخواه ادمین. بدون Pillow همان QR ساده برگردانده می‌شود."""
 import io
+import logging
 import os
+
+log = logging.getLogger("vpn_qr")
 
 PRESETS = {
     "ocean": ("🌊 اقیانوس", (14, 165, 233), (30, 58, 138)),
@@ -27,6 +30,17 @@ def _gradient(c1, c2):
     return img.resize((SIZE, SIZE), Image.BICUBIC)
 
 
+def missing_libs() -> list[str]:
+    """کتابخانه‌های لازم که نصب نیستند (segno برای QR، Pillow برای پس‌زمینه)."""
+    out = []
+    for mod, name in (("segno", "segno"), ("PIL", "Pillow")):
+        try:
+            __import__(mod)
+        except ImportError:
+            out.append(name)
+    return out
+
+
 def plain_qr(data: str) -> bytes | None:
     try:
         import segno
@@ -45,6 +59,7 @@ def render(data: str, bg: str = "", custom_path: str = "") -> bytes | None:
         import segno
         from PIL import Image, ImageDraw
     except ImportError:
+        log.warning("Pillow is not installed; QR background disabled (pip install Pillow)")
         return plain_qr(data)
     try:
         if bg == "custom":
@@ -70,5 +85,6 @@ def render(data: str, bg: str = "", custom_path: str = "") -> bytes | None:
         out = io.BytesIO()
         base.convert("RGB").save(out, format="PNG", optimize=True)
         return out.getvalue()
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        log.warning("QR background failed (%s); using a plain QR", e)
         return plain_qr(data)
