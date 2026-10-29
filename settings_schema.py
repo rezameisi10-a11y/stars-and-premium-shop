@@ -9,6 +9,18 @@ import re
 from i18n import N_, NW_
 
 GROUPS = [
+    ("ai", N_("پشتیبان هوشمند (AI)"), "settings", [
+        ("ai_enabled", N_("روشن کردن پشتیبان هوشمند"), "bool", N_("بعد از وارد کردن کلید API، دکمه‌ی «🤖 پشتیبان هوشمند» در منوی کاربران ظاهر می‌شود")),
+        ("ai_provider", N_("نوع سرویس هوش مصنوعی"), "select:openai|anthropic", N_("openai = هر سرویس سازگار با OpenAI (OpenAI، OpenRouter، DeepSeek، Gemini و ...) · anthropic = Claude")),
+        ("ai_api_key", N_("کلید API"), "secret", N_("از پنل سرویس‌دهنده بگیرید؛ در پرامپت و لاگ نمی‌آید")),
+        ("ai_base_url", N_("آدرس API (اختیاری)"), "url", N_("خالی = آدرس پیش‌فرض سرویس. مثال OpenRouter: https://openrouter.ai/api/v1")),
+        ("ai_model", N_("نام مدل (اختیاری)"), "text", N_("خالی = مدل ارزان پیش‌فرض (gpt-4o-mini یا claude-haiku-5-5)")),
+        ("ai_business", N_("اطلاعات کسب‌وکار شما برای هوش مصنوعی"), "textarea", N_("هرچه می‌خواهید هوش مصنوعی بداند: معرفی، قوانین، زمان پاسخ، گارانتی، آموزش اتصال، سؤال‌های پرتکرار ...")),
+        ("ai_rules", N_("دستورهای اضافه (لحن و محدودیت‌ها)"), "textarea", N_("مثال: همیشه محترمانه و صمیمی؛ هرگز قول تخفیف نده")),
+        ("ai_daily_user", N_("سقف پرسش روزانه‌ی هر کاربر"), "number", N_("۰ = بدون سقف؛ برای مهار هزینه")),
+        ("ai_daily_total", N_("سقف پرسش روزانه‌ی کل ربات"), "number", N_("۰ = بدون سقف")),
+        ("ai_max_tokens", N_("حداکثر طول پاسخ (توکن)"), "number", N_("پیش‌فرض ۶۰۰")),
+    ]),
     ("general", N_("عمومی"), "settings", [
         ("shop_name", N_("نام فروشگاه"), "text", ""),
         ("support_username", N_("یوزرنیم پشتیبانی (بدون @)"), "text", ""),
@@ -230,6 +242,8 @@ DEFAULTS = {
     "vpn_remind_days": "3", "vpn_remind_usage": "90", "vpn_health_on": "1", "vpn_health_min": "5", "vpn_health_fails": "2", "vpn_health_autoclose": "0", "vpn_health_cpu": "90", "vpn_health_mem": "90", "vpn_health_disk": "90", "vpn_health_cap": "90", "vpn_down": "", "vpn_autorenew_on": "1", "vpn_autorenew_days": "1", "vpn_winback_on": "0", "vpn_winback_percent": "10", "vpn_winback_after": "2", "vpn_winback_valid": "3", "vpn_autodelete_days": "0", "vpn_sync_min": "10", "vpn_notify_admin": "1",
     "vpn_help_text": "", "vpn_agent_enabled": "1", "vpn_agent_name_mode": "random", "vpn_agent_prefix": "agent", "vpn_agent_remind_days": "3",
     "vpn_agent_autodelete_days": "0", "vpn_agent_help_text": "",
+    "ai_enabled": "0", "ai_provider": "openai", "ai_api_key": "", "ai_base_url": "", "ai_model": "", "ai_business": "", "ai_rules": "",
+    "ai_daily_user": "20", "ai_daily_total": "500", "ai_max_tokens": "600",
     "grp_enabled": "0", "grp_chat_id": "", "grp_topics": "", "grp_ev_receipts": "1", "grp_ev_sales": "1", "grp_ev_users": "1",
     "grp_ev_alerts": "1", "grp_report_on": "1", "grp_report_time": "23:55", "grp_backup_hours": "24", "grp_backup_env": "0",
     "grp_last_report": "", "grp_last_backup": "0",

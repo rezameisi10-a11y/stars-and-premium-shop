@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS users(
   referrer_id INTEGER, created_at INTEGER NOT NULL, last_seen INTEGER,
   lang TEXT, note TEXT, ban_reason TEXT, personal_discount INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS ai_usage(
+  user_id INTEGER NOT NULL, day TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, tokens INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, day));
 CREATE TABLE IF NOT EXISTS products(
   id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, title TEXT NOT NULL,
   qty INTEGER NOT NULL, ref TEXT NOT NULL DEFAULT '', price_override INTEGER,
@@ -167,6 +169,7 @@ DEFAULT_MENU = [
     ("vpn_my", N_("📡 سرویس‌های VPN من"), "", 3, 0),
     ("referral", N_("🤝 زیرمجموعه‌گیری"), "", 4, 0),
     ("rules", N_("📜 قوانین"), "", 4, 1),
+    ("ai", N_("🤖 پشتیبان هوشمند"), "primary", 5, 2),
     ("support", N_("☎️ پشتیبانی"), "danger", 5, 0),
     ("lang", N_("🌐 زبان / Language"), "", 5, 1),
     ("admin", N_("⚙️ پنل مدیریت"), "primary", 6, 0),
@@ -210,7 +213,7 @@ class DB(VpnDB):
                 "INSERT INTO menu_buttons(action,label,style,row_no,pos,builtin) VALUES('lang',?,'',?,0,1)",
                 ("🌐 زبان / Language", row))
         if (await self.one("SELECT COUNT(*) c FROM menu_buttons"))["c"] > 0:      # مهاجرت: دکمه‌های VPN برای نصب‌های قبلی
-            missing = [(a, lb, st) for a, lb, st, _r, _p in DEFAULT_MENU if a in ("vpn", "vpn_my")
+            missing = [(a, lb, st) for a, lb, st, _r, _p in DEFAULT_MENU if a in ("vpn", "vpn_my", "ai")
                        and not await self.one("SELECT 1 x FROM menu_buttons WHERE action=?", (a,))]
             if missing:
                 row = (await self.one("SELECT COALESCE(MAX(row_no),-1)+1 r FROM menu_buttons"))["r"]
@@ -582,6 +585,18 @@ class DB(VpnDB):
         return await self.all(sql, ((status,) if status else ()) + (limit, offset))
 
     # ---------- محصولات ----------
+    async def ai_usage_get(self, uid, day):
+        r = await self.one("SELECT n, tokens FROM ai_usage WHERE user_id=? AND day=?", (uid, day))
+        return (r["n"], r["tokens"]) if r else (0, 0)
+
+    async def ai_usage_total(self, day) -> int:
+        return (await self.one("SELECT COALESCE(SUM(n),0) c FROM ai_usage WHERE day=?", (day,)))["c"]
+
+    async def ai_usage_add(self, uid, day, tokens=0):
+        await self.run("INSERT INTO ai_usage(user_id,day,n,tokens) VALUES(?,?,1,?) "
+                       "ON CONFLICT(user_id,day) DO UPDATE SET n=n+1, tokens=tokens+excluded.tokens", (uid, day, int(tokens or 0)))
+        await self.run("DELETE FROM ai_usage WHERE day < date('now','-60 day')")
+
     async def list_products(self, kind, only_active=True):
         sql = "SELECT * FROM products WHERE kind=?" + (" AND active=1" if only_active else "") + " ORDER BY qty, id"
         return await self.all(sql, (kind,))

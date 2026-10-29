@@ -224,8 +224,10 @@ fill_source() {   # populate $SRC from the folder next to this script, or from g
   else
     command -v git >/dev/null 2>&1 || pkg_install git
     local tmp; tmp=$(mktemp -d)
-    git clone -q --depth 1 -b "$BRANCH" "https://github.com/$REPO.git" "$tmp/r" || { rm -rf "$tmp"; die "Could not download the bot from GitHub (is the repo public?)."; }
-    copy_code "$tmp/r" "$SRC"; web_sync "$tmp/r"; rm -rf "$tmp"; ok "Bot source downloaded (version $(cat "$SRC/VERSION" 2>/dev/null))"
+    git clone -q --depth 1 -b "$BRANCH" "${STARHUB_GIT_URL:-https://github.com/$REPO.git}" "$tmp/r" || { rm -rf "$tmp"; die "Could not download the bot from GitHub (is the repo public?)."; }
+    copy_code "$tmp/r" "$SRC"; web_sync "$tmp/r"
+    [ -f "$tmp/r/starhub.sh" ] && cp -f "$tmp/r/starhub.sh" "$HUB/starhub.sh"
+    rm -rf "$tmp"; ok "Bot source downloaded (version $(cat "$SRC/VERSION" 2>/dev/null))"
   fi
   [ -f "$SRC/main.py" ] || die "main.py is missing from the source."
 }
@@ -271,7 +273,13 @@ do_setup() {
   fi
   write_unit
   web_restart_if_active
-  if [ "$SELF" != "$CMD_PATH" ]; then cp -f "$SELF" "$CMD_PATH" && chmod +x "$CMD_PATH"; ok "Command installed: type  starhub"; fi
+  if [ "$SELF" != "$CMD_PATH" ]; then
+    # when started as  bash <(curl ...)  the script is a pipe and cannot be copied; use the copy from the download
+    if [ -f "$SELF" ] && head -c 2 "$SELF" 2>/dev/null | grep -q '#!'; then cp -f "$SELF" "$CMD_PATH"
+    elif [ -f "$HUB/starhub.sh" ]; then cp -f "$HUB/starhub.sh" "$CMD_PATH"
+    else err "Could not install the starhub command (starhub.sh not found). Download the files and run: bash starhub.sh"; fi
+    [ -f "$CMD_PATH" ] && chmod +x "$CMD_PATH" && ok "Command installed: type  starhub"
+  fi
   chown "$SVC_USER:$SVC_USER" "$HUB" "$TENANTS" 2>/dev/null; chmod 755 "$HUB"; chmod 750 "$TENANTS"
   chmod 700 "$BACKUPS"
   ok "Base setup finished."
@@ -578,7 +586,7 @@ do_doctor() {
 # ---------------------------------------------------------------- web dashboard (optional)
 web_sync() {   # web_sync [dir...]: copy starhub_web.py from the first dir that has it (or from next to this script)
   local d f=""
-  for d in "$@" "$SELF_DIR"; do [ -f "$d/starhub_web.py" ] && { f="$d/starhub_web.py"; break; }; done
+  for d in "$@" "$SELF_DIR" "$HUB"; do [ -f "$d/starhub_web.py" ] && { f="$d/starhub_web.py"; break; }; done
   [ -n "$f" ] || return 0
   mkdir -p "$WEBDIR"; chmod 700 "$WEBDIR"
   cmp -s "$f" "$WEBDIR/starhub_web.py" || { cp -f "$f" "$WEBDIR/starhub_web.py"; WEB_CHANGED=1; }

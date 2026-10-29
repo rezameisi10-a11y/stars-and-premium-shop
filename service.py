@@ -23,6 +23,7 @@ from pricing import PREMIUM_STARS, Pricing
 from settings_schema import TEXT_KEYS, validate
 from ui import btn, esc, fmt, ikb  # noqa: F401  (re-export برای هندلرها)
 from vpn_service import VPN
+from ai_support import AiSupport
 
 log = logging.getLogger("shop")
 
@@ -61,7 +62,7 @@ DISC_MSG = {
 # عملیات داخلی هر دکمه منوی اصلی ← callback_data
 MENU_CALLBACKS = {"stars": "cat:stars:0", "premium": "cat:premium:0", "gift": "cat:gift:0", "wallet": "wallet",
                   "orders": "orders", "referral": "referral", "rules": "rules", "support": "support", "admin": "adm:home",
-                  "lang": "lang", "vpn": "vpn", "vpn_my": "vpn:my"}
+                  "lang": "lang", "vpn": "vpn", "vpn_my": "vpn:my", "ai": "ai:start"}
 
 # ---------------------------------------------------------------- دسترسی ادمین‌ها
 PERMS = {
@@ -162,6 +163,7 @@ class Shop:
         self.pricing = Pricing(self)
         self.group = GroupFeed(self)
         self.vpn = VPN(self)
+        self.ai = AiSupport(self)
         self._rate_last: dict[str, float] = {}
         self._ref_watch: set[int] = set()
         self._warned: dict[str, float] = {}
@@ -228,7 +230,7 @@ class Shop:
 
     async def set_setting(self, key, value, actor="system"):
         await self.db.set_setting(key, value)
-        secret = key in ("zarinpal_merchant", "toncenter_key", "trongrid_key") or "headers" in key
+        secret = key in ("zarinpal_merchant", "toncenter_key", "trongrid_key", "ai_api_key") or "headers" in key
         await self.db.log(actor, "setting", f"{key}={'***' if secret else str(value)[:80]}")
         await self._reload_settings()
         if key.startswith("miniapp_"):
@@ -593,6 +595,8 @@ class Shop:
             if it["action"] == "lang" and not multi:
                 continue
             if it["action"] in ("vpn", "vpn_my") and not self.vpn.enabled():
+                continue
+            if it["action"] == "ai" and not self.ai.enabled():
                 continue
             b = self._menu_button(it, lang)
             if b:
