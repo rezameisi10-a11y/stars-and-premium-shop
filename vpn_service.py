@@ -133,9 +133,10 @@ def valid_name(n: str) -> bool:
 
 
 # تنظیمات هر پنل (داخل ستون extra؛ مثل «قابلیت‌های پنل» در میرزا). مقدار 1 = روشن
-PANEL_FLAGS = {"show": 1, "test": 1, "renew": 1, "addon": 1, "sub": 1, "config": 1, "qr": 1}
+PANEL_FLAGS = {"show": 1, "test": 1, "renew": 1, "addon": 1, "sub": 1, "config": 1, "qr": 1, "copy_sub": 1, "copy_cfg": 1}
 PANEL_FLAG_TITLES = {"show": N_("نمایش پنل به کاربران"), "test": N_("اکانت تست"), "renew": N_("تمدید"), "addon": N_("حجم/زمان اضافه"),
-                     "sub": N_("ارسال لینک اشتراک"), "config": N_("ارسال کانفیگ مستقیم"), "qr": N_("دکمه‌ی QR کد")}
+                     "sub": N_("ارسال لینک اشتراک"), "config": N_("ارسال کانفیگ مستقیم"), "qr": N_("دکمه‌ی QR کد"),
+                     "copy_sub": N_("کپی لینک اشتراک با یک کلیک (خاموش = نگه‌داشتن انگشت)"), "copy_cfg": N_("کپی کانفیگ‌ها با یک کلیک (خاموش = نگه‌داشتن انگشت)")}
 
 
 def pextra(panel) -> dict:
@@ -1122,7 +1123,8 @@ class VPN:
         t = tr("نامحدود") if left is None else tr("{d} روز", d=left)
         return f"{tr(STATUS_FA.get(svc['status'], svc['status']))} | " + tr("حجم: {u}", u=used) + " | " + tr("زمان باقی‌مانده: {t}", t=t)
 
-    async def service_text(self, svc, tr, compact=False) -> str:
+    async def service_text(self, svc, tr, compact=False, all_cfg=False) -> str:
+        """compact: فقط تعداد کانفیگ (برای کپشن عکس) · all_cfg: همه‌ی کانفیگ‌ها زیر لینک اشتراک (تا ۱۰۰ عدد) · وگرنه ۶ کانفیگ."""
         left = days_left(svc["expires_at"])
         total = svc["total_bytes"]
         lines = [f"🛡 <b>{esc(svc['title'] or tr('سرویس VPN'))}</b>",
@@ -1134,12 +1136,15 @@ class VPN:
         else:
             lines.append(tr("سرویس شما پس از آماده‌سازی توسط پشتیبانی ارسال می‌شود."))
         show_sub, show_cfg = pflag(svc, "sub"), pflag(svc, "config")
+        tap_sub, tap_cfg = pflag(svc, "copy_sub"), pflag(svc, "copy_cfg")
         if svc["sub_url"] and show_sub:
-            lines.append("\n" + tr("🔗 لینک اشتراک (روی آن بزنید تا کپی شود):") + f"\n<code>{esc(svc['sub_url'])}</code>")
+            hint = tr("🔗 لینک اشتراک (روی آن بزنید تا کپی شود):") if tap_sub else tr("🔗 لینک اشتراک (انگشتتان را روی آن نگه دارید تا کپی شود):")
+            lines.append("\n" + hint + "\n" + (f"<code>{esc(svc['sub_url'])}</code>" if tap_sub else esc(svc["sub_url"])))
         links = json.loads(svc["links"] or "[]") if show_cfg else []
-        if links and not compact:
-            lines.append("\n" + tr("🔗 کانفیگ‌ها:"))
-            lines += [f"<code>{esc(x)}</code>" for x in links[:6]]
+        if links and (all_cfg or not compact):
+            hint = tr("🔗 کانفیگ‌ها (روی هر کدام بزنید تا کپی شود):") if tap_cfg else tr("🔗 کانفیگ‌ها (انگشتتان را روی هر کدام نگه دارید تا کپی شود):")
+            lines.append("\n" + hint)
+            lines += [(f"<code>{esc(x)}</code>" if tap_cfg else esc(x)) for x in links[:(100 if all_cfg else 6)]]
         elif links:
             lines.append(tr("تعداد کانفیگ مستقیم: {n}", n=len(links)))
         return "\n".join(lines)
@@ -1201,25 +1206,24 @@ class VPN:
             svc = await self.db.get_vpn_service(svc["id"])
         return svc
 
-    def _config_msgs(self, links: list, tr) -> list[str]:
-        """کانفیگ‌ها در چند پیام (هر پیام کمتر از حد تلگرام)."""
-        msgs, cur, head = [], [], tr("🔗 کانفیگ‌ها:")
-        size = len(head)
-        for x in links[:100]:
-            line = f"<code>{esc(x)}</code>"
-            if cur and size + len(line) > 3500:
-                msgs.append("\n".join(cur))
+    @staticmethod
+    def _split_text(text: str, limit: int = 3900) -> list[str]:
+        """متن بلند را روی مرز خط به چند پیام (هرکدام کمتر از حد تلگرام) می‌شکند."""
+        parts, cur, size = [], [], 0
+        for ln in text.split("\n"):
+            ln = ln[:limit]
+            if cur and size + len(ln) + 1 > limit:
+                parts.append("\n".join(cur))
                 cur, size = [], 0
-            cur.append(line)
-            size += len(line) + 1
+            cur.append(ln)
+            size += len(ln) + 1
         if cur:
-            msgs.append("\n".join(cur))
-        if msgs:
-            msgs[0] = head + "\n" + msgs[0]
-        return msgs
+            parts.append("\n".join(cur))
+        return parts
 
     async def send_service(self, uid, svc, new=False, tr=None):
-        """مشخصات سرویس + QR در یک پیام (عکس با کپشن). کانفیگ‌ها (در صورت روشن بودن گزینه‌ی پنل) در پیام‌های جدا می‌آیند."""
+        """مشخصات + لینک اشتراک + کانفیگ‌ها (زیر لینک اشتراک) + QR.
+        اگر همه در ۱۰۲۴ حرف جا شود: یک پیام (عکس با کپشن). وگرنه: عکس QR و بعد یک پیام متنی کامل (در صورت طولانی بودن چند پیام پشت‌سرهم)."""
         tr = tr or await self.shop.tr_for(uid)
         head = (tr("✅ سرویس شما آماده است!") + "\n\n" if new else "")
         svc = await self.refresh_links(svc)
@@ -1227,25 +1231,27 @@ class VPN:
         data = self._qr_data(svc) if (pflag(svc, "qr") and svc["status"] != "pending_manual") else ""
         png = await self.qr_png(data) if data else None
         help_t = (self.s.get("vpn_help_text") or "").strip() if new else ""
-        body = head + await self.service_text(svc, tr, compact=True)
-        links = json.loads(svc["links"] or "[]") if ((pflag(svc, "config") or not svc["sub_url"]) and svc["status"] != "pending_manual") else []
-        extra = []
-        sent = False
+        full = head + await self.service_text(svc, tr, all_cfg=True)
+        texts, sent = [], False
         if png:
-            cap = body
-            if len(cap) > 1024:
-                cap = cap[:1000].rsplit("\n", 1)[0]
-                extra.append(body)
+            photo = BufferedInputFile(png, filename=f"{svc['name']}.png")
+            if len(full) <= 1024:
+                cap, pkb = full, kb
+            else:
+                cap, pkb = f"🛡 <b>{esc(svc['title'] or tr('سرویس VPN'))}</b>", None
+                texts = self._split_text(full)
             try:
-                await self.shop.bot.send_photo(uid, BufferedInputFile(png, filename=f"{svc['name']}.png"), caption=cap, reply_markup=kb)
+                await self.shop.bot.send_photo(uid, photo, caption=cap, reply_markup=pkb)
                 sent = True
             except Exception as e:  # noqa: BLE001
                 log.warning("qr photo send failed: %s", e)
-                extra = []
+                texts = []
         if not sent:
-            await self.shop.safe_send(uid, body, reply_markup=kb, disable_web_page_preview=True)
-        for t in extra + self._config_msgs(links, tr) + ([help_t] if help_t else []):
-            await self.shop.safe_send(uid, t, disable_web_page_preview=True)
+            texts = self._split_text(full)
+        for i, t in enumerate(texts):
+            await self.shop.safe_send(uid, t, reply_markup=kb if i == len(texts) - 1 else None, disable_web_page_preview=True)
+        if help_t:
+            await self.shop.safe_send(uid, help_t, disable_web_page_preview=True)
 
     async def send_qr(self, uid, svc):
         data = self._qr_data(svc)

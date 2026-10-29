@@ -150,6 +150,17 @@ domain_in_use() {
     [ -n "$1" ] && [ "$(env_get "$n" HUB_DOMAIN)" = "$1" ] && { printf '%s' "$n"; return 0; }
   done; return 1
 }
+domain_taken() {   # domain_taken DOMAIN [ignore-tenant] [ignore-caddy-file]: prints who already serves this domain
+  local d="$1" n f re
+  n=$(domain_in_use "$d" "${2:-}") && { printf 'customer %s' "$n"; return 0; }
+  re="^[[:space:]]*(https?://)?${d//./\\.}(:[0-9]+)?([[:space:],{]|$)"
+  for f in "$CADDY_DIR"/*.caddy /etc/caddy/Caddyfile; do
+    [ -f "$f" ] || continue
+    [ -n "${3:-}" ] && [ "$f" = "$3" ] && continue
+    grep -qE "$re" "$f" 2>/dev/null && { printf 'the web server config %s' "$f"; return 0; }
+  done
+  return 1
+}
 alloc_port() {
   local p="$BASE_PORT" used n
   used=" $(for n in $(tenant_names); do env_get "$n" WEB_PORT; printf ' '; done) "
@@ -190,7 +201,7 @@ $2 {
 	reverse_proxy 127.0.0.1:$3
 }
 EOF
-  caddy_reload
+  caddy_reload || { rm -f "$CADDY_DIR/starhub-$1.caddy"; caddy_reload >/dev/null 2>&1; return 1; }
 }
 caddy_remove() { [ -f "$CADDY_DIR/starhub-$1.caddy" ] || return 0; rm -f "$CADDY_DIR/starhub-$1.caddy"; caddy_installed && caddy_reload; return 0; }
 
@@ -306,7 +317,7 @@ do_new() {   # args: [name] [token] [domain] [admins]
   domain="${domain#http://}"; domain="${domain#https://}"; domain="${domain%%/*}"
   if [ -n "$domain" ]; then
     [[ "$domain" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || { err "Invalid domain."; return 1; }
-    o=$(domain_in_use "$domain") && { err "Domain already used by customer '$o'."; return 1; }
+    o=$(domain_taken "$domain") && { err "This domain is already used by $o. Use another (sub)domain."; return 1; }
     local ip dip; ip=$(public_ip); dip=$(dns_ip "$domain")
     if [ -z "$dip" ]; then warn "$domain does not resolve yet; point its A record to ${ip:-this server} or SSL will fail."
     elif [ -n "$ip" ] && [ "$dip" != "$ip" ]; then warn "$domain resolves to $dip but this server is $ip."; fi
@@ -412,7 +423,7 @@ do_edit() {   # edit what name value
       val="${val#http://}"; val="${val#https://}"; val="${val%%/*}"
       local port; port=$(env_get "$name" WEB_PORT)
       if [ -n "$val" ]; then
-        local o; o=$(domain_in_use "$val" "$name") && { err "Domain used by '$o'."; return 1; }
+        local o; o=$(domain_taken "$val" "$name" "$CADDY_DIR/starhub-$name.caddy") && { err "This domain is already used by $o."; return 1; }
         env_set "$name" PUBLIC_URL "https://$val"; env_set "$name" WEB_HOST "127.0.0.1"; env_set "$name" TRUST_PROXY 1
         install_caddy && caddy_write "$name" "$val" "$port" && fw_open 80 443
       else
@@ -622,6 +633,9 @@ do_web() {   # web on [domain] | off | status | passwd [password]
       ask domain "Domain for the dashboard (empty = local only, reach it through an SSH tunnel)" ""
       domain="${domain#http://}"; domain="${domain#https://}"; domain="${domain%%/*}"
       if [ -n "$domain" ] && ! [[ "$domain" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then err "Invalid domain."; return 1; fi
+      if [ -n "$domain" ]; then
+        local who; who=$(domain_taken "$domain" "" "$CADDY_DIR/hub-dashboard.caddy") && { err "This domain is already used by $who. Give the dashboard its own (sub)domain, e.g. hub.yourdomain.com (add a DNS A record first)."; return 1; }
+      fi
       local newpass=""
       if [ ! -f "$WEBDIR/auth.json" ]; then newpass=$(rand_pass); web_set_pass "$newpass" || return 1; fi
       web_python >/dev/null || { err "aiohttp is missing in the shared environment (run: starhub setup)."; return 1; }
@@ -640,7 +654,8 @@ EOF
         if install_caddy; then
           mkdir -p "$CADDY_DIR"
           printf '%s {\n\tencode gzip\n\treverse_proxy 127.0.0.1:%s\n}\n' "$domain" "$WEB_PORT" > "$CADDY_DIR/hub-dashboard.caddy"
-          caddy_reload && fw_open 80 443
+          if caddy_reload; then fw_open 80 443
+          else rm -f "$CADDY_DIR/hub-dashboard.caddy"; caddy_reload >/dev/null 2>&1; err "The web server rejected the dashboard domain config; it was removed so nothing else is affected. Nothing was changed for your bots."; return 1; fi
         else warn "Caddy is not available; the dashboard is only on 127.0.0.1:$WEB_PORT."; fi
       else rm -f "$CADDY_DIR/hub-dashboard.caddy" 2>/dev/null; fi
       if have_systemd; then

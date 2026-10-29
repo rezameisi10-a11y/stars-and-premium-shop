@@ -173,9 +173,11 @@ async def vpn_refresh(cb: CallbackQuery, shop: Shop, tr):
         return
     try:
         if cb.message.photo:
-            await cb.message.edit_caption(caption=(await shop.vpn.service_text(svc, tr, compact=True))[:1024], reply_markup=shop.vpn.service_kb(svc, tr))
+            _c = await shop.vpn.service_text(svc, tr, all_cfg=True)
+            await cb.message.edit_caption(caption=_c if len(_c) <= 1024 else (await shop.vpn.service_text(svc, tr, compact=True))[:1024], reply_markup=shop.vpn.service_kb(svc, tr))
         else:
-            await cb.message.edit_text(await shop.vpn.service_text(svc, tr), reply_markup=shop.vpn.service_kb(svc, tr), disable_web_page_preview=True)
+            _t = await shop.vpn.service_text(svc, tr, all_cfg=True)
+            await cb.message.edit_text(_t if len(_t) <= 4000 else await shop.vpn.service_text(svc, tr), reply_markup=shop.vpn.service_kb(svc, tr), disable_web_page_preview=True)
     except Exception:
         pass
     await cb.answer(tr("بروزرسانی شد."))
