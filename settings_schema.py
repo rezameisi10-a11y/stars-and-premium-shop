@@ -11,7 +11,7 @@ from i18n import N_, NW_
 GROUPS = [
     ("ai", N_("پشتیبان هوشمند (AI)"), "settings", [
         ("ai_enabled", N_("روشن کردن پشتیبان هوشمند"), "bool", N_("بعد از وارد کردن کلید API، دکمه‌ی «🤖 پشتیبان هوشمند» در منوی کاربران ظاهر می‌شود")),
-        ("ai_provider", N_("نوع سرویس هوش مصنوعی"), "select:openai|anthropic", N_("openai = هر سرویس سازگار با OpenAI (OpenAI، OpenRouter، DeepSeek، Gemini و ...) · anthropic = Claude")),
+        ("ai_provider", N_("نوع سرویس هوش مصنوعی"), "select:openai|anthropic|gemini", N_("openai = هر سرویس سازگار با OpenAI (OpenAI، OpenRouter، Groq، DeepSeek و ...) · gemini = Google Gemini (کلید AI Studio، آدرس را خالی بگذارید) · anthropic = Claude")),
         ("ai_api_key", N_("کلید API"), "secret", N_("از پنل سرویس‌دهنده بگیرید؛ در پرامپت و لاگ نمی‌آید")),
         ("ai_base_url", N_("آدرس API (اختیاری)"), "url", N_("خالی = آدرس پیش‌فرض سرویس. مثال OpenRouter: https://openrouter.ai/api/v1")),
         ("ai_model", N_("نام مدل (اختیاری)"), "text", N_("خالی = مدل ارزان پیش‌فرض (gpt-4o-mini یا claude-haiku-5-5)")),

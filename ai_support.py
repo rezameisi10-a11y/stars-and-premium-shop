@@ -25,8 +25,8 @@ HIST_TTL = 1800          # حافظه‌ی گفتگو (ثانیه)
 COOLDOWN = 3             # فاصله‌ی حداقل بین دو پیام یک کاربر (ثانیه)
 URL_RE = re.compile(r"^https?://[^\s]+$", re.I)
 
-DEFAULT_BASE = {"openai": "https://api.openai.com/v1", "anthropic": "https://api.anthropic.com"}
-DEFAULT_MODEL = {"openai": "gpt-4o-mini", "anthropic": "claude-haiku-5-5"}
+DEFAULT_BASE = {"openai": "https://api.openai.com/v1", "anthropic": "https://api.anthropic.com", "gemini": "https://generativelanguage.googleapis.com/v1beta"}
+DEFAULT_MODEL = {"openai": "gpt-4o-mini", "anthropic": "claude-haiku-5-5", "gemini": "gemini-flash-latest"}
 
 SYSTEM = """You are the customer-support assistant of an online shop that runs inside a Telegram bot.
 Shop name: {shop}.
@@ -66,6 +66,7 @@ class AiError(Exception):
 
 class AiSupport:
     def __init__(self, shop):
+        self.last_error = ""
         self.shop = shop
         self._hist: dict[int, tuple[float, list]] = {}
         self._last: dict[int, float] = {}
@@ -85,7 +86,8 @@ class AiSupport:
             return default
 
     def provider(self) -> str:
-        return "anthropic" if self.s.get("ai_provider", "openai") == "anthropic" else "openai"
+        p = self.s.get("ai_provider", "openai")
+        return p if p in ("anthropic", "gemini") else "openai"
 
     def base_url(self) -> str:
         b = (self.s.get("ai_base_url") or "").strip().rstrip("/")
@@ -193,7 +195,14 @@ class AiSupport:
         key = self.s.get("ai_api_key", "").strip()
         timeout = aiohttp.ClientTimeout(total=60)
         mt = max(min(self._int("ai_max_tokens", 600), 2000), 100)
-        if self.provider() == "anthropic":
+        self.last_error = ""
+        if self.provider() == "gemini":
+            url = f"{self.base_url()}/models/{self.model()}:generateContent"
+            body = {"systemInstruction": {"parts": [{"text": system}]},
+                    "contents": [{"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]} for m in msgs],
+                    "generationConfig": {"maxOutputTokens": mt, "temperature": 0.3}}
+            headers = {"x-goog-api-key": key, "content-type": "application/json"}
+        elif self.provider() == "anthropic":
             url = self.base_url() + "/v1/messages"
             body = {"model": self.model(), "max_tokens": mt, "system": system, "messages": msgs}
             headers = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
@@ -207,14 +216,22 @@ class AiSupport:
             async with self.shop.http.post(url, json=body, headers=headers, timeout=timeout) as r:
                 raw = await r.text()
                 if r.status != 200:
+                    self.last_error = f"HTTP {r.status}: {raw[:300]}".replace(key, "***") if key else f"HTTP {r.status}: {raw[:300]}"
                     log.warning("ai http %s: %s", r.status, raw[:300])
                     raise AiError(N_("پشتیبان هوشمند موقتاً در دسترس نیست؛ کمی بعد دوباره تلاش کنید."))
                 j = json.loads(raw)
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as e:
+            self.last_error = f"{type(e).__name__}: {e}"[:300]
             log.warning("ai call failed: %s", e)
             raise AiError(N_("پشتیبان هوشمند موقتاً در دسترس نیست؛ کمی بعد دوباره تلاش کنید."))
         try:
-            if self.provider() == "anthropic":
+            if self.provider() == "gemini":
+                cand = (j.get("candidates") or [{}])[0]
+                text = "".join(p_.get("text", "") for p_ in (cand.get("content") or {}).get("parts", []))
+                tokens = int((j.get("usageMetadata") or {}).get("totalTokenCount", 0))
+                if not text:
+                    self.last_error = f"empty reply (finishReason={cand.get('finishReason')}, feedback={j.get('promptFeedback')})"[:300]
+            elif self.provider() == "anthropic":
                 text = "".join(b.get("text", "") for b in j.get("content", []) if b.get("type") == "text")
                 u = j.get("usage") or {}
                 tokens = int(u.get("input_tokens", 0)) + int(u.get("output_tokens", 0))
@@ -222,8 +239,21 @@ class AiSupport:
                 text = j["choices"][0]["message"]["content"] or ""
                 tokens = int((j.get("usage") or {}).get("total_tokens", 0))
         except (KeyError, IndexError, TypeError, ValueError):
+            self.last_error = "unexpected response: " + raw[:200]
             raise AiError(N_("پشتیبان هوشمند موقتاً در دسترس نیست؛ کمی بعد دوباره تلاش کنید."))
         return text.strip(), tokens
+
+    async def test(self) -> tuple[bool, str]:
+        """تست اتصال برای ادمین: (موفق؟، توضیح فنی)."""
+        if not self.s.get("ai_api_key", "").strip():
+            return False, "no API key"
+        try:
+            text, _t = await self._call("Reply with the single word OK.", [{"role": "user", "content": "ping"}])
+        except AiError:
+            return False, self.last_error or "unknown error"
+        if not text:
+            return False, self.last_error or "empty reply"
+        return True, f"{self.provider()} / {self.model()}: {text[:60]}"
 
     # ------------------------------------------------------------------ پرسش
     async def ask(self, uid: int, text: str, lang_name: str = "Persian") -> tuple[str, bool]:

@@ -72,6 +72,7 @@ async def cb_settings(cb: CallbackQuery, shop: Shop, state: FSMContext):
 
 
 EXTRA_BUTTONS = {
+    "ai": [("🧪 تست اتصال هوش مصنوعی", "adm:ai:test")],
     "general": [("📢 کانال‌های عضویت اجباری", "adm:fj")],
     "rates": [("🧪 تست API دلار", "adm:rates:t:usd"), ("🧪 تست API تون", "adm:rates:t:ton"), ("🔄 بروزرسانی نرخ", "adm:ratesnow")],
     "pricing": [("🧪 تست API استارز", "adm:rates:t:fs"), ("🧪 تست API پریمیوم", "adm:rates:t:fp"), ("💹 نمونه قیمت‌ها", "adm:rates")],
@@ -1033,6 +1034,16 @@ GRP_HELP = ("🗂 <b>اتصال ربات به گروه</b>\n"
             "• ساعت گزارش شبانه و فاصله‌ی بکاپ و روشن/خاموش‌کردن هر رویداد همین‌جا تنظیم می‌شود.\n"
             "• اگر گروه تاپیک نداشت، همه‌چیز در چت اصلی گروه می‌آید.\n"
             "• ⚠️ فایل بکاپ شامل اطلاعات کاربران است؛ فقط ادمین‌های مورد اعتماد عضو گروه باشند.")
+
+
+@router.callback_query(F.data == "adm:ai:test")
+async def cb_ai_test(cb: CallbackQuery, shop: Shop):
+    if not shop.can(cb.from_user.id, "settings"):
+        await cb.answer("دسترسی ندارید", show_alert=True)
+        return
+    await cb.answer("در حال تست…")
+    ok, info = await shop.ai.test()
+    await cb.message.answer(("✅ اتصال برقرار است.\n" if ok else "❌ اتصال ناموفق:\n") + f"<code>{esc(info)}</code>")
 
 
 @router.callback_query(F.data.startswith("adm:grp:"))
