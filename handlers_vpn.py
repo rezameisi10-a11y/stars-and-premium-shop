@@ -23,6 +23,7 @@ PER_PAGE = 8
 class VpnSt(StatesGroup):
     name = State()
     agent_name = State()
+    custom_amount = State()
 
 
 def _plan_label(p, tr, price) -> str:
@@ -523,10 +524,15 @@ async def agent_addons(cb: CallbackQuery, shop: Shop, tr):
         return
     u = await shop.db.get_user(cb.from_user.id)
     adds = [a for a in await shop.vpn.agents.addons_for(ag) if not (a["kind"] == "gb" and not ag["total_bytes"])]
-    if not adds:
+    custom = await shop.vpn.agents.custom_for(ag)
+    if not adds and not custom:
         await cb.answer(tr("بسته‌ی اضافه‌ای موجود نیست."), show_alert=True)
         return
     rows = [[btn(f"{shop.vpn.agents.addon_title(a, tr)} | {fmt(shop._personal(a['price'], u))} {tr('ت')}", f"vpn:agap:{ag['id']}:{a['id']}", role="action")] for a in adds[:30]]
+    if "gb" in custom:
+        rows.append([btn(tr("✏️ حجم دلخواه"), f"vpn:agc:{ag['id']}:gb", role="action")])
+    if "days" in custom:
+        rows.append([btn(tr("✏️ زمان دلخواه"), f"vpn:agc:{ag['id']}:days", role="action")])
     rows.append([btn(tr("🔙 بازگشت"), f"vpn:agab:{ag['id']}", role="back")])
     if not await _swap_kb(cb, ikb(rows)):
         await cb.message.answer(tr("➕ بسته‌ی اضافه برای {n}", n=f"<code>{esc(ag['username'])}</code>") + "\n" + tr("یکی را انتخاب کنید:"), reply_markup=ikb(rows))
@@ -540,6 +546,53 @@ async def agent_addons_back(cb: CallbackQuery, shop: Shop, tr):
         return
     await _swap_kb(cb, shop.vpn.agents.agent_kb(ag, tr))
     await cb.answer()
+
+
+@router.callback_query(F.data.startswith("vpn:agc:"))
+async def agent_custom_ask(cb: CallbackQuery, shop: Shop, tr, state: FSMContext):
+    _, _, aid, kind = cb.data.split(":")
+    ag = await _own_agent(cb, shop, tr, aid)
+    if not ag:
+        return
+    cfg = (await shop.vpn.agents.custom_for(ag)).get(kind)
+    if not cfg:
+        await cb.answer(tr("این امکان دیگر در دسترس نیست."), show_alert=True)
+        return
+    u = await shop.db.get_user(cb.from_user.id)
+    unit = shop._personal(cfg["price"], u)
+    await state.set_state(VpnSt.custom_amount)
+    await state.update_data(agent_id=ag["id"], kind=kind)
+    if kind == "gb":
+        txt = tr("چند گیگابایت حجم اضافه می‌خواهید؟ (بین {a} و {b} گیگابایت؛ هر گیگابایت {p} تومان). برای انصراف /start:", a=f"{cfg['min']:g}", b=f"{cfg['max']:g}", p=fmt(unit))
+    else:
+        txt = tr("چند روز زمان اضافه می‌خواهید؟ (بین {a} و {b} روز؛ هر روز {p} تومان). برای انصراف /start:", a=f"{cfg['min']:g}", b=f"{cfg['max']:g}", p=fmt(unit))
+    await cb.message.answer(txt)
+    await cb.answer()
+
+
+@router.message(VpnSt.custom_amount, F.text)
+async def agent_custom_amount(m: Message, shop: Shop, state: FSMContext, tr):
+    d = await state.get_data()
+    t = (m.text or "").strip().translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٫٬٫", "0123456789...")).replace(",", "")
+    try:
+        v = float(t)
+        if v <= 0:
+            raise ValueError
+    except ValueError:
+        await m.answer(tr("فقط یک عدد معتبر بفرستید."))
+        return
+    ag = await shop.db.get_agent(d["agent_id"])
+    cfg = (await shop.vpn.agents.custom_for(ag)).get(d["kind"]) if ag else None
+    if cfg and not cfg["min"] <= v <= cfg["max"]:
+        await m.answer(tr("مقدار باید بین {a} و {b} باشد.", a=f"{cfg['min']:g}", b=f"{cfg['max']:g}"))
+        return
+    try:
+        oid = await shop.vpn.agents.custom_order(m.from_user.id, d["agent_id"], d["kind"], v)
+    except VpnError as e:
+        await m.answer(tr(str(e)))
+        return
+    await state.clear()
+    await _offer(m, shop, tr, oid, m.from_user.id)
 
 
 @router.callback_query(F.data.startswith("vpn:agap:"))

@@ -33,7 +33,13 @@ def plan_inputs(p=None) -> str:
             f"<label class='mini'>{T('قیمت (ت)')}{inp('price', p.get('price', ''), '', 'm', 'number')}</label> "
             f"<label class='mini'>{T('ترتیب')}{inp('sort', p.get('sort', 100), '', 's', 'number')}</label> "
             f"<label class='mini'>{T('حجم/زمان اضافه')}{sel('addon_on', [('1', _('روشن')), ('0', _('خاموش'))], str(p.get('addon_on', 1)))}</label> "
-            f"<label class='mini'>{T('توضیح برای خریدار')}{inp('note', p.get('note', ''), '', 'l')}</label>")
+            + "".join(
+                f"<label class='mini'>{T(nm + ' دلخواه')}{sel('custom_%s_on' % k, [('1', _('روشن')), ('0', _('خاموش'))], str(p.get('custom_%s_on' % k, 0)))}</label> "
+                f"<label class='mini'>{T('قیمت هر ' + un + ' (ت)')}{inp('custom_%s_price' % k, p.get('custom_%s_price' % k, 0), '', 's', 'number')}</label> "
+                f"<label class='mini'>{T('حداقل ' + nm)}{inp('custom_%s_min' % k, p.get('custom_%s_min' % k, 0), '', 's', 'text')}</label> "
+                f"<label class='mini'>{T('حداکثر ' + nm)}{inp('custom_%s_max' % k, p.get('custom_%s_max' % k, 0), '', 's', 'text')}</label> "
+                for k, nm, un in (("gb", "حجم", "گیگابایت"), ("days", "زمان", "روز")))
+            + f"<label class='mini'>{T('توضیح برای خریدار')}{inp('note', p.get('note', ''), '', 'l')}</label>")
 
 
 def _ids(v) -> str:
@@ -49,6 +55,9 @@ def _read_plan(d) -> dict:
             "expire_min_days": max(to_int(d.get("expire_min_days"), 0) or 0, 0), "expire_max_days": max(to_int(d.get("expire_max_days"), 0) or 0, 0),
             "price": max(to_int(d.get("price"), 0) or 0, 0), "sort": to_int(d.get("sort"), 100) or 100,
             "addon_on": 0 if str(d.get("addon_on", "1")) == "0" else 1,
+            **{f"custom_{k}_{f}": (to_float(d.get(f"custom_{k}_{f}"), 0) if (k == "gb" and f != "price") else to_int(d.get(f"custom_{k}_{f}"), 0)) or 0
+               for k in ("gb", "days") for f in ("price", "min", "max")},
+            "custom_gb_on": 1 if str(d.get("custom_gb_on", "0")) == "1" else 0, "custom_days_on": 1 if str(d.get("custom_days_on", "0")) == "1" else 0,
             "note": str(d.get("note", "")).strip()[:200]}
 
 

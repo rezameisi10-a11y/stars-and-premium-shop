@@ -625,7 +625,9 @@ VIEWS.agent_view = async (id) => {
   h += `<div class="grid"><button class="b" id="rn">🔄 ${esc(t("تمدید"))}</button><button class="b sec" id="rf">♻️ ${esc(t("بروزرسانی"))}</button></div>
     <div class="grid">${s.can_pw ? `<button class="b sec" id="pw">🔑 ${esc(t("رمز جدید"))}</button>` : ""}<button class="b sec" id="sd">📨 ${esc(t("ارسال در چت ربات"))}</button></div>`;
   if (s.addons && s.addons.length) h += `<h2>➕ ${esc(t("حجم/زمان اضافه"))}</h2>` + s.addons.map(a => `<button class="row prod k-vpn" data-ad="${a.id}"><i class="ri">➕</i><span>${esc(a.title)}</span><b>${esc(a.price.short)}</b></button>`).join("");
+  if (s.custom) h += Object.keys(s.custom).map(k => { const c = s.custom[k]; return `<div class="card"><div class="nm">✏️ ${esc(k === "gb" ? t("حجم دلخواه") : t("زمان دلخواه"))}</div><p class="hint">${esc(t("بین {a} و {b}", {a: c.min, b: c.max}))} · ${esc(c.price.short)}/${esc(k === "gb" ? "GB" : t("روز"))}</p><div class="grid"><input type="number" min="${c.min}" max="${c.max}" step="${k === "gb" ? "any" : "1"}" id="cu-${k}" placeholder="${c.min}"><button class="b" data-cu="${k}">${esc(t("خرید"))}</button></div></div>`; }).join("");
   $app.innerHTML = h;
+  $app.querySelectorAll("[data-cu]").forEach(b => b.onclick = () => run(b, async () => { const v = +document.getElementById("cu-" + b.dataset.cu).value; const o = await api("agent_custom", {id, kind: b.dataset.cu, amount: v}); go("order", o.id); }));
   $app.querySelectorAll("[data-c]").forEach(b => b.onclick = () => copyText(b.dataset.c));
   $app.querySelectorAll("[data-ad]").forEach(b => b.onclick = () => run(b, async () => { const o = await api("agent_addon", {id, addon_id: +b.dataset.ad}); go("order", o.id); }));
   const on = (sel, fn) => { const b = $app.querySelector(sel); if (b) b.onclick = () => run(b, fn); };

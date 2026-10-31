@@ -141,6 +141,37 @@ class AgentSales:
         tt = tr or (lambda x, **k: x.format(**k) if k else x)
         return tt("➕ {g} گیگابایت حجم", g=f"{a['amount']:g}") if a["kind"] == "gb" else tt("➕ {d} روز زمان", d=f"{int(a['amount'])}")
 
+    async def custom_for(self, ag) -> dict:
+        """حجم/زمان دلخواه فعال برای پلن فعلی نماینده: {"gb": {price,min,max}, "days": {...}} (کلید غایب = خاموش)."""
+        if not ag.get("plan_id") or ag["status"] == "deleted":
+            return {}
+        plan = await self.db.get_agent_plan(ag["plan_id"])
+        if not plan or not plan.get("addon_on", 1) or plan["panel_id"] != ag["panel_id"]:
+            return {}
+        out = {}
+        for k in ("gb", "days"):
+            if plan.get(f"custom_{k}_on") and plan.get(f"custom_{k}_price", 0) > 0:
+                if k == "gb" and not ag["total_bytes"]:
+                    continue
+                out[k] = {"price": int(plan[f"custom_{k}_price"]), "min": plan[f"custom_{k}_min"] or 1, "max": plan[f"custom_{k}_max"] or 10 ** 6}
+        return out
+
+    async def custom_order(self, user_id: int, agent_id: int, kind: str, amount: float) -> int:
+        ag = await self.db.get_agent(agent_id)
+        if not ag or ag["user_id"] != user_id or ag["status"] == "deleted":
+            raise VpnError(N_("نماینده پیدا نشد."))
+        cfg = (await self.custom_for(ag)).get(kind)
+        if not cfg:
+            raise VpnError(N_("این امکان دیگر در دسترس نیست."))
+        amount = round(float(amount), 2) if kind == "gb" else int(amount)
+        if amount < cfg["min"] or amount > cfg["max"]:
+            raise VpnError(N_("مقدار خارج از بازه‌ی مجاز است."))
+        user = await self.db.get_user(user_id)
+        price = self.shop._personal(int(round(cfg["price"] * amount)), user)
+        title = self.addon_title({"kind": kind, "amount": amount})
+        return await self.db.create_vpn_order(user_id, f"{ag['username']} — {title}", int(amount) if kind == "days" else 0,
+                                              f"vpn:aaddon:{agent_id}:c:{kind}:{amount:g}", price, 0)
+
     async def addon_order(self, user_id: int, agent_id: int, addon_id: int) -> int:
         ag = await self.db.get_agent(agent_id)
         ad = await self.db.get_agent_addon(addon_id)
@@ -155,9 +186,9 @@ class AgentSales:
         return await self.db.create_vpn_order(user_id, f"{ag['username']} — {self.addon_title(ad)}", int(ad["amount"]) if ad["kind"] == "days" else 0,
                                               f"vpn:aaddon:{agent_id}:{addon_id}", price, ad["cost"])
 
-    async def _fulfil_addon(self, o, aid, addon_id):
+    async def _fulfil_addon(self, o, aid, addon_id, custom=None):
         ag = await self.db.get_agent(aid)
-        ad = await self.db.get_agent_addon(addon_id)
+        ad = {"kind": custom[0], "amount": float(custom[1])} if custom else await self.db.get_agent_addon(addon_id)
         if not ag or not ad or ag["status"] == "deleted":
             raise VpnError("agent/addon missing")
         meta = json.loads(ag["meta"] or "{}")
@@ -191,7 +222,10 @@ class AgentSales:
     async def fulfil(self, o: dict):
         ref = (o["ref"] or "").split(":")
         if ref[1] == "aaddon":
-            await self._fulfil_addon(o, int(ref[2]), int(ref[3]))
+            if ref[3] == "c":
+                await self._fulfil_addon(o, int(ref[2]), 0, (ref[4], ref[5]))
+            else:
+                await self._fulfil_addon(o, int(ref[2]), int(ref[3]))
         elif ref[1] == "agent":
             await self._fulfil_new(o, int(ref[2]), ref[3] if len(ref) > 3 else None)
         elif ref[1] == "arenew":
