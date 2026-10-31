@@ -32,6 +32,16 @@ STEP = {
     "cost": ("هزینه‌ی تمام‌شده برای شما (تومان، برای محاسبه‌ی سود؛ ۰ = نامشخص):", "int"),
 }
 EDITABLE = ("title", "days", "traffic_gb", "max_users", "price")
+CUSTOM_FIELDS = ("custom_gb_price", "custom_gb_min", "custom_gb_max", "custom_days_price", "custom_days_min", "custom_days_max")
+STEP.update({
+    "custom_gb_price": ("قیمت هر گیگابایت حجم اضافه (تومان):", "int"),
+    "custom_gb_min": ("حداقل حجم قابل خرید (گیگابایت):", "float"),
+    "custom_gb_max": ("حداکثر حجم قابل خرید (گیگابایت):", "float"),
+    "custom_days_price": ("قیمت هر روز زمان اضافه (تومان):", "int"),
+    "custom_days_min": ("حداقل زمان قابل خرید (روز):", "int"),
+    "custom_days_max": ("حداکثر زمان قابل خرید (روز):", "int"),
+})
+EDITABLE = EDITABLE + CUSTOM_FIELDS
 STEP["a_amount_gb"] = ("مقدار حجم بسته به گیگابایت (مثلاً 50):", "float")
 STEP["a_amount_days"] = ("مقدار زمان بسته به روز (مثلاً 30):", "int")
 STEP["a_price"] = ("قیمت این بسته (تومان):", "int")
@@ -78,7 +88,8 @@ async def cb_plan(cb: CallbackQuery, shop: Shop):
         return
     rows = [[btn("⏯ فعال/غیرفعال", f"adm:vpn:agpt:{pid}", role="action"), btn("🗑 حذف", f"adm:vpn:agpd:{pid}", role="reject")],
             [btn("➕ حجم/زمان اضافه: " + ("روشن ✅" if p.get("addon_on", 1) else "خاموش ⛔"), f"adm:vpn:agpo:{pid}", role="action"),
-             btn("📦 بسته‌های افزودنی", f"adm:vpn:agao:{pid}", role="admin")]]
+             btn("📦 بسته‌های افزودنی", f"adm:vpn:agao:{pid}", role="admin")],
+            [btn("✏️ حجم/زمان دلخواه", f"adm:vpn:agco:{pid}", role="admin")]]
     fields = [f for f in EDITABLE if f in ("title", "days", "price") or (f in ("traffic_gb", "max_users") and p["panel_type"] == "pasarguard")]
     lab = {"title": "عنوان", "days": "روز", "price": "قیمت", "traffic_gb": "حجم", "max_users": "سقف کاربر"}
     btns = [btn(f"✏️ {lab[f]}", f"adm:vpn:agpe:{pid}:{f}", role="admin") for f in fields]
@@ -100,6 +111,36 @@ async def cb_plan_addon_toggle(cb: CallbackQuery, shop: Shop):
 
 def _addon_label(a) -> str:
     return (f"+{a['amount']:g} GB" if a["kind"] == "gb" else f"+{int(a['amount'])} روز")
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:agco:\d+$"))
+async def cb_custom(cb: CallbackQuery, shop: Shop):
+    pid = int(cb.data.split(":")[3])
+    p = await shop.db.get_agent_plan(pid)
+    if not p:
+        await cb.answer("پیدا نشد", show_alert=True)
+        return
+    rows, lines = [], []
+    for k, name, unit in (("gb", "حجم", "GB"), ("days", "زمان", "روز")):
+        on = bool(p.get(f"custom_{k}_on"))
+        lines.append(f"{'🟢' if on else '⚫️'} <b>{name} دلخواه</b>: قیمت هر {unit} = {fmt(p.get(f'custom_{k}_price', 0))} | بازه: {p.get(f'custom_{k}_min', 0):g} تا {p.get(f'custom_{k}_max', 0):g}")
+        rows.append([btn(f"{name}: " + ("روشن ✅" if on else "خاموش ⛔"), f"adm:vpn:agct:{pid}:{k}", role="action")])
+        rows.append([btn("✏️ قیمت", f"adm:vpn:agpe:{pid}:custom_{k}_price", role="admin"), btn("✏️ حداقل", f"adm:vpn:agpe:{pid}:custom_{k}_min", role="admin"),
+                     btn("✏️ حداکثر", f"adm:vpn:agpe:{pid}:custom_{k}_max", role="admin")])
+    rows.append(back_row(f"adm:vpn:agpv:{pid}"))
+    await view(cb, f"✏️ <b>حجم/زمان دلخواه «{esc(p['title'])}»</b>\n" + "\n".join(lines) +
+               "\nکاربر عدد دلخواهش را (در بازه‌ی مجاز) می‌فرستد و مبلغ = عدد × قیمت واحد.\nبرای کار کردن، «حجم/زمان اضافه» پلن هم باید روشن و قیمت واحد بیشتر از صفر باشد.", ikb(rows))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:agct:\d+:(gb|days)$"))
+async def cb_custom_toggle(cb: CallbackQuery, shop: Shop):
+    _, _, _, pid, k = cb.data.split(":")
+    p = await shop.db.get_agent_plan(int(pid))
+    if p:
+        await shop.db.update_agent_plan(int(pid), **{f"custom_{k}_on": 0 if p.get(f"custom_{k}_on") else 1})
+    await cb.answer("انجام شد")
+    await cb_custom(cb, shop)
 
 
 @router.callback_query(F.data.regexp(r"^adm:vpn:agao:\d+$"))
