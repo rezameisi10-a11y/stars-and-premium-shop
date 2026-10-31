@@ -312,12 +312,13 @@ async function render() {
 const KIND_IC = {stars: "⭐", premium: "👑", gift: "🎁"};
 const VIEWS = {};
 
+const openTile = k => k === "vpn" ? go("vpn") : k === "agent" ? go("agent") : go("catalog", k);
 VIEWS.home = async () => {
   const u = I.user, S = I.stats || {orders: 0, done: 0, spent: {short: "0"}, invited: 0};
   const KT = k => L("kind_" + k, I.kind_titles[k].replace(/^\S+\s*/, ""));
-  let tiles = I.kinds.map(k => `<button class="tile k-${k}" data-k="${k}"><span class="ic">${IC("kind_" + k, KIND_IC[k])}</span><span>${esc(KT(k))}</span></button>`).join("");
-  const nT = I.kinds.length + (I.vpn && I.vpn.on ? 1 : 0);
-  if (I.vpn && I.vpn.on) tiles += `<button class="tile k-vpn" data-vpn="1"><span class="ic">${IC("kind_vpn", "🛡")}</span><span>${esc(L("kind_vpn", t("خرید VPN")))}</span></button>`;
+  const TL = k => k === "vpn" ? [IC("kind_vpn", "🛡"), L("kind_vpn", t("خرید VPN"))] : k === "agent" ? [IC("kind_agent", "🧑‍💼"), L("kind_agent", t("خرید پنل نمایندگی"))] : [IC("kind_" + k, KIND_IC[k]), KT(k)];
+  let tiles = (I.tiles || []).map(k => { const x = TL(k); return `<button class="tile k-${k === "agent" ? "vpn" : k}" data-t="${k}"><span class="ic">${x[0]}</span><span>${esc(x[1])}</span></button>`; }).join("");
+  const nT = (I.tiles || []).length;
   const av = I.photo ? `<img class="av" src="${esc(I.photo)}" alt="">` : `<div class="av orb"><span>${esc((u.name || "?").trim().charAt(0).toUpperCase())}</span></div>`;
   let html = `<div class="hero2">${av}<div><small>${esc(L("greet", t("سلام")))} ${IC("greet", "👋")}</small><b>${esc(u.name)}</b></div></div>
   <div class="wcard"><div class="wt"><i>${IC("wallet_title", "👛")}</i><span>${esc(L("wallet_title", t("موجودی کیف پول")))}</span></div>
@@ -325,8 +326,10 @@ VIEWS.home = async () => {
     <div class="wbtns"><button class="wbtn" id="wbuy"><span>${IC("btn_buy", "🛍")}</span> ${esc(L("btn_buy", t("خرید")))}</button><button class="wbtn" id="wtop"><span>${IC("btn_topup", "➕")}</span> ${esc(L("btn_topup", t("افزایش موجودی")))}</button></div></div>`;
   if (I.texts.welcome) html += `<div class="card hint" style="color:var(--fg)">${safeHtml(I.texts.welcome)}</div>`;
   html += `<div class="grid ${nT === 3 ? "g3" : ""}">${tiles}</div><div class="sp"></div>`;
-  if (I.vpn && (I.vpn.on || I.vpn.mine)) html += `<button class="row" data-go="vpn_my"><span>${IC("vpn_my", "📡")} ${esc(L("vpn_my", t("سرویس‌های VPN من")))}</span><span class="sub">${I.vpn.mine ? num(I.vpn.mine) : ""} ›</span></button><div class="sp"></div>`;
-  if (I.agent && (I.agent.on || I.agent.mine)) html += `<button class="row" data-go="agent_my"><span>${IC("agent_my", "🧑‍💼")} ${esc(L("agent_my", t("پنل‌های نمایندگی من")))}</span><span class="sub">${I.agent.mine ? num(I.agent.mine) : ""} ›</span></button><div class="sp"></div>`;
+  (I.rows || []).forEach(k => {
+    if (k === "vpn_my") html += `<button class="row" data-go="vpn_my"><span>${IC("vpn_my", "📡")} ${esc(L("vpn_my", t("سرویس‌های VPN من")))}</span><span class="sub">${I.vpn.mine ? num(I.vpn.mine) : ""} ›</span></button><div class="sp"></div>`;
+    if (k === "agent_my") html += `<button class="row" data-go="agent_my"><span>${IC("agent_my", "🧑‍💼")} ${esc(L("agent_my", t("پنل‌های نمایندگی من")))}</span><span class="sub">${I.agent.mine ? num(I.agent.mine) : ""} ›</span></button><div class="sp"></div>`;
+  });
   html += `<div class="grid st">
     <button class="stile s1" data-go="orders"><i>${IC("tile_done", "🛒")}</i><b>${num(S.done)}</b><span>${esc(L("tile_done", t("خریدها")))}</span></button>
     <button class="stile s2" data-go="orders"><i>${IC("tile_orders", "🧾")}</i><b>${num(S.orders)}</b><span>${esc(L("tile_orders", t("سفارش‌های من")))}</span></button>
@@ -339,7 +342,7 @@ VIEWS.home = async () => {
   html += `<button class="row" id="more"><span>${IC("btn_more", "☰")} ${esc(L("btn_more", t("بیشتر")))}</span><span>›</span></button>`;
   if (u.is_admin) html += `<button class="row" id="adm"><span>🛠 ${esc(t("پنل مدیریت"))}</span><span class="sub">${esc(t("ورود با حساب تلگرام"))}</span></button>`;
   $app.innerHTML = html;
-  $app.querySelectorAll(".tile").forEach(b => b.onclick = () => b.dataset.vpn ? go("vpn") : go("catalog", b.dataset.k));
+  $app.querySelectorAll(".tile").forEach(b => b.onclick = () => openTile(b.dataset.t));
   $app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
   $app.querySelector("#wbuy").onclick = () => go("products");
   $app.querySelector("#wtop").onclick = () => go("wallet");
@@ -349,19 +352,16 @@ VIEWS.home = async () => {
 };
 
 VIEWS.products = async () => {
-  const hasVpn = I.vpn && I.vpn.on, hasAg = I.agent && I.agent.on;
-  if (I.kinds.length === 1 && !hasVpn && !hasAg) { go("catalog", I.kinds[0], true); return; }
-  if (!I.kinds.length && hasVpn && !hasAg) { go("vpn", null, true); return; }
-  if (!I.kinds.length && !hasVpn && hasAg) { go("agent", null, true); return; }
+  const T = I.tiles || [];
+  if (T.length === 1) { openTile(T[0]); return; }
   let h = `<h1>${IC("tab_products", "🛍")} ${esc(L("tab_products", t("محصولات")))}</h1>`;
-  if (!I.kinds.length && !hasVpn && !hasAg) h += `<div class="card hint">${esc(t("هنوز محصولی ثبت نشده است."))}</div>`;
-  h += I.kinds.map(k => `<button class="row prod k-${k}" data-k="${k}"><i class="ri">${IC("kind_" + k, KIND_IC[k])}</i><span>${esc(L("kind_" + k, I.kind_titles[k].replace(/^\S+\s*/, "")))}</span><b>›</b></button>`).join("");
-  if (hasVpn) h += `<button class="row prod k-vpn" data-vpn="1"><i class="ri">${IC("kind_vpn", "🛡")}</i><span>${esc(L("kind_vpn", t("خرید VPN")))}</span><b>›</b></button>`;
-  if (hasAg) h += `<button class="row prod k-vpn" data-ag="1"><i class="ri">${IC("kind_agent", "🧑‍💼")}</i><span>${esc(L("kind_agent", t("خرید پنل نمایندگی")))}</span><b>›</b></button>`;
+  if (!T.length) h += `<div class="card hint">${esc(t("هنوز محصولی ثبت نشده است."))}</div>`;
+  h += T.map(k => {
+    const ti = k === "vpn" ? [IC("kind_vpn", "🛡"), L("kind_vpn", t("خرید VPN"))] : k === "agent" ? [IC("kind_agent", "🧑‍💼"), L("kind_agent", t("خرید پنل نمایندگی"))] : [IC("kind_" + k, KIND_IC[k]), L("kind_" + k, I.kind_titles[k].replace(/^\S+\s*/, ""))];
+    return `<button class="row prod k-${k === "agent" ? "vpn" : k}" data-t="${k}"><i class="ri">${ti[0]}</i><span>${esc(ti[1])}</span><b>›</b></button>`;
+  }).join("");
   $app.innerHTML = h;
-  $app.querySelectorAll("[data-k]").forEach(b => b.onclick = () => go("catalog", b.dataset.k));
-  $app.querySelectorAll("[data-vpn]").forEach(b => b.onclick = () => go("vpn"));
-  $app.querySelectorAll("[data-ag]").forEach(b => b.onclick = () => go("agent"));
+  $app.querySelectorAll("[data-t]").forEach(b => b.onclick = () => openTile(b.dataset.t));
 };
 
 VIEWS.catalog = async (kind) => {

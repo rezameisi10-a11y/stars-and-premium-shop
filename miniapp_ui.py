@@ -32,6 +32,39 @@ ELEMENTS = [
     ("btn_more", N_("بیشتر"), "☰", False, N_("منوی پایین")),
 ]
 KEYS = {e[0] for e in ELEMENTS}
+
+# دکمه‌های صفحه‌ی خانه/محصولات مینی‌اپ که ترتیب و روشن/خاموش بودنشان قابل‌تنظیم است: (کلید، عنوان، ایموجی، نوع)
+LAYOUT_ITEMS = [
+    ("stars", N_("خرید استارز"), "⭐", "tile"), ("premium", N_("اشتراک پریمیوم"), "👑", "tile"), ("gift", N_("گیفت تلگرام"), "🎁", "tile"),
+    ("vpn", N_("خرید VPN"), "🛡", "tile"), ("agent", N_("خرید پنل نمایندگی"), "🧑‍💼", "tile"),
+    ("vpn_my", N_("سرویس‌های VPN من"), "📡", "row"), ("agent_my", N_("پنل‌های نمایندگی من"), "🧑‍💼", "row"),
+]
+LAYOUT_KEYS = [i[0] for i in LAYOUT_ITEMS]
+
+
+def load_layout(settings: dict) -> tuple:
+    """(ترتیب کامل کلیدها, مجموعه‌ی مخفی‌ها) از تنظیم miniapp_layout؛ کلید ناشناخته نادیده، کلید جاافتاده به آخر اضافه می‌شود."""
+    try:
+        data = json.loads((settings or {}).get("miniapp_layout") or "{}")
+    except ValueError:
+        data = {}
+    data = data if isinstance(data, dict) else {}
+    order = [k for k in (data.get("order") or []) if k in LAYOUT_KEYS]
+    order += [k for k in LAYOUT_KEYS if k not in order]
+    hidden = {k for k in (data.get("hidden") or []) if k in LAYOUT_KEYS}
+    return order, hidden
+
+
+def clean_layout(form) -> str:
+    """از فرم وب (lo_<key> = شماره‌ی ترتیب، lv_<key> = تیک نمایش) JSON ذخیره‌شدنی می‌سازد."""
+    def num(k):
+        try:
+            return float(str(form.get("lo_" + k, "")).translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")))
+        except ValueError:
+            return 999.0
+    order = sorted(LAYOUT_KEYS, key=lambda k: (num(k), LAYOUT_KEYS.index(k)))
+    hidden = [k for k in LAYOUT_KEYS if not form.get("lv_" + k)]
+    return json.dumps({"order": order, "hidden": hidden}, ensure_ascii=False)
 MAX_TEXT = 60
 MAX_AREA = 600
 

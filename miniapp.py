@@ -195,6 +195,11 @@ async def a_init(ctx: Ctx, d: dict) -> dict:
     vpn_n = await shop.db.count_vpn_services(user_id=ctx.uid) if shop.vpn.enabled() else 0
     ag_on = await shop.vpn.agents.available()
     ag_n = await shop.db.count_agents(user_id=ctx.uid)
+    order, hidden = miniapp_ui.load_layout(s)
+    avail = {"stars": "stars" in kinds, "premium": "premium" in kinds, "gift": "gift" in kinds, "vpn": vpn_on, "agent": ag_on,
+             "vpn_my": bool(vpn_on or vpn_n), "agent_my": bool(ag_on or ag_n)}
+    tiles = [k for k in order if k not in hidden and avail.get(k) and k in ("stars", "premium", "gift", "vpn", "agent")]
+    rows = [k for k in order if k not in hidden and avail.get(k) and k in ("vpn_my", "agent_my")]
     support = s["support_username"].lstrip("@")
     ui = {k: ctx.tr(k) for k in ui_strings()}
     mui = miniapp_ui.load(s)
@@ -208,7 +213,7 @@ async def a_init(ctx: Ctx, d: dict) -> dict:
         "user": {"id": ctx.uid, "name": tg_name(ctx.tg), "username": ctx.tg.get("username") or "", "balance": u["balance"],
                  "discount": u.get("personal_discount") or 0, "is_admin": shop.is_admin(ctx.uid)},
         "lang": ctx.lang, "rtl": bool(lang_row["rtl"]) if lang_row else True, "langs": langs if len(langs) > 1 else [],
-        "ui": ui, "shop_name": s.get("shop_name") or "", "kinds": kinds,
+        "ui": ui, "shop_name": s.get("shop_name") or "", "kinds": kinds, "tiles": tiles, "rows": rows,
         "kind_titles": {k: ctx.tr(KIND_TITLE[k]) for k in KIND_TITLE},
         "texts": {"welcome": (mui.get("welcome") or {}).get("t") or shop.text("welcome_text", ctx.lang), "rules": shop.text("rules_text", ctx.lang),
                   "support": shop.text("support_text", ctx.lang)},

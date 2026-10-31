@@ -429,7 +429,7 @@ async def agent_show(cb: CallbackQuery, shop: Shop, tr):
             ag = await shop.db.get_agent(ag["id"])
         except Exception:
             pass
-    await cb.message.answer(await shop.vpn.agents.agent_text(ag, tr), reply_markup=shop.vpn.agents.agent_kb(ag, tr), disable_web_page_preview=True)
+    await cb.message.answer(await shop.vpn.agents.agent_text(ag, tr), reply_markup=await shop.vpn.agents.agent_kb(ag, tr), disable_web_page_preview=True)
     await cb.answer()
 
 
@@ -445,7 +445,7 @@ async def agent_refresh(cb: CallbackQuery, shop: Shop, tr):
         return
     ag = await shop.db.get_agent(ag["id"])
     try:
-        await cb.message.edit_text(await shop.vpn.agents.agent_text(ag, tr), reply_markup=shop.vpn.agents.agent_kb(ag, tr), disable_web_page_preview=True)
+        await cb.message.edit_text(await shop.vpn.agents.agent_text(ag, tr), reply_markup=await shop.vpn.agents.agent_kb(ag, tr), disable_web_page_preview=True)
     except Exception:
         pass
     await cb.answer(tr("بروزرسانی شد."))
@@ -487,7 +487,7 @@ async def agent_auto_toggle(cb: CallbackQuery, shop: Shop, tr):
     await shop.vpn.agents.set_auto(ag, on)
     ag = await shop.db.get_agent(ag["id"])
     try:
-        await cb.message.edit_text(await shop.vpn.agents.agent_text(ag, tr), reply_markup=shop.vpn.agents.agent_kb(ag, tr), disable_web_page_preview=True)
+        await cb.message.edit_text(await shop.vpn.agents.agent_text(ag, tr), reply_markup=await shop.vpn.agents.agent_kb(ag, tr), disable_web_page_preview=True)
     except Exception:  # noqa: BLE001
         pass
     if on:
@@ -524,15 +524,10 @@ async def agent_addons(cb: CallbackQuery, shop: Shop, tr):
         return
     u = await shop.db.get_user(cb.from_user.id)
     adds = [a for a in await shop.vpn.agents.addons_for(ag) if not (a["kind"] == "gb" and not ag["total_bytes"])]
-    custom = await shop.vpn.agents.custom_for(ag)
-    if not adds and not custom:
+    if not adds:
         await cb.answer(tr("بسته‌ی اضافه‌ای موجود نیست."), show_alert=True)
         return
     rows = [[btn(f"{shop.vpn.agents.addon_title(a, tr)} | {fmt(shop._personal(a['price'], u))} {tr('ت')}", f"vpn:agap:{ag['id']}:{a['id']}", role="action")] for a in adds[:30]]
-    if "gb" in custom:
-        rows.append([btn(tr("✏️ حجم دلخواه"), f"vpn:agc:{ag['id']}:gb", role="action")])
-    if "days" in custom:
-        rows.append([btn(tr("✏️ زمان دلخواه"), f"vpn:agc:{ag['id']}:days", role="action")])
     rows.append([btn(tr("🔙 بازگشت"), f"vpn:agab:{ag['id']}", role="back")])
     if not await _swap_kb(cb, ikb(rows)):
         await cb.message.answer(tr("➕ بسته‌ی اضافه برای {n}", n=f"<code>{esc(ag['username'])}</code>") + "\n" + tr("یکی را انتخاب کنید:"), reply_markup=ikb(rows))
@@ -544,7 +539,7 @@ async def agent_addons_back(cb: CallbackQuery, shop: Shop, tr):
     ag = await _own_agent(cb, shop, tr, cb.data.split(":")[2])
     if not ag:
         return
-    await _swap_kb(cb, shop.vpn.agents.agent_kb(ag, tr))
+    await _swap_kb(cb, await shop.vpn.agents.agent_kb(ag, tr))
     await cb.answer()
 
 

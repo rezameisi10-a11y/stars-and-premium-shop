@@ -142,18 +142,35 @@ class AgentSales:
         return tt("➕ {g} گیگابایت حجم", g=f"{a['amount']:g}") if a["kind"] == "gb" else tt("➕ {d} روز زمان", d=f"{int(a['amount'])}")
 
     async def custom_for(self, ag) -> dict:
-        """حجم/زمان دلخواه فعال برای پلن فعلی نماینده: {"gb": {price,min,max}, "days": {...}} (کلید غایب = خاموش)."""
-        if not ag.get("plan_id") or ag["status"] == "deleted":
+        """حجم/زمان دلخواه فعال: {"gb": {price,min,max}, "days": {...}} (کلید غایب = خاموش).
+        اگر پلن قیمت اختصاصی گذاشته باشد همان؛ وگرنه تنظیم عمومی «تنظیمات ← پنل نمایندگی»."""
+        if ag["status"] == "deleted":
             return {}
-        plan = await self.db.get_agent_plan(ag["plan_id"])
-        if not plan or not plan.get("addon_on", 1) or plan["panel_id"] != ag["panel_id"]:
+        plan = await self.db.get_agent_plan(ag["plan_id"]) if ag.get("plan_id") else None
+        if plan and (not plan.get("addon_on", 1) or plan["panel_id"] != ag["panel_id"]):
             return {}
         out = {}
-        for k in ("gb", "days"):
-            if plan.get(f"custom_{k}_on") and plan.get(f"custom_{k}_price", 0) > 0:
-                if k == "gb" and not ag["total_bytes"]:
+        for k, g in (("gb", "cgb"), ("days", "cd")):
+            if k == "gb" and not ag["total_bytes"]:
+                continue
+            if plan and (plan.get(f"custom_{k}_price") or 0) > 0:
+                if not plan.get(f"custom_{k}_on"):
                     continue
-                out[k] = {"price": int(plan[f"custom_{k}_price"]), "min": plan[f"custom_{k}_min"] or 1, "max": plan[f"custom_{k}_max"] or 10 ** 6}
+                cfg = {"price": int(plan[f"custom_{k}_price"]), "min": plan[f"custom_{k}_min"], "max": plan[f"custom_{k}_max"]}
+            else:
+                sv = self.s
+                if sv.get(f"vpn_agent_{g}_on", "0") != "1":
+                    continue
+                try:
+                    cfg = {"price": int(float(sv.get(f"vpn_agent_{g}_price") or 0)), "min": float(sv.get(f"vpn_agent_{g}_min") or 1),
+                           "max": float(sv.get(f"vpn_agent_{g}_max") or 0)}
+                except ValueError:
+                    continue
+            if cfg["price"] <= 0:
+                continue
+            cfg["min"] = cfg["min"] or 1
+            cfg["max"] = cfg["max"] or 10 ** 6
+            out[k] = cfg
         return out
 
     async def custom_order(self, user_id: int, agent_id: int, kind: str, amount: float) -> int:
@@ -214,7 +231,7 @@ class AgentSales:
         ag = await self.db.get_agent(aid)
         tr = await self.shop.tr_for(ag["user_id"])
         await self.shop.safe_send(ag["user_id"], tr("➕ بسته‌ی اضافه روی پنل نمایندگی <code>{n}</code> اعمال شد.", n=esc(ag["username"])) + "\n\n" + await self.agent_text(ag, tr),
-                                  reply_markup=self.agent_kb(ag, tr), disable_web_page_preview=True)
+                                  reply_markup=await self.agent_kb(ag, tr), disable_web_page_preview=True)
         await self.vpn._notify_admin(f"➕ افزودنی پنل نمایندگی\nسفارش #{o['id']} | {esc(ag['username'])} | {esc(self.addon_title(ad))}\nکاربر: <code>{o['user_id']}</code> | مبلغ: {fmt(o['amount'])} تومان")
         await self.shop.finish_order(o["id"], f"aaddon #{aid}")
 
@@ -291,7 +308,7 @@ class AgentSales:
         ag = await self.db.get_agent(aid)
         tr = await self.shop.tr_for(ag["user_id"])
         await self.shop.safe_send(ag["user_id"], tr("🔄 پنل نمایندگی <code>{n}</code> تمدید شد.", n=esc(ag["username"])) + "\n\n" + await self.agent_text(ag, tr),
-                                  reply_markup=self.agent_kb(ag, tr), disable_web_page_preview=True)
+                                  reply_markup=await self.agent_kb(ag, tr), disable_web_page_preview=True)
         await self.vpn._notify_admin(f"🔄 تمدید پنل نمایندگی\nسفارش #{o['id']} | {esc(ag['username'])} | {esc(plan['title'])}\nکاربر: <code>{o['user_id']}</code> | مبلغ: {fmt(o['amount'])} تومان")
         await self.shop.finish_order(o["id"], f"arenew #{aid}")
 
@@ -581,11 +598,20 @@ class AgentSales:
             lines.append(tr("🔁 تمدید خودکار: {s}", s=tr("روشن") if self.is_auto(ag) else tr("خاموش")))
         return "\n".join(lines)
 
-    def agent_kb(self, ag, tr, back="vpn:agl"):
-        rows = [[btn(tr("🔄 تمدید"), f"vpn:agn:{ag['id']}", role="action"), btn(tr("♻️ بروزرسانی"), f"vpn:agr:{ag['id']}", role="action")],
-                [btn(tr("➕ حجم/زمان اضافه"), f"vpn:aga:{ag['id']}", role="action"), btn(tr("🔑 رمز جدید"), f"vpn:agw:{ag['id']}", role="action")],
-                *([[btn(tr("🔁 تمدید خودکار: روشن ✅") if self.is_auto(ag) else tr("🔁 تمدید خودکار: خاموش"), f"vpn:agt:{ag['id']}", role="action")]] if self._can_auto(ag) else []),
-                [btn(tr("🔙 پنل‌های نمایندگی من"), back, role="back")]]
+    async def agent_kb(self, ag, tr, back="vpn:agl"):
+        i = ag["id"]
+        rows = [[btn(tr("🔄 تمدید"), f"vpn:agn:{i}", role="action"), btn(tr("♻️ بروزرسانی"), f"vpn:agr:{i}", role="action")]]
+        if await self.addons_for(ag):
+            rows.append([btn(tr("➕ بسته‌ی حجم/زمان اضافه"), f"vpn:aga:{i}", role="action")])
+        custom = await self.custom_for(ag)
+        cr = ([btn(tr("✏️ حجم اضافه دلخواه"), f"vpn:agc:{i}:gb", role="action")] if "gb" in custom else []) + \
+             ([btn(tr("✏️ زمان اضافه دلخواه"), f"vpn:agc:{i}:days", role="action")] if "days" in custom else [])
+        if cr:
+            rows.append(cr)
+        rows.append([btn(tr("🔑 رمز جدید"), f"vpn:agw:{i}", role="action")])
+        if self._can_auto(ag):
+            rows.append([btn(tr("🔁 تمدید خودکار: روشن ✅") if self.is_auto(ag) else tr("🔁 تمدید خودکار: خاموش"), f"vpn:agt:{i}", role="action")])
+        rows.append([btn(tr("🔙 پنل‌های نمایندگی من"), back, role="back")])
         return ikb(rows)
 
     async def send_agent(self, uid, ag, new=False):
@@ -594,4 +620,4 @@ class AgentSales:
         help_t = (self.s.get("vpn_agent_help_text") or "").strip()
         if new and help_t:
             text += "\n\n" + help_t
-        await self.shop.safe_send(uid, text, reply_markup=self.agent_kb(ag, tr), disable_web_page_preview=True)
+        await self.shop.safe_send(uid, text, reply_markup=await self.agent_kb(ag, tr), disable_web_page_preview=True)
