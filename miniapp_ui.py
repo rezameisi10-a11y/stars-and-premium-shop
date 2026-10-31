@@ -1,13 +1,14 @@
 """متن‌ها و ایموجی‌های قابل‌ویرایش مینی‌اپ. ذخیره: تنظیم JSON به نام miniapp_ui = {کلید: {"t": متن, "e": آیدی ایموجی پریمیوم}}.
 متن خالی = متن پیش‌فرض (که با زبان کاربر ترجمه می‌شود)؛ متن واردشده برای همه‌ی زبان‌ها یکسان نمایش داده می‌شود."""
 import json
+import re
 
 from i18n import N_
 
 # (کلید، متن پیش‌فرض فارسی، ایموجی پیش‌فرض، چندخطی؟، گروه)
 ELEMENTS = [
     ("greet", N_("سلام"), "👋", False, N_("صفحه‌ی خانه")),
-    ("welcome", N_("به فروشگاه استارز و گیفت تلگرام خوش آمدید 🌟\nیکی از گزینه‌های زیر را انتخاب کنید."), "", True, N_("صفحه‌ی خانه")),
+    ("welcome", N_("به فروشگاه خدمات مجازی تلگرام خوش آمدید 🌟\nیکی از گزینه‌های زیر را انتخاب کنید."), "", True, N_("صفحه‌ی خانه")),
     ("wallet_title", N_("موجودی کیف پول"), "👛", False, N_("صفحه‌ی خانه")),
     ("btn_buy", N_("خرید"), "🛍", False, N_("صفحه‌ی خانه")),
     ("btn_topup", N_("افزایش موجودی"), "➕", False, N_("صفحه‌ی خانه")),
@@ -69,6 +70,9 @@ MAX_TEXT = 60
 MAX_AREA = 600
 
 
+COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
 def load(settings: dict) -> dict:
     try:
         data = json.loads((settings or {}).get("miniapp_ui") or "{}")
@@ -79,20 +83,29 @@ def load(settings: dict) -> dict:
         if k in KEYS and isinstance(v, dict):
             t = str(v.get("t") or "").strip()
             e = str(v.get("e") or "")
-            out[k] = {"t": t, "e": e if e.isdigit() and len(e) < 30 else ""}
+            c = str(v.get("c") or "")
+            out[k] = {"t": t, "e": e if e.isdigit() and len(e) < 30 else "", "c": c if COLOR_RE.match(c) else ""}
     return out
 
 
-def clean(form) -> str:
-    """از فرم وب (فیلدهای t_<key> و e_<key>) JSON قابل‌ذخیره می‌سازد؛ مقدارهای خالی حذف می‌شوند."""
+def clean(form, current: dict | None = None) -> str:
+    """از فرم وب (t_<key> متن، e_<key> ایموجی پریمیوم، c_<key> رنگ + cu_<key> تیک «رنگ سفارشی») JSON ذخیره‌شدنی می‌سازد.
+    کلیدی که هیچ‌کدام از فیلدهایش در فرم نبود (فرم دیگر) از مقدار فعلی (current) حفظ می‌شود؛ مقدارهای خالی حذف می‌شوند."""
     out = {}
     for key, _d, _i, area, _g in ELEMENTS:
+        if not any(f + key in form for f in ("t_", "e_", "c_", "cu_")):
+            if current and key in current and (current[key]["t"] or current[key]["e"] or current[key].get("c")):
+                out[key] = dict(current[key])
+            continue
         t = str(form.get("t_" + key, "")).strip()[: MAX_AREA if area else MAX_TEXT]
         e = str(form.get("e_" + key, "")).strip().translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789"))
         if not e.isdigit() or len(e) >= 30:
             e = ""
-        if t or e:
-            out[key] = {"t": t, "e": e}
+        c = str(form.get("c_" + key, "")).strip() if form.get("cu_" + key) else ""
+        if not COLOR_RE.match(c):
+            c = ""
+        if t or e or c:
+            out[key] = {"t": t, "e": e, "c": c}
     return json.dumps(out, ensure_ascii=False)
 
 

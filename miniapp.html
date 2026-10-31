@@ -84,6 +84,11 @@ html[data-theme=dark] .card,html[data-theme=dark] .tile,html[data-theme=dark] .r
 .tile.k-stars{--tg:var(--gold)}.tile.k-premium{--tg:var(--a2)}.tile.k-gift{--tg:var(--a3)}.tile.k-vpn{--tg:#22d3ee}
 .tile .ic{font-size:32px;filter:drop-shadow(0 6px 10px rgba(0,0,0,.3));position:relative}.tile span{position:relative;font-weight:600}
 .tile:active,.row:active{transform:scale(.97);opacity:1}
+/* رنگ سفارشی دکمه‌ها (از پنل وب) */
+.row[style*="--cc"]{border-color:var(--cc);box-shadow:0 6px 18px color-mix(in srgb,var(--cc) 35%,transparent),inset 0 1px 0 var(--edge)}
+.wbtn[style*="--cc"]{background:var(--cc);border-color:var(--cc)}
+.stile[style*="--cc"]{background:linear-gradient(135deg,var(--cc),color-mix(in srgb,var(--cc) 60%,#000));color:#fff}
+.tabs button[style*="--cc"]{color:var(--cc)}.tabs button.on[style*="--cc"]{background:color-mix(in srgb,var(--cc) 30%,transparent)}
 .row{border-radius:20px;padding:14px 16px;position:relative;overflow:hidden;transition:transform .15s}
 .row.prod{--tg:var(--a2);padding-inline-start:68px;min-height:68px}
 .row.prod::before{content:attr(data-ic);position:absolute;inset-inline-start:12px;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:14px;display:grid;place-items:center;font-size:22px;
@@ -281,6 +286,7 @@ const tabLabel = () => ({home: t("خانه"), products: t("محصولات"), wal
 const MU = () => I.mui || {};
 const L = (k, d) => (MU()[k] && MU()[k].t) || d;
 const emo = (id, fb) => `<img class="pe" src="/app/emoji/${id}" alt="" data-fb="${esc(fb)}">`;
+const CS = k => (MU()[k] && MU()[k].c) ? ` style="--tg:${MU()[k].c};--cc:${MU()[k].c}"` : "";
 const IC = (k, d) => (MU()[k] && MU()[k].e) ? emo(MU()[k].e, d) : esc(d);
 /* ایموجی پریمیوم: اول تصویر؛ اگر ویدیویی بود <video>؛ اگر هیچ‌کدام، ایموجی معمولی */
 document.addEventListener("error", ev => {
@@ -297,7 +303,7 @@ function drawTabs() {
   const show = TAB_PAGES.includes(current.name);
   box.innerHTML = show ? `<div class="tabs">${TABS.map(x => x.center
     ? `<button data-n="products" class="add" aria-label="+"><span class="plus">+</span></button>`
-    : `<button data-n="${x.name}" class="${current.name === x.name ? "on" : ""}"><span class="ic">${IC(x.k, x.ic)}</span>${esc(L(x.k, tabLabel()[x.name]))}</button>`).join("")}</div>` : "";
+    : `<button data-n="${x.name}" class="${current.name === x.name ? "on" : ""}"${CS(x.k)}><span class="ic">${IC(x.k, x.ic)}</span>${esc(L(x.k, tabLabel()[x.name]))}</button>`).join("")}</div>` : "";
   box.querySelectorAll("button").forEach(b => b.onclick = () => { stack.length = 0; current = {name: b.dataset.n}; render(); });
 }
 async function render() {
@@ -317,29 +323,29 @@ VIEWS.home = async () => {
   const u = I.user, S = I.stats || {orders: 0, done: 0, spent: {short: "0"}, invited: 0};
   const KT = k => L("kind_" + k, I.kind_titles[k].replace(/^\S+\s*/, ""));
   const TL = k => k === "vpn" ? [IC("kind_vpn", "🛡"), L("kind_vpn", t("خرید VPN"))] : k === "agent" ? [IC("kind_agent", "🧑‍💼"), L("kind_agent", t("خرید پنل نمایندگی"))] : [IC("kind_" + k, KIND_IC[k]), KT(k)];
-  let tiles = (I.tiles || []).map(k => { const x = TL(k); return `<button class="tile k-${k === "agent" ? "vpn" : k}" data-t="${k}"><span class="ic">${x[0]}</span><span>${esc(x[1])}</span></button>`; }).join("");
+  let tiles = (I.tiles || []).map(k => { const x = TL(k); return `<button class="tile k-${k === "agent" ? "vpn" : k}" data-t="${k}"${CS("kind_" + k)}><span class="ic">${x[0]}</span><span>${esc(x[1])}</span></button>`; }).join("");
   const nT = (I.tiles || []).length;
   const av = I.photo ? `<img class="av" src="${esc(I.photo)}" alt="">` : `<div class="av orb"><span>${esc((u.name || "?").trim().charAt(0).toUpperCase())}</span></div>`;
   let html = `<div class="hero2">${av}<div><small>${esc(L("greet", t("سلام")))} ${IC("greet", "👋")}</small><b>${esc(u.name)}</b></div></div>
   <div class="wcard"><div class="wt"><i>${IC("wallet_title", "👛")}</i><span>${esc(L("wallet_title", t("موجودی کیف پول")))}</span></div>
     <div class="wb">${num(u.balance)} <small>${esc(t("تومان"))}</small></div>
-    <div class="wbtns"><button class="wbtn" id="wbuy"><span>${IC("btn_buy", "🛍")}</span> ${esc(L("btn_buy", t("خرید")))}</button><button class="wbtn" id="wtop"><span>${IC("btn_topup", "➕")}</span> ${esc(L("btn_topup", t("افزایش موجودی")))}</button></div></div>`;
+    <div class="wbtns"><button class="wbtn" id="wbuy"${CS("btn_buy")}><span>${IC("btn_buy", "🛍")}</span> ${esc(L("btn_buy", t("خرید")))}</button><button class="wbtn" id="wtop"${CS("btn_topup")}><span>${IC("btn_topup", "➕")}</span> ${esc(L("btn_topup", t("افزایش موجودی")))}</button></div></div>`;
   if (I.texts.welcome) html += `<div class="card hint" style="color:var(--fg)">${safeHtml(I.texts.welcome)}</div>`;
   html += `<div class="grid ${nT === 3 ? "g3" : ""}">${tiles}</div><div class="sp"></div>`;
   (I.rows || []).forEach(k => {
-    if (k === "vpn_my") html += `<button class="row" data-go="vpn_my"><span>${IC("vpn_my", "📡")} ${esc(L("vpn_my", t("سرویس‌های VPN من")))}</span><span class="sub">${I.vpn.mine ? num(I.vpn.mine) : ""} ›</span></button><div class="sp"></div>`;
-    if (k === "agent_my") html += `<button class="row" data-go="agent_my"><span>${IC("agent_my", "🧑‍💼")} ${esc(L("agent_my", t("پنل‌های نمایندگی من")))}</span><span class="sub">${I.agent.mine ? num(I.agent.mine) : ""} ›</span></button><div class="sp"></div>`;
+    if (k === "vpn_my") html += `<button class="row" data-go="vpn_my"${CS("vpn_my")}><span>${IC("vpn_my", "📡")} ${esc(L("vpn_my", t("سرویس‌های VPN من")))}</span><span class="sub">${I.vpn.mine ? num(I.vpn.mine) : ""} ›</span></button><div class="sp"></div>`;
+    if (k === "agent_my") html += `<button class="row" data-go="agent_my"${CS("agent_my")}><span>${IC("agent_my", "🧑‍💼")} ${esc(L("agent_my", t("پنل‌های نمایندگی من")))}</span><span class="sub">${I.agent.mine ? num(I.agent.mine) : ""} ›</span></button><div class="sp"></div>`;
   });
   html += `<div class="grid st">
-    <button class="stile s1" data-go="orders"><i>${IC("tile_done", "🛒")}</i><b>${num(S.done)}</b><span>${esc(L("tile_done", t("خریدها")))}</span></button>
-    <button class="stile s2" data-go="orders"><i>${IC("tile_orders", "🧾")}</i><b>${num(S.orders)}</b><span>${esc(L("tile_orders", t("سفارش‌های من")))}</span></button>
-    <button class="stile s3" data-go="orders"><i>${IC("tile_spent", "📈")}</i><b>${esc(S.spent.short)}</b><span>${esc(L("tile_spent", t("مجموع خرید")))}</span></button>
-    <button class="stile s4" data-go="referral"><i>${IC("tile_invited", "🤝")}</i><b>${num(S.invited)}</b><span>${esc(L("tile_invited", t("دعوت‌شده‌ها")))}</span></button></div>`;
+    <button class="stile s1" data-go="orders"${CS("tile_done")}><i>${IC("tile_done", "🛒")}</i><b>${num(S.done)}</b><span>${esc(L("tile_done", t("خریدها")))}</span></button>
+    <button class="stile s2" data-go="orders"${CS("tile_orders")}><i>${IC("tile_orders", "🧾")}</i><b>${num(S.orders)}</b><span>${esc(L("tile_orders", t("سفارش‌های من")))}</span></button>
+    <button class="stile s3" data-go="orders"${CS("tile_spent")}><i>${IC("tile_spent", "📈")}</i><b>${esc(S.spent.short)}</b><span>${esc(L("tile_spent", t("مجموع خرید")))}</span></button>
+    <button class="stile s4" data-go="referral"${CS("tile_invited")}><i>${IC("tile_invited", "🤝")}</i><b>${num(S.invited)}</b><span>${esc(L("tile_invited", t("دعوت‌شده‌ها")))}</span></button></div>`;
   html += `<div class="card prof"><h2><i>${IC("profile_title", "🪪")}</i> ${esc(L("profile_title", t("مشخصات شما")))}</h2>
     <div class="kvr"><span>${IC("profile_id", "🆔")} ${esc(L("profile_id", t("شناسه")))}</span><b dir="ltr">${u.id}</b></div>
     ${u.username ? `<div class="kvr"><span>${IC("profile_user", "👤")} ${esc(L("profile_user", t("نام کاربری")))}</span><b dir="ltr">@${esc(u.username)}</b></div>` : ""}</div>`;
   if (u.discount) html += `<div class="card">🎁 ${esc(t("تخفیف اختصاصی شما ({p}٪) در قیمت‌ها اعمال شده است.", {p: u.discount}))}</div>`;
-  html += `<button class="row" id="more"><span>${IC("btn_more", "☰")} ${esc(L("btn_more", t("بیشتر")))}</span><span>›</span></button>`;
+  html += `<button class="row" id="more"${CS("btn_more")}><span>${IC("btn_more", "☰")} ${esc(L("btn_more", t("بیشتر")))}</span><span>›</span></button>`;
   if (u.is_admin) html += `<button class="row" id="adm"><span>🛠 ${esc(t("پنل مدیریت"))}</span><span class="sub">${esc(t("ورود با حساب تلگرام"))}</span></button>`;
   $app.innerHTML = html;
   $app.querySelectorAll(".tile").forEach(b => b.onclick = () => openTile(b.dataset.t));
@@ -358,7 +364,7 @@ VIEWS.products = async () => {
   if (!T.length) h += `<div class="card hint">${esc(t("هنوز محصولی ثبت نشده است."))}</div>`;
   h += T.map(k => {
     const ti = k === "vpn" ? [IC("kind_vpn", "🛡"), L("kind_vpn", t("خرید VPN"))] : k === "agent" ? [IC("kind_agent", "🧑‍💼"), L("kind_agent", t("خرید پنل نمایندگی"))] : [IC("kind_" + k, KIND_IC[k]), L("kind_" + k, I.kind_titles[k].replace(/^\S+\s*/, ""))];
-    return `<button class="row prod k-${k === "agent" ? "vpn" : k}" data-t="${k}"><i class="ri">${ti[0]}</i><span>${esc(ti[1])}</span><b>›</b></button>`;
+    return `<button class="row prod k-${k === "agent" ? "vpn" : k}" data-t="${k}"${CS("kind_" + k)}><i class="ri">${ti[0]}</i><span>${esc(ti[1])}</span><b>›</b></button>`;
   }).join("");
   $app.innerHTML = h;
   $app.querySelectorAll("[data-t]").forEach(b => b.onclick = () => openTile(b.dataset.t));
@@ -625,7 +631,7 @@ VIEWS.agent_view = async (id) => {
   h += `<div class="grid"><button class="b" id="rn">🔄 ${esc(t("تمدید"))}</button><button class="b sec" id="rf">♻️ ${esc(t("بروزرسانی"))}</button></div>
     <div class="grid">${s.can_pw ? `<button class="b sec" id="pw">🔑 ${esc(t("رمز جدید"))}</button>` : ""}<button class="b sec" id="sd">📨 ${esc(t("ارسال در چت ربات"))}</button></div>`;
   if (s.addons && s.addons.length) h += `<h2>➕ ${esc(t("حجم/زمان اضافه"))}</h2>` + s.addons.map(a => `<button class="row prod k-vpn" data-ad="${a.id}"><i class="ri">➕</i><span>${esc(a.title)}</span><b>${esc(a.price.short)}</b></button>`).join("");
-  if (s.custom) h += Object.keys(s.custom).map(k => { const c = s.custom[k]; return `<div class="card"><div class="nm">✏️ ${esc(k === "gb" ? t("حجم دلخواه") : t("زمان دلخواه"))}</div><p class="hint">${esc(t("بین {a} و {b}", {a: c.min, b: c.max}))} · ${esc(c.price.short)}/${esc(k === "gb" ? "GB" : t("روز"))}</p><div class="grid"><input type="number" min="${c.min}" max="${c.max}" step="${k === "gb" ? "any" : "1"}" id="cu-${k}" placeholder="${c.min}"><button class="b" data-cu="${k}">${esc(t("خرید"))}</button></div></div>`; }).join("");
+  if (s.custom) h += Object.keys(s.custom).map(k => { const c = s.custom[k]; return `<div class="card"><div class="nm">✏️ ${esc(k === "gb" ? t("حجم دلخواه") : t("زمان دلخواه"))}</div><p class="hint">${esc((k === "gb" ? t("حداقل حجم خرید {a} گیگ و حداکثر {b} گیگ", {a: c.min, b: c.max}) : t("حداقل زمان خرید {a} روز و حداکثر {b} روز", {a: c.min, b: c.max})))} · ${esc(c.price.short)}/${esc(k === "gb" ? "GB" : t("روز"))}</p><div class="grid"><input type="number" min="${c.min}" max="${c.max}" step="${k === "gb" ? "any" : "1"}" id="cu-${k}" placeholder="${c.min}"><button class="b" data-cu="${k}">${esc(t("خرید"))}</button></div></div>`; }).join("");
   $app.innerHTML = h;
   $app.querySelectorAll("[data-cu]").forEach(b => b.onclick = () => run(b, async () => { const v = +document.getElementById("cu-" + b.dataset.cu).value; const o = await api("agent_custom", {id, kind: b.dataset.cu, amount: v}); go("order", o.id); }));
   $app.querySelectorAll("[data-c]").forEach(b => b.onclick = () => copyText(b.dataset.c));

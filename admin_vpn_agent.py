@@ -26,7 +26,7 @@ STEP = {
     "days": ("مدت اعتبار به روز (۰ = بدون انقضا):", "int"),
     "traffic_gb": ("سقف حجم کل ادمین به گیگابایت (۰ = نامحدود؛ ۱ ترابایت = 1024):", "float"),
     "max_users": ("سقف تعداد کاربرانی که نماینده می‌تواند بسازد (۰ = نامحدود):", "int"),
-    "role_id": ("شناسه‌ی نقش (role id) در پاسارگاد — برای حالت بدون نقش «-» بفرستید:", "opt"),
+    "role_id": ("شناسه‌ی نقش (role id) در پاسارگارد — برای حالت بدون نقش «-» بفرستید:", "opt"),
     "service_ids": ("شناسه‌ی سرویس‌هایی که نماینده به آن‌ها دسترسی دارد (چند مورد با کاما) — «-» یعنی همه‌ی سرویس‌ها:", "opt"),
     "price": ("قیمت فروش (تومان):", "int"),
     "cost": ("هزینه‌ی تمام‌شده برای شما (تومان، برای محاسبه‌ی سود؛ ۰ = نامشخص):", "int"),
@@ -75,7 +75,7 @@ async def cb_plans(cb: CallbackQuery, shop: Shop):
     rows = [[btn(f"{'🟢' if p['active'] else '⚫️'} {p['title']} · {p['panel_name']} · {fmt(p['price'])}", f"adm:vpn:agpv:{p['id']}", role="admin")] for p in plans[:40]]
     rows.append([btn("➕ پلن نمایندگی جدید", "adm:vpn:agpa", role="confirm")])
     rows.append(back_row("adm:vpn"))
-    await view(cb, "🧑‍💼 <b>پلن‌های پنل نمایندگی</b>\nبا خرید، ادمین در پنل (پاسارگاد، مرزبان، مرزنشین) ساخته و اطلاعات ورود برای خریدار ارسال می‌شود.", ikb(rows))
+    await view(cb, "🧑‍💼 <b>پلن‌های پنل نمایندگی</b>\nبا خرید، ادمین در پنل (پاسارگارد، مرزبان، مرزنشین) ساخته و اطلاعات ورود برای خریدار ارسال می‌شود.", ikb(rows))
     await cb.answer()
 
 
@@ -244,7 +244,7 @@ async def cb_plan_add(cb: CallbackQuery, shop: Shop):
     import vpn_panels
     panels = [p for p in await shop.db.list_vpn_panels() if getattr(vpn_panels.DRIVERS.get(p["type"]), "ADMIN", False)]
     if not panels:
-        await cb.answer("ابتدا یک پنل پاسارگاد، مرزبان یا مرزنشین اضافه کنید.", show_alert=True)
+        await cb.answer("ابتدا یک پنل پاسارگارد، مرزبان یا مرزنشین اضافه کنید.", show_alert=True)
         return
     rows = [[btn(f"{p['name']} · {p['type']}", f"adm:vpn:agpn:{p['id']}", role="admin")] for p in panels]
     rows.append(back_row("adm:vpn:agp"))

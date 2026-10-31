@@ -1,4 +1,4 @@
-"""درایورهای پنل‌های VPN: 3x-ui (ثنایی) و x-ui قدیمی (علیرضا)، مرزبان، پاسارگاد، مرزنشین، هیدیفای و «فروش دستی».
+"""درایورهای پنل‌های VPN: 3x-ui (ثنایی) و x-ui قدیمی (علیرضا)، مرزبان، پاسارگارد، مرزنشین، هیدیفای و «فروش دستی».
 
 هر درایور همین رابط را دارد (همه async):
     test() -> dict            بررسی اتصال/ورود + نسخه
@@ -56,7 +56,7 @@ class PanelAdmin:
 
 
 def gen_password(n: int = 16) -> str:
-    """رمز قوی که قوانین همه‌ی پنل‌ها (پاسارگاد: ≥۱۲ حرف، ۲ رقم، ۲ بزرگ، ۲ کوچک، ۱ نماد، بدون ") را رعایت کند."""
+    """رمز قوی که قوانین همه‌ی پنل‌ها (پاسارگارد: ≥۱۲ حرف، ۲ رقم، ۲ بزرگ، ۲ کوچک، ۱ نماد، بدون ") را رعایت کند."""
     rnd = secrets.SystemRandom()
     chars = ([rnd.choice("ABCDEFGHJKLMNPQRSTUVWXYZ") for _ in range(3)] + [rnd.choice("abcdefghijkmnpqrstuvwxyz") for _ in range(n - 8)] +
              [rnd.choice("23456789") for _ in range(3)] + [rnd.choice("@#%-_=+") for _ in range(2)])
@@ -123,7 +123,10 @@ class BasePanel:
 
     def __init__(self, cfg: dict):
         self.cfg = cfg
-        self.url = (cfg.get("url") or "").rstrip("/")
+        self.url = (cfg.get("url") or "").strip().rstrip("/")
+        if getattr(self, "TYPE", "") in ("pasarguard", "marzban", "marzneshin"):
+            # کاربر گاهی آدرس صفحه‌ی ورود را می‌گذارد (…/dashboard/login)؛ API روی ریشه است
+            self.url = re.sub(r"/dashboard(/.*)?$", "", self.url, flags=re.I).rstrip("/")
         self.ex = cfg.get("extra") or {}
         self._http: aiohttp.ClientSession | None = None
 
@@ -429,10 +432,10 @@ class Marzban(BasePanel):
         await self._call("DELETE", f"{self.ADMIN_PATH}/{quote(username)}", ok=(200, 204, 404))
 
 
-# ======================================================================= پاسارگاد
+# ======================================================================= پاسارگارد
 class PasarGuard(Marzban):
     TYPE = "pasarguard"
-    LABEL = "پاسارگاد ⁦PasarGuard⁩"
+    LABEL = "پاسارگارد ⁦PasarGuard⁩"
     OPTION_LABEL = "گروه (id)"
     HELP = "آدرس پنل را مثل https://panel.example.com:8000 بفرستید و گروه‌ها را انتخاب کنید."
 

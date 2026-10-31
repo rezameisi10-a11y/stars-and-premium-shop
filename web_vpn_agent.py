@@ -22,7 +22,7 @@ def plan_inputs(p=None) -> str:
             f"<label class='mini'>{T('مدت (روز، ۰=بدون انقضا)')}{inp('days', p.get('days', 30), '', 's', 'number')}</label> "
             f"<label class='mini'>{T('سقف حجم کل (GB، ۰=نامحدود)')}{inp('traffic_gb', gb_txt(p.get('traffic_gb', 0)), '', 's', 'text')}</label> "
             f"<label class='mini'>{T('سقف تعداد کاربر (۰=نامحدود)')}{inp('max_users', p.get('max_users', 0), '', 's', 'number')}</label> "
-            f"<label class='mini'>{T('شناسه‌ی نقش (پاسارگاد)')}{inp('role_id', p.get('role_id', ''), '', 's')}</label> "
+            f"<label class='mini'>{T('شناسه‌ی نقش (پاسارگارد)')}{inp('role_id', p.get('role_id', ''), '', 's')}</label> "
             f"<label class='mini'>{T('شناسه‌ی سرویس‌ها (مرزنشین؛ خالی=همه)')}{inp('service_ids', p.get('service_ids', ''), '', 'm')}</label> "
             f"<label class='mini'>{T('اجازه‌ی ویرایش کاربران (مرزنشین)')}<select name='modify_users'><option value='1' {'selected' if p.get('modify_users', 1) else ''}>{T('بله')}</option>"
             f"<option value='0' {'' if p.get('modify_users', 1) else 'selected'}>{T('خیر')}</option></select></label> "
@@ -91,7 +91,7 @@ async def plans_page(request):
                      badge(_("فعال"), "ok") if p["active"] else badge(_("غیرفعال"), ""), f"<details><summary>{T('ویرایش')}</summary>{edit}</details>" + packs, acts])
     add = (pform(request, "/vpn/agent-plans/add", f"<label class='mini'>{T('پنل')}{sel('panel_id', [(p['id'], p['name'] + ' · ' + p['type']) for p in panels])}</label> " + plan_inputs()
                  + f"<button class='b pri'>➕ {T('افزودن پلن نمایندگی')}</button>", cls="")
-           if panels else f"<p class='hint'>{T('ابتدا یک پنل پاسارگاد، مرزبان یا مرزنشین اضافه کنید.')}</p>")
+           if panels else f"<p class='hint'>{T('ابتدا یک پنل پاسارگارد، مرزبان یا مرزنشین اضافه کنید.')}</p>")
     probe = (pform(request, "/vpn/agent-plans/options", f"<label class='mini'>{T('پنل')}{sel('panel_id', [(p['id'], p['name']) for p in panels])}</label>"
                    f"<button class='b'>🔎 {T('نمایش نقش‌ها / سرویس‌های پنل')}</button>", cls="") if panels else "")
     body = (tabs("aplans")
@@ -99,7 +99,7 @@ async def plans_page(request):
               f"{tbl([_('#'), _('پلن'), _('قابلیت‌ها'), _('قیمت (ت)'), _('وضعیت'), _('ویرایش'), _('عملیات')], rows, _('هنوز پلنی ثبت نشده است.'))}"
               f"<h3>{T('افزودن پلن نمایندگی')}</h3>{add}</div>"
             f"<div class='card'><h2>🔎 {T('شناسه‌ی نقش‌ها و سرویس‌ها')}</h2>{probe}"
-            f"<p class='hint'>{T('پاسارگاد: شناسه‌ی نقش (role id) و سقف‌ها در پلن اعمال می‌شود. مرزنشین: شناسه‌ی سرویس‌هایی که نماینده به آن‌ها دسترسی دارد. مرزبان: ادمین ساده ساخته می‌شود و سقف تعداد کاربر ندارد؛ مدت اعتبار و سقف حجم کل را ربات اجرا می‌کند (در صورت اتمام، ادمین غیرفعال می‌شود).')}</p>"
+            f"<p class='hint'>{T('پاسارگارد: شناسه‌ی نقش (role id) و سقف‌ها در پلن اعمال می‌شود. مرزنشین: شناسه‌ی سرویس‌هایی که نماینده به آن‌ها دسترسی دارد. مرزبان: ادمین ساده ساخته می‌شود و سقف تعداد کاربر ندارد؛ مدت اعتبار و سقف حجم کل را ربات اجرا می‌کند (در صورت اتمام، ادمین غیرفعال می‌شود).')}</p>"
             f"<p class='hint'>{T('ربات با خرید، ادمین را در پنل می‌سازد و آدرس پنل، نام کاربری و رمز را برای خریدار می‌فرستد. انقضای نماینده را ربات اجرا می‌کند (ادمین غیرفعال می‌شود).')}</p></div>")
     return await layout(request, _("پلن‌های نمایندگی"), body, "/vpn")
 
@@ -129,7 +129,7 @@ async def plan_add(request):
     pid = to_int(d.get("panel_id"))
     panel = await shop.db.get_vpn_panel(pid)
     if not f["title"] or not f["price"] or not panel or not getattr(vpn_panels.DRIVERS.get(panel["type"]), "ADMIN", False):
-        raise redirect("/vpn/agent-plans", err=_("پنل (پاسارگاد/مرزبان/مرزنشین)، عنوان و قیمت را وارد کنید."))
+        raise redirect("/vpn/agent-plans", err=_("پنل (پاسارگارد/مرزبان/مرزنشین)، عنوان و قیمت را وارد کنید."))
     nid = await shop.db.add_agent_plan(panel_id=pid, **f)
     await shop.db.log(actor(request), "agent_plan_add", f"#{nid}")
     raise redirect("/vpn/agent-plans", ok=_("پلن ثبت شد."))

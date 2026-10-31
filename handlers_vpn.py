@@ -558,9 +558,9 @@ async def agent_custom_ask(cb: CallbackQuery, shop: Shop, tr, state: FSMContext)
     await state.set_state(VpnSt.custom_amount)
     await state.update_data(agent_id=ag["id"], kind=kind)
     if kind == "gb":
-        txt = tr("چند گیگابایت حجم اضافه می‌خواهید؟ (بین {a} و {b} گیگابایت؛ هر گیگابایت {p} تومان). برای انصراف /start:", a=f"{cfg['min']:g}", b=f"{cfg['max']:g}", p=fmt(unit))
+        txt = tr("📦 <b>خرید حجم اضافه</b>\nحداقل حجم خرید: {a} گیگابایت\nحداکثر حجم خرید: {b} گیگابایت\nقیمت هر گیگابایت: {p} تومان\n\nمقدار دلخواه را (فقط عدد، به گیگابایت) بفرستید. برای انصراف /start:", a=f"{cfg['min']:g}", b=f"{cfg['max']:g}", p=fmt(unit))
     else:
-        txt = tr("چند روز زمان اضافه می‌خواهید؟ (بین {a} و {b} روز؛ هر روز {p} تومان). برای انصراف /start:", a=f"{cfg['min']:g}", b=f"{cfg['max']:g}", p=fmt(unit))
+        txt = tr("⏳ <b>خرید زمان اضافه</b>\nحداقل زمان خرید: {a} روز\nحداکثر زمان خرید: {b} روز\nقیمت هر روز: {p} تومان\n\nمقدار دلخواه را (فقط عدد، به روز) بفرستید. برای انصراف /start:", a=f"{cfg['min']:g}", b=f"{cfg['max']:g}", p=fmt(unit))
     await cb.message.answer(txt)
     await cb.answer()
 
@@ -579,7 +579,7 @@ async def agent_custom_amount(m: Message, shop: Shop, state: FSMContext, tr):
     ag = await shop.db.get_agent(d["agent_id"])
     cfg = (await shop.vpn.agents.custom_for(ag)).get(d["kind"]) if ag else None
     if cfg and not cfg["min"] <= v <= cfg["max"]:
-        await m.answer(tr("مقدار باید بین {a} و {b} باشد.", a=f"{cfg['min']:g}", b=f"{cfg['max']:g}"))
+        await m.answer(tr("مقدار خارج از بازه است؛ حداقل {a} و حداکثر {b} مجاز است.", a=f"{cfg['min']:g}", b=f"{cfg['max']:g}"))
         return
     try:
         oid = await shop.vpn.agents.custom_order(m.from_user.id, d["agent_id"], d["kind"], v)
