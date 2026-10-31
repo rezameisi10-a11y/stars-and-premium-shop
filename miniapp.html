@@ -551,12 +551,14 @@ VIEWS.vpn_service = async (id, refresh) => {
       <div class="grid"><button class="b sec" id="rf">♻️ ${esc(t("بروزرسانی"))}</button><button class="b sec" id="sd">📨 ${esc(t("ارسال در چت ربات"))}</button></div>
       ${s.can_revoke ? `<button class="b sec" id="rv">🔑 ${esc(t("لینک جدید"))}</button>` : ""}`;
     if (s.is_test) h += `<button class="b" id="by">🛒 ${esc(t("خرید سرویس"))}</button>`;
+    if (s.addons && s.addons.length) h += `<h2>➕ ${esc(t("حجم/زمان اضافه"))}</h2>` + s.addons.map(a => `<button class="row prod k-vpn" data-ad="${a.id}"><i class="ri">➕</i><span>${esc(a.title)}</span><b>${esc(a.price.short)}</b></button>`).join("");
   }
   $app.innerHTML = h;
   $app.querySelectorAll("[data-c]").forEach(b => b.onclick = () => copyText(b.dataset.c));
   const on = (sel, fn) => { const b = $app.querySelector(sel); if (b) b.onclick = () => run(b, fn); };
   on("#rn", async () => go("vpn_renew", id));
   on("#ad", async () => go("vpn_addons", id));
+  $app.querySelectorAll("[data-ad]").forEach(b => b.onclick = () => run(b, async () => { const o = await api("vpn_addon", {id, addon_id: +b.dataset.ad}); go("order", o.id); }));
   on("#by", async () => go("vpn"));
   on("#rf", async () => { await api("vpn_service", {id, refresh: 1}); toast(t("بروزرسانی شد.")); render(); });
   on("#sd", async () => { const x = await api("vpn_send", {id}); toast(x.message); });
@@ -622,8 +624,10 @@ VIEWS.agent_view = async (id) => {
   if (s.help) h += `<div class="card hint" style="color:var(--fg)">${safeHtml(s.help)}</div>`;
   h += `<div class="grid"><button class="b" id="rn">🔄 ${esc(t("تمدید"))}</button><button class="b sec" id="rf">♻️ ${esc(t("بروزرسانی"))}</button></div>
     <div class="grid">${s.can_pw ? `<button class="b sec" id="pw">🔑 ${esc(t("رمز جدید"))}</button>` : ""}<button class="b sec" id="sd">📨 ${esc(t("ارسال در چت ربات"))}</button></div>`;
+  if (s.addons && s.addons.length) h += `<h2>➕ ${esc(t("حجم/زمان اضافه"))}</h2>` + s.addons.map(a => `<button class="row prod k-vpn" data-ad="${a.id}"><i class="ri">➕</i><span>${esc(a.title)}</span><b>${esc(a.price.short)}</b></button>`).join("");
   $app.innerHTML = h;
   $app.querySelectorAll("[data-c]").forEach(b => b.onclick = () => copyText(b.dataset.c));
+  $app.querySelectorAll("[data-ad]").forEach(b => b.onclick = () => run(b, async () => { const o = await api("agent_addon", {id, addon_id: +b.dataset.ad}); go("order", o.id); }));
   const on = (sel, fn) => { const b = $app.querySelector(sel); if (b) b.onclick = () => run(b, fn); };
   on("#rn", async () => go("agent_renew", id));
   on("#rf", async () => { await api("agent_get", {id, refresh: 1}); toast(t("بروزرسانی شد.")); render(); });

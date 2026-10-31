@@ -315,7 +315,7 @@ async def a_pay(ctx: Ctx, d: dict) -> dict:
     if method == "wallet":
         if not await shop.pay_with_wallet(order["id"], ctx.uid):
             raise ApiError(ctx.tr("موجودی کیف پول کافی نیست."))
-        return {"done": True, "kind": order["kind"], "agent": (order.get("ref") or "").startswith(("vpn:agent", "vpn:arenew")), "message": ctx.tr("✅ پرداخت از کیف پول انجام شد؛ سفارش #{oid} در حال تحویل است.", oid=order["id"])}
+        return {"done": True, "kind": order["kind"], "agent": (order.get("ref") or "").startswith(("vpn:agent", "vpn:arenew", "vpn:aaddon")), "message": ctx.tr("✅ پرداخت از کیف پول انجام شد؛ سفارش #{oid} در حال تحویل است.", oid=order["id"])}
     try:
         pid, _text, kb = await shop.create_payment(method, ctx.uid, amount, order["id"] if order else None, ctx.tr)
     except ValueError as e:
@@ -477,6 +477,11 @@ async def a_vpn_service(ctx: Ctx, d: dict) -> dict:
     data = sv["sub_url"] or (out["links"][0] if out["links"] else "")
     png = await ctx.shop.vpn.qr_png(data) if data else None
     out["qr"] = "data:image/png;base64," + base64.b64encode(png).decode() if png else ""
+    out["addons"] = []
+    if out.get("can_addon"):
+        u = await ctx.shop.db.get_user(ctx.uid)
+        out["addons"] = [{"id": a["id"], "title": a["title"], "price": _money(ctx, ctx.shop._personal(a["price"], u))}
+                         for a in await ctx.shop.db.list_vpn_addons(active_only=True)]
     return out
 
 
@@ -587,7 +592,20 @@ async def a_agent_get(ctx: Ctx, d: dict) -> dict:
         except Exception:  # noqa: BLE001
             if d.get("refresh"):
                 raise ApiError(ctx.tr("ارتباط با سرور برقرار نشد؛ کمی بعد دوباره تلاش کنید."))
-    return _agent_dict(ctx, ag, full=True)
+    out = _agent_dict(ctx, ag, full=True)
+    u = await ctx.shop.db.get_user(ctx.uid)
+    out["addons"] = [{"id": a["id"], "title": ctx.shop.vpn.agents.addon_title(a, ctx.tr), "kind": a["kind"], "price": _money(ctx, ctx.shop._personal(a["price"], u))}
+                     for a in await ctx.shop.vpn.agents.addons_for(ag)
+                     if not (a["kind"] == "gb" and not ag["total_bytes"])]
+    return out
+
+
+async def a_agent_addon(ctx: Ctx, d: dict) -> dict:
+    try:
+        oid = await ctx.shop.vpn.agents.addon_order(ctx.uid, int(d.get("id") or 0), int(d.get("addon_id") or 0))
+    except VpnError as e:
+        raise _vpn_err(ctx, e)
+    return await a_order_get(ctx, {"order_id": oid})
 
 
 async def a_agent_renew_plans(ctx: Ctx, d: dict) -> dict:
@@ -625,7 +643,7 @@ ACTIONS = {"vpn_plans": a_vpn_plans, "vpn_order": a_vpn_order, "vpn_test": a_vpn
            "vpn_renew_plans": a_vpn_renew_plans, "vpn_renew": a_vpn_renew, "vpn_addons": a_vpn_addons, "vpn_addon": a_vpn_addon,
            "vpn_revoke": a_vpn_revoke, "vpn_send": a_vpn_send,
            "agent_plans": a_agent_plans, "agent_order": a_agent_order, "agent_list": a_agent_list, "agent_get": a_agent_get,
-           "agent_renew_plans": a_agent_renew_plans, "agent_renew": a_agent_renew, "agent_pw": a_agent_pw, "agent_send": a_agent_send,
+           "agent_addon": a_agent_addon, "agent_renew_plans": a_agent_renew_plans, "agent_renew": a_agent_renew, "agent_pw": a_agent_pw, "agent_send": a_agent_send,
            "init": a_init, "catalog": a_catalog, "order_create": a_order_create, "order_get": a_order_get, "discount": a_discount,
            "pay": a_pay, "receipt": a_receipt, "check": a_check, "wallet": a_wallet, "orders": a_orders,
            "referral": a_referral, "set_lang": a_set_lang}

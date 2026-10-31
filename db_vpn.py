@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS vpn_plans(
 CREATE TABLE IF NOT EXISTS vpn_addons(
   id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, gb REAL NOT NULL DEFAULT 0, days INTEGER NOT NULL DEFAULT 0,
   price INTEGER NOT NULL DEFAULT 0, cost INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, sort INTEGER NOT NULL DEFAULT 100);
+CREATE TABLE IF NOT EXISTS vpn_agent_addons(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, plan_id INTEGER NOT NULL, kind TEXT NOT NULL DEFAULT 'gb', amount REAL NOT NULL DEFAULT 0,
+  price INTEGER NOT NULL DEFAULT 0, cost INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, sort INTEGER NOT NULL DEFAULT 100);
 CREATE TABLE IF NOT EXISTS vpn_services(
   id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, panel_id INTEGER NOT NULL, plan_id INTEGER,
   name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', expires_at INTEGER NOT NULL DEFAULT 0,
@@ -57,7 +60,8 @@ ADDON_FIELDS = {"title", "gb", "days", "price", "cost", "active", "sort"}
 SERVICE_FIELDS = {"panel_id", "plan_id", "name", "status", "expires_at", "total_bytes", "used_bytes", "sub_url", "links", "meta", "title",
                   "notified", "note", "last_sync", "user_id", "is_test"}
 AGENT_PLAN_FIELDS = {"title", "panel_id", "days", "traffic_gb", "max_users", "role_id", "service_ids", "modify_users", "data_min_gb", "data_max_gb",
-                     "expire_min_days", "expire_max_days", "price", "cost", "active", "sort", "note"}
+                     "expire_min_days", "expire_max_days", "price", "cost", "active", "sort", "note", "addon_on"}
+AGENT_ADDON_FIELDS = {"plan_id", "kind", "amount", "price", "cost", "active", "sort"}
 AGENT_FIELDS = {"user_id", "panel_id", "plan_id", "username", "password", "status", "expires_at", "total_bytes", "used_bytes", "users_count",
                 "max_users", "title", "notified", "note", "last_sync", "meta"}
 LIVE = ("active", "disabled", "limited", "expired", "on_hold", "pending_manual")
@@ -330,7 +334,28 @@ class VpnDB:
             await self.run(f"UPDATE vpn_agent_plans SET {','.join(k + '=?' for k in f)} WHERE id=?", (*f.values(), pid))
 
     async def delete_agent_plan(self, pid):
+        await self.run("DELETE FROM vpn_agent_addons WHERE plan_id=?", (pid,))
         await self.run("DELETE FROM vpn_agent_plans WHERE id=?", (pid,))
+
+    # ---------- بسته‌های افزودنی پلن نمایندگی (حجم / زمان)
+    async def add_agent_addon(self, **f) -> int:
+        f = {k: v for k, v in f.items() if k in AGENT_ADDON_FIELDS}
+        cur = await self.run(f"INSERT INTO vpn_agent_addons({','.join(f)}) VALUES({','.join('?' * len(f))})", tuple(f.values()))
+        return cur.lastrowid
+
+    async def get_agent_addon(self, aid):
+        return await self.one("SELECT * FROM vpn_agent_addons WHERE id=?", (aid,))
+
+    async def list_agent_addons(self, plan_id: int, active_only=False):
+        return await self.all("SELECT * FROM vpn_agent_addons WHERE plan_id=?" + (" AND active=1" if active_only else "") + " ORDER BY kind, amount, id", (plan_id,))
+
+    async def update_agent_addon(self, aid, **f):
+        f = {k: v for k, v in f.items() if k in AGENT_ADDON_FIELDS}
+        if f:
+            await self.run(f"UPDATE vpn_agent_addons SET {','.join(k + '=?' for k in f)} WHERE id=?", (*f.values(), aid))
+
+    async def delete_agent_addon(self, aid):
+        await self.run("DELETE FROM vpn_agent_addons WHERE id=?", (aid,))
 
     # ---------- نمایندگان (ادمین‌های ساخته‌شده در پنل)
     async def add_agent(self, **f) -> int:
@@ -361,7 +386,10 @@ class VpnDB:
         if user_id is not None:
             w.append("a.user_id=?")
             a.append(user_id)
-        if status:
+        if status == "soon":                                   # رو به اتمام: انقضا تا ۷ روز دیگر یا مصرف ≥ ۹۰٪
+            w.append("a.status IN ('active','limited') AND ((a.expires_at>0 AND a.expires_at<?) OR (a.total_bytes>0 AND a.used_bytes*100>=a.total_bytes*90))")
+            a.append(int(time.time()) + 7 * 86400)
+        elif status:
             w.append("a.status=?")
             a.append(status)
         else:

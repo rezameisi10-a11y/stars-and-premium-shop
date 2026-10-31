@@ -174,15 +174,60 @@ async def cb_pays(cb: CallbackQuery, shop: Shop):
     await cb.message.answer("—", reply_markup=ikb([back_row()]))
 
 
-@router.callback_query(F.data.startswith("padm:"))
-async def cb_pay_action(cb: CallbackQuery, shop: Shop):
-    _, act, pid = cb.data.split(":")
-    res = await shop.admin_payment_action(act, int(pid), actor=f"tg:{cb.from_user.id}")
-    await cb.answer(res, show_alert=True)
+async def _finish_pay(shop: Shop, bot, chat_id, msg_id, base_caption, act, pid, who, reason=""):
+    res = await shop.admin_payment_action(act, pid, actor=f"tg:{who.id}", reason=reason)
     try:
-        await cb.message.edit_caption(caption=(cb.message.caption or "") + f"\n\n{res} — توسط {esc(cb.from_user.full_name)}", reply_markup=None)
+        await bot.edit_message_caption(chat_id=chat_id, message_id=msg_id, caption=(base_caption or "")[:900] + f"\n\n{res}" + (f"\n📝 {esc(shop.reject_text(reason))}" if reason and act == "no" else "") + f" — توسط {esc(who.full_name)}", reply_markup=None)
     except TelegramBadRequest:
         pass
+    return res
+
+
+@router.callback_query(F.data.startswith("padm:"))
+async def cb_pay_action(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    parts = cb.data.split(":")
+    act, pid = parts[1], int(parts[2])
+    if act == "no":                                   # دلیل رد را بپرس (دکمه‌ها در همان پیام)
+        from service import REJECT_REASONS
+        icon = {"fake": "🚫", "amount": "💰", "unclear": "🔍", "notfound": "🏦", "dup": "♻️"}
+        rows = [[btn(f"{icon.get(k, '•')} {v}", f"padm:nr:{pid}:{k}", role="reject")] for k, v in REJECT_REASONS.items()]
+        rows.append([btn("✍️ دلیل دلخواه (تایپ می‌کنم)", f"padm:nc:{pid}", role="action"), btn("بدون ذکر دلیل", f"padm:nr:{pid}:-", role="reject")])
+        rows.append([btn("🔙 انصراف", f"padm:nx:{pid}", role="back")])
+        try:
+            await cb.message.edit_reply_markup(reply_markup=ikb(rows))
+        except TelegramBadRequest:
+            pass
+        await cb.answer("دلیل رد را انتخاب کنید (برای کاربر ارسال می‌شود).")
+        return
+    if act == "nx":
+        try:
+            await cb.message.edit_reply_markup(reply_markup=ikb([[btn("✅ تأیید", f"padm:ok:{pid}", role="confirm"), btn("❌ رد", f"padm:no:{pid}", role="reject")]]))
+        except TelegramBadRequest:
+            pass
+        await cb.answer()
+        return
+    if act == "nc":
+        await state.set_state(Adm.reject_reason)
+        await state.update_data(pid=pid, chat_id=cb.message.chat.id, msg_id=cb.message.message_id, caption=cb.message.caption or "")
+        await cb.message.answer(f"✍️ دلیل رد پرداخت P{pid} را بنویسید (برای کاربر ارسال می‌شود). برای لغو /admin:")
+        await cb.answer()
+        return
+    reason = ""
+    if act == "nr":
+        reason = "" if parts[3] == "-" else parts[3]
+        act = "no"
+    res = await _finish_pay(shop, cb.bot, cb.message.chat.id, cb.message.message_id, cb.message.caption, act, pid, cb.from_user, reason)
+    await cb.answer(res, show_alert=True)
+
+
+@router.message(Adm.reject_reason, TXT)
+async def got_reject_reason(m: Message, shop: Shop, state: FSMContext):
+    d = await state.get_data()
+    await state.clear()
+    if not shop.can(m.from_user.id, "receipts"):
+        return
+    res = await _finish_pay(shop, m.bot, d["chat_id"], d["msg_id"], d.get("caption"), "no", d["pid"], m.from_user, m.text.strip()[:300])
+    await m.answer(res)
 
 
 # ============================================================ کاربران

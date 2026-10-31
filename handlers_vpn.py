@@ -57,10 +57,6 @@ async def vpn_home(cb: CallbackQuery, shop: Shop, tr):
     if await shop.vpn.can_test(cb.from_user.id):
         rows.append([btn(tr("🎁 دریافت اکانت تست رایگان"), "vpn:test", role="action")])
     rows.append([btn(tr("📡 سرویس‌های من"), "vpn:my", role="action")])
-    if await shop.vpn.agents.available():
-        rows.append([btn(tr("🧑‍💼 خرید پنل نمایندگی"), "vpn:agh", role="action")])
-    if await shop.db.count_agents(user_id=cb.from_user.id):
-        rows.append([btn(tr("🗂 پنل‌های نمایندگی من"), "vpn:agl", role="action")])
     rows.append([btn(tr("🔙 منوی اصلی"), "menu", role="back")])
     head = tr("🛡 <b>خرید VPN</b>") + "\n" + (tr("یکی از پلن‌ها را انتخاب کنید:") if plans else tr("در حال حاضر پلنی برای فروش موجود نیست."))
     await cb.message.answer(head, reply_markup=ikb(rows))
@@ -294,6 +290,15 @@ async def vpn_quick_renew(cb: CallbackQuery, shop: Shop, tr):
 
 
 # ---------- حجم / زمان اضافه ----------
+async def _swap_kb(cb: CallbackQuery, kb) -> bool:
+    """کیبورد همین پیام (صفحه‌ی مشخصات) را عوض می‌کند تا کاربر از صفحه خارج نشود."""
+    try:
+        await cb.message.edit_reply_markup(reply_markup=kb)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 @router.callback_query(F.data.startswith("vpn:ad:"))
 async def vpn_addons(cb: CallbackQuery, shop: Shop, tr):
     svc = await _own(cb, shop, tr, cb.data.split(":")[2])
@@ -305,8 +310,18 @@ async def vpn_addons(cb: CallbackQuery, shop: Shop, tr):
         await cb.answer(tr("بسته‌ی اضافه‌ای موجود نیست."), show_alert=True)
         return
     rows = [[btn(f"{a['title']} | {fmt(shop._personal(a['price'], u))} {tr('ت')}", f"vpn:adp:{svc['id']}:{a['id']}", role="action")] for a in adds[:30]]
-    rows.append([btn(tr("🔙 بازگشت"), f"vpn:s:{svc['id']}", role="back")])
-    await cb.message.answer(tr("➕ بسته‌ی اضافه برای {n}", n=f"<code>{esc(svc['name'])}</code>") + "\n" + tr("یکی را انتخاب کنید:"), reply_markup=ikb(rows))
+    rows.append([btn(tr("🔙 بازگشت"), f"vpn:adb:{svc['id']}", role="back")])
+    if not await _swap_kb(cb, ikb(rows)):
+        await cb.message.answer(tr("➕ بسته‌ی اضافه برای {n}", n=f"<code>{esc(svc['name'])}</code>") + "\n" + tr("یکی را انتخاب کنید:"), reply_markup=ikb(rows))
+    await cb.answer(tr("یکی از بسته‌ها را انتخاب کنید."))
+
+
+@router.callback_query(F.data.startswith("vpn:adb:"))
+async def vpn_addons_back(cb: CallbackQuery, shop: Shop, tr):
+    svc = await _own(cb, shop, tr, cb.data.split(":")[2])
+    if not svc:
+        return
+    await _swap_kb(cb, shop.vpn.service_kb(svc, tr))
     await cb.answer()
 
 
@@ -346,7 +361,7 @@ async def agent_home(cb: CallbackQuery, shop: Shop, tr):
     plans = await shop.vpn.agents.plans_for(u)
     head = tr("🧑‍💼 <b>خرید پنل نمایندگی</b>") + "\n" + (tr("پلن مورد نظر را انتخاب کنید؛ پس از پرداخت، پنل شما خودکار ساخته و اطلاعات ورود ارسال می‌شود.") if plans else tr("در حال حاضر پلنی برای فروش موجود نیست."))
     rows = [[btn(f"{p['title']} | {fmt(p['user_price'])} {tr('ت')}", f"vpn:agp:{p['id']}", role="action")] for p in plans[:40]]
-    rows.append([btn(tr("🔙 بازگشت"), "vpn", role="back")])
+    rows.append([btn(tr("🔙 منوی اصلی"), "menu", role="back")])
     await cb.message.answer(head, reply_markup=ikb(rows))
     await cb.answer()
 
@@ -392,7 +407,7 @@ async def _agent_list(cb: CallbackQuery, shop: Shop, tr):
         await cb.answer(tr("هنوز پنل نمایندگی ندارید."), show_alert=True)
         return
     rows = [[btn(f"{tr(STATUS_FA.get(a['status'], a['status']))[:2]} {a['username']}", f"vpn:ag:{a['id']}", role="action")] for a in items]
-    rows.append([btn(tr("🛒 خرید پنل نمایندگی"), "vpn:agh", role="action"), btn(tr("🔙 بازگشت"), "vpn", role="back")])
+    rows.append([btn(tr("🛒 خرید پنل نمایندگی"), "vpn:agh", role="action"), btn(tr("🔙 منوی اصلی"), "menu", role="back")])
     await cb.message.answer(tr("🗂 <b>پنل‌های نمایندگی شما</b>"), reply_markup=ikb(rows))
     await cb.answer()
 
@@ -456,6 +471,86 @@ async def agent_pw(cb: CallbackQuery, shop: Shop, tr):
         await cb.answer(tr("انجام نشد؛ بعداً دوباره تلاش کنید."), show_alert=True)
         return
     await shop.vpn.agents.send_agent(cb.from_user.id, await shop.db.get_agent(ag["id"]))
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("vpn:agt:"))
+async def agent_auto_toggle(cb: CallbackQuery, shop: Shop, tr):
+    ag = await _own_agent(cb, shop, tr, cb.data.split(":")[2])
+    if not ag:
+        return
+    if not shop.vpn.agents._can_auto(ag):
+        await cb.answer(tr("تمدید خودکار برای این پنل در دسترس نیست."), show_alert=True)
+        return
+    on = not shop.vpn.agents.is_auto(ag)
+    await shop.vpn.agents.set_auto(ag, on)
+    ag = await shop.db.get_agent(ag["id"])
+    try:
+        await cb.message.edit_text(await shop.vpn.agents.agent_text(ag, tr), reply_markup=shop.vpn.agents.agent_kb(ag, tr), disable_web_page_preview=True)
+    except Exception:  # noqa: BLE001
+        pass
+    if on:
+        plan = await shop.db.get_agent_plan(ag["plan_id"])
+        user = await shop.db.get_user(cb.from_user.id)
+        price = shop._personal(plan["price"], user) if plan else 0
+        await cb.answer(tr("🔁 تمدید خودکار روشن شد. {d} روز مانده به پایان، {p} تومان از کیف پول کم می‌شود؛ موجودی را نگه دارید.",
+                           d=max(int(float(shop.s.get("vpn_autorenew_days") or 1)), 0), p=fmt(price)), show_alert=True)
+    else:
+        await cb.answer(tr("تمدید خودکار خاموش شد."))
+
+
+@router.callback_query(F.data.startswith("vpn:agq:"))
+async def agent_quick_renew(cb: CallbackQuery, shop: Shop, tr):
+    ag = await _own_agent(cb, shop, tr, cb.data.split(":")[2])
+    if not ag:
+        return
+    if not ag["plan_id"]:
+        await cb.answer(tr("پلنی برای تمدید موجود نیست."), show_alert=True)
+        return
+    try:
+        oid = await shop.vpn.agents.renew_order(cb.from_user.id, ag["id"], ag["plan_id"])
+    except VpnError as e:
+        await cb.answer(tr(str(e)), show_alert=True)
+        return
+    await _offer(cb, shop, tr, oid, cb.from_user.id)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("vpn:aga:"))
+async def agent_addons(cb: CallbackQuery, shop: Shop, tr):
+    ag = await _own_agent(cb, shop, tr, cb.data.split(":")[2])
+    if not ag:
+        return
+    u = await shop.db.get_user(cb.from_user.id)
+    adds = [a for a in await shop.vpn.agents.addons_for(ag) if not (a["kind"] == "gb" and not ag["total_bytes"])]
+    if not adds:
+        await cb.answer(tr("بسته‌ی اضافه‌ای موجود نیست."), show_alert=True)
+        return
+    rows = [[btn(f"{shop.vpn.agents.addon_title(a, tr)} | {fmt(shop._personal(a['price'], u))} {tr('ت')}", f"vpn:agap:{ag['id']}:{a['id']}", role="action")] for a in adds[:30]]
+    rows.append([btn(tr("🔙 بازگشت"), f"vpn:agab:{ag['id']}", role="back")])
+    if not await _swap_kb(cb, ikb(rows)):
+        await cb.message.answer(tr("➕ بسته‌ی اضافه برای {n}", n=f"<code>{esc(ag['username'])}</code>") + "\n" + tr("یکی را انتخاب کنید:"), reply_markup=ikb(rows))
+    await cb.answer(tr("یکی از بسته‌ها را انتخاب کنید."))
+
+
+@router.callback_query(F.data.startswith("vpn:agab:"))
+async def agent_addons_back(cb: CallbackQuery, shop: Shop, tr):
+    ag = await _own_agent(cb, shop, tr, cb.data.split(":")[2])
+    if not ag:
+        return
+    await _swap_kb(cb, shop.vpn.agents.agent_kb(ag, tr))
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("vpn:agap:"))
+async def agent_addon_pick(cb: CallbackQuery, shop: Shop, tr):
+    _, _, aid, adid = cb.data.split(":")
+    try:
+        oid = await shop.vpn.agents.addon_order(cb.from_user.id, int(aid), int(adid))
+    except VpnError as e:
+        await cb.answer(tr(str(e)), show_alert=True)
+        return
+    await _offer(cb, shop, tr, oid, cb.from_user.id)
     await cb.answer()
 
 

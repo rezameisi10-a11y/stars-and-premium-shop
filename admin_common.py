@@ -22,6 +22,7 @@ class IsAdmin(BaseFilter):
 
 class Adm(StatesGroup):
     user_q = State()
+    reject_reason = State()
     bal = State()
     ban_reason = State()
     msg_user = State()

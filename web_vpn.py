@@ -195,7 +195,6 @@ def plan_inputs(p=None) -> str:
             f"<label class='mini'>{T('مدت (روز)')}{inp('days', p.get('days', 30), '', 's', 'number')}</label> "
             f"<label class='mini'>{T('حجم (GB، ۰=نامحدود)')}{inp('gb', gb_txt(p.get('gb', 50)), '', 's', 'text')}</label> "
             f"<label class='mini'>{T('قیمت (ت)')}{inp('price', p.get('price', ''), '', 'm', 'number')}</label> "
-            f"<label class='mini'>{T('هزینه (ت)')}{inp('cost', p.get('cost', 0), '', 'm', 'number')}</label> "
             f"<label class='mini'>{T('محدودیت IP')}{inp('ip_limit', p.get('ip_limit', 0), '', 's', 'number')}</label> "
             f"<label class='mini'>{T('نوع کاربر')}{sel('utype', [('f', 'f — ' + _('کاربر عادی')), ('n', 'n — ' + _('نماینده نوع ۲')), ('n2', 'n2 — ' + _('نماینده نوع ۳'))], p.get('utype', 'f'))}</label> "
             f"<label class='mini'>{T('یادداشت (در پیش‌فاکتور)')}{inp('note', p.get('note', ''), '', 'm', 'text')}</label> "
@@ -204,7 +203,7 @@ def plan_inputs(p=None) -> str:
 
 def _read_plan(d) -> dict:
     return {"title": str(d.get("title", "")).strip()[:80], "days": max(to_int(d.get("days"), 0) or 0, 0), "gb": max(to_float(d.get("gb"), 0) or 0, 0),
-            "price": max(to_int(d.get("price"), 0) or 0, 0), "cost": max(to_int(d.get("cost"), 0) or 0, 0),
+            "price": max(to_int(d.get("price"), 0) or 0, 0),
             "ip_limit": max(to_int(d.get("ip_limit"), 0) or 0, 0), "sort": to_int(d.get("sort"), 100) or 100,
             "utype": d.get("utype") if d.get("utype") in ("f", "n", "n2") else "f", "note": str(d.get("note", "")).strip()[:300]}
 
@@ -219,7 +218,7 @@ async def plans_page(request):
         acts = (pform(request, f"/vpn/plans/{p['id']}/toggle", f"<button class='b sm'>{T('غیرفعال') if p['active'] else T('فعال')}</button>")
                 + pform(request, f"/vpn/plans/{p['id']}/delete", f"<button class='b sm err'>{T('حذف')}</button>", confirm=_("پلن حذف شود؟")))
         rows.append([p["id"], f"<b>{e(p['title'])}</b><br><span class='hint'>{e(p['panel_name'])}</span>", f"{p['days'] or '∞'} {T('روز')} · {ltr(gb_txt(p['gb']) + ' GB')}",
-                     f"{fmt(p['price'])}<br><span class='hint'>{T('سود')}: {fmt(p['price'] - p['cost'])}</span>",
+                     fmt(p['price']),
                      badge(_("فعال"), "ok") if p["active"] else badge(_("غیرفعال"), ""), f"<details><summary>{T('ویرایش')}</summary>{edit}</details>", acts])
     add = (pform(request, "/vpn/plans/add", f"<label class='mini'>{T('پنل')}{sel('panel_id', [(0, _('همه‌ی پنل‌ها')), *[(p['id'], p['name']) for p in panels]])}</label> " + plan_inputs()
                  + f"<button class='b pri'>➕ {T('افزودن پلن')}</button>", cls="") if panels else f"<p class='hint'>{T('ابتدا یک پنل اضافه کنید.')}</p>")
@@ -246,13 +245,12 @@ def addon_inputs(a=None) -> str:
             f"<label class='mini'>{T('حجم (GB)')}{inp('gb', gb_txt(a.get('gb', 0)), '', 's', 'text')}</label> "
             f"<label class='mini'>{T('زمان (روز)')}{inp('days', a.get('days', 0), '', 's', 'number')}</label> "
             f"<label class='mini'>{T('قیمت (ت)')}{inp('price', a.get('price', ''), '', 'm', 'number')}</label> "
-            f"<label class='mini'>{T('هزینه (ت)')}{inp('cost', a.get('cost', 0), '', 'm', 'number')}</label> "
             f"<label class='mini'>{T('ترتیب')}{inp('sort', a.get('sort', 100), '', 's', 'number')}</label>")
 
 
 def _read_addon(d) -> dict:
     return {"title": str(d.get("title", "")).strip()[:80], "gb": max(to_float(d.get("gb"), 0) or 0, 0), "days": max(to_int(d.get("days"), 0) or 0, 0),
-            "price": max(to_int(d.get("price"), 0) or 0, 0), "cost": max(to_int(d.get("cost"), 0) or 0, 0), "sort": to_int(d.get("sort"), 100) or 100}
+            "price": max(to_int(d.get("price"), 0) or 0, 0), "sort": to_int(d.get("sort"), 100) or 100}
 
 
 @post("/vpn/plans/add", "vpn")

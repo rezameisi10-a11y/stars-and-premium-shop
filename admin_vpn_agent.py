@@ -31,7 +31,10 @@ STEP = {
     "price": ("قیمت فروش (تومان):", "int"),
     "cost": ("هزینه‌ی تمام‌شده برای شما (تومان، برای محاسبه‌ی سود؛ ۰ = نامشخص):", "int"),
 }
-EDITABLE = ("title", "days", "traffic_gb", "max_users", "price", "cost")
+EDITABLE = ("title", "days", "traffic_gb", "max_users", "price")
+STEP["a_amount_gb"] = ("مقدار حجم بسته به گیگابایت (مثلاً 50):", "float")
+STEP["a_amount_days"] = ("مقدار زمان بسته به روز (مثلاً 30):", "int")
+STEP["a_price"] = ("قیمت این بسته (تومان):", "int")
 
 
 def steps_for(ptype: str) -> list[str]:
@@ -40,7 +43,7 @@ def steps_for(ptype: str) -> list[str]:
         s += ["traffic_gb", "max_users", "role_id"]
     elif ptype == "marzneshin":
         s += ["service_ids"]
-    return s + ["price", "cost"]
+    return s + ["price"]
 
 
 def plan_card(p) -> str:
@@ -52,7 +55,7 @@ def plan_card(p) -> str:
         extra = [f"سرویس‌ها: {esc(p['service_ids']) or 'همه'}"]
     return (f"🧑‍💼 <b>{esc(p['title'])}</b> — {'✅ فعال' if p['active'] else '⚫️ غیرفعال'}\nپنل: {esc(p['panel_name'])} ({p['panel_type']})\n"
             f"مدت: {p['days'] or '∞'} روز" + ("\n" + " | ".join(extra) if extra else "") +
-            f"\nقیمت: {fmt(p['price'])} | هزینه: {fmt(p['cost'])} | سود: {fmt(p['price'] - p['cost'])}")
+            f"\nقیمت: {fmt(p['price'])} تومان\nحجم/زمان اضافه: {'✅ روشن' if p.get('addon_on', 1) else '⛔ خاموش'}")
 
 
 # ============================================================ پلن‌ها
@@ -73,13 +76,106 @@ async def cb_plan(cb: CallbackQuery, shop: Shop):
     if not p:
         await cb.answer("پیدا نشد", show_alert=True)
         return
-    rows = [[btn("⏯ فعال/غیرفعال", f"adm:vpn:agpt:{pid}", role="action"), btn("🗑 حذف", f"adm:vpn:agpd:{pid}", role="reject")]]
-    fields = [f for f in EDITABLE if f in ("title", "days", "price", "cost") or (f in ("traffic_gb", "max_users") and p["panel_type"] == "pasarguard")]
-    lab = {"title": "عنوان", "days": "روز", "price": "قیمت", "cost": "هزینه", "traffic_gb": "حجم", "max_users": "سقف کاربر"}
+    rows = [[btn("⏯ فعال/غیرفعال", f"adm:vpn:agpt:{pid}", role="action"), btn("🗑 حذف", f"adm:vpn:agpd:{pid}", role="reject")],
+            [btn("➕ حجم/زمان اضافه: " + ("روشن ✅" if p.get("addon_on", 1) else "خاموش ⛔"), f"adm:vpn:agpo:{pid}", role="action"),
+             btn("📦 بسته‌های افزودنی", f"adm:vpn:agao:{pid}", role="admin")]]
+    fields = [f for f in EDITABLE if f in ("title", "days", "price") or (f in ("traffic_gb", "max_users") and p["panel_type"] == "pasarguard")]
+    lab = {"title": "عنوان", "days": "روز", "price": "قیمت", "traffic_gb": "حجم", "max_users": "سقف کاربر"}
     btns = [btn(f"✏️ {lab[f]}", f"adm:vpn:agpe:{pid}:{f}", role="admin") for f in fields]
     rows += [btns[i:i + 2] for i in range(0, len(btns), 2)]
     rows.append(back_row("adm:vpn:agp"))
     await view(cb, plan_card(p), ikb(rows))
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("adm:vpn:agpo:"))
+async def cb_plan_addon_toggle(cb: CallbackQuery, shop: Shop):
+    pid = int(cb.data.split(":")[3])
+    p = await shop.db.get_agent_plan(pid)
+    if p:
+        await shop.db.update_agent_plan(pid, addon_on=0 if p.get("addon_on", 1) else 1)
+    await cb.answer("انجام شد")
+    await cb_plan(cb, shop)
+
+
+def _addon_label(a) -> str:
+    return (f"+{a['amount']:g} GB" if a["kind"] == "gb" else f"+{int(a['amount'])} روز")
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:agao:\d+$"))
+async def cb_addons(cb: CallbackQuery, shop: Shop):
+    pid = int(cb.data.split(":")[3])
+    p = await shop.db.get_agent_plan(pid)
+    if not p:
+        await cb.answer("پیدا نشد", show_alert=True)
+        return
+    adds = await shop.db.list_agent_addons(pid)
+    rows = [[btn(f"{'🟢' if a['active'] else '⚫️'} {_addon_label(a)} · {fmt(a['price'])}", f"adm:vpn:agav:{a['id']}", role="admin")] for a in adds]
+    rows.append([btn("➕ بسته‌ی حجم", f"adm:vpn:agaa:{pid}:gb", role="confirm"), btn("➕ بسته‌ی زمان", f"adm:vpn:agaa:{pid}:days", role="confirm")])
+    rows.append(back_row(f"adm:vpn:agpv:{pid}"))
+    await view(cb, f"📦 <b>بسته‌های افزودنی «{esc(p['title'])}»</b>\nوضعیت: {'✅ روشن' if p.get('addon_on', 1) else '⛔ خاموش (کاربر نمی‌بیند)'}\n"
+                   "هر بسته یک قیمت جدا دارد؛ مشتری از صفحه‌ی پنل نمایندگی خودش می‌خرد.", ikb(rows))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:agav:\d+$"))
+async def cb_addon(cb: CallbackQuery, shop: Shop):
+    aid = int(cb.data.split(":")[3])
+    a = await shop.db.get_agent_addon(aid)
+    if not a:
+        await cb.answer("پیدا نشد", show_alert=True)
+        return
+    rows = [[btn("⏯ فعال/غیرفعال", f"adm:vpn:agat:{aid}", role="action"), btn("🗑 حذف", f"adm:vpn:agad:{aid}", role="reject")],
+            [btn("✏️ قیمت", f"adm:vpn:agae:{aid}:price", role="admin"), btn("✏️ مقدار", f"adm:vpn:agae:{aid}:amount", role="admin")],
+            back_row(f"adm:vpn:agao:{a['plan_id']}")]
+    await view(cb, f"📦 <b>{_addon_label(a)}</b> — {'✅ فعال' if a['active'] else '⚫️ غیرفعال'}\nقیمت: {fmt(a['price'])} تومان", ikb(rows))
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("adm:vpn:agat:"))
+async def cb_addon_toggle(cb: CallbackQuery, shop: Shop):
+    aid = int(cb.data.split(":")[3])
+    a = await shop.db.get_agent_addon(aid)
+    if a:
+        await shop.db.update_agent_addon(aid, active=0 if a["active"] else 1)
+    await cb.answer("انجام شد")
+    await cb_addon(cb, shop)
+
+
+@router.callback_query(F.data.startswith("adm:vpn:agad:"))
+async def cb_addon_del(cb: CallbackQuery, shop: Shop):
+    aid = int(cb.data.split(":")[3])
+    a = await shop.db.get_agent_addon(aid)
+    await shop.db.delete_agent_addon(aid)
+    await cb.answer("حذف شد")
+    if a:
+        cb.data = f"adm:vpn:agao:{a['plan_id']}"
+        await cb_addons(cb, shop)
+
+
+@router.callback_query(F.data.startswith("adm:vpn:agaa:"))
+async def cb_addon_add(cb: CallbackQuery, state: FSMContext):
+    _, _, _, pid, kind = cb.data.split(":")
+    if kind not in ("gb", "days"):
+        await cb.answer()
+        return
+    await state.set_state(AG.wiz)
+    await state.update_data(flow="aoadd", pid=int(pid), kind=kind, i=0, steps=["a_amount_" + kind, "a_price"], vals={})
+    await cb.message.answer(f"<b>1/2</b> — {STEP['a_amount_' + kind][0]}", reply_markup=_ask_kb(f"adm:vpn:agao:{pid}"))
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("adm:vpn:agae:"))
+async def cb_addon_edit(cb: CallbackQuery, state: FSMContext, shop: Shop):
+    _, _, _, aid, field = cb.data.split(":")
+    a = await shop.db.get_agent_addon(int(aid))
+    if not a or field not in ("price", "amount"):
+        await cb.answer()
+        return
+    key = "a_price" if field == "price" else ("a_amount_gb" if a["kind"] == "gb" else "a_amount_days")
+    await state.set_state(AG.wiz)
+    await state.update_data(flow="aoedit", oid=int(aid), field=field, key=key)
+    await cb.message.answer(STEP[key][0], reply_markup=_ask_kb(f"adm:vpn:agav:{aid}"))
     await cb.answer()
 
 
@@ -176,6 +272,36 @@ async def wiz_text(m: Message, shop: Shop, state: FSMContext):
         await shop.db.update_agent_plan(d["oid"], **{d["field"]: v})
         await m.answer("✅ ذخیره شد.", reply_markup=ikb([back_row(f"adm:vpn:agpv:{d['oid']}")]))
         return
+    if flow == "aoadd":
+        key = d["steps"][d["i"]]
+        try:
+            v = _val(key, m.text)
+        except ValueError as e:
+            await m.answer(f"❌ {e}")
+            return
+        vals = {**d["vals"], key: v}
+        if d["i"] == 0:
+            await state.update_data(vals=vals, i=1)
+            await m.answer(f"<b>2/2</b> — {STEP['a_price'][0]}", reply_markup=_ask_kb(f"adm:vpn:agao:{d['pid']}"))
+            return
+        amount = vals["a_amount_" + d["kind"]]
+        if amount <= 0:
+            await m.answer("❌ مقدار باید بیشتر از صفر باشد.")
+            return
+        await state.clear()
+        await shop.db.add_agent_addon(plan_id=d["pid"], kind=d["kind"], amount=amount, price=vals["a_price"])
+        await m.answer("✅ بسته ثبت شد.", reply_markup=ikb([back_row(f"adm:vpn:agao:{d['pid']}")]))
+        return
+    if flow == "aoedit":
+        try:
+            v = _val(d["key"], m.text)
+        except ValueError as e:
+            await m.answer(f"❌ {e}")
+            return
+        await state.clear()
+        await shop.db.update_agent_addon(d["oid"], **{d["field"]: v})
+        await m.answer("✅ ذخیره شد.", reply_markup=ikb([back_row(f"adm:vpn:agav:{d['oid']}")]))
+        return
     if flow == "plan":
         key = d["steps"][d["i"]]
         try:
@@ -228,11 +354,18 @@ async def wiz_text(m: Message, shop: Shop, state: FSMContext):
 AST = {"active": "🟢 فعال", "disabled": "⚫️ غیرفعال", "limited": "🟠 حجم تمام", "expired": "🔴 منقضی", "deleted": "🗑 حذف"}
 
 
+AG_FILTERS = [("all", "همه"), ("active", "🟢 فعال"), ("soon", "⚠️ رو به اتمام"), ("limited", "🟠 حجم تمام"), ("expired", "🔴 منقضی")]
+
+
 async def _agents(target, shop: Shop, status: str, page: int, q=""):
+    if status not in [f[0] for f in AG_FILTERS] + ["disabled"]:
+        status = "all"
     st = None if status == "all" else status
     total = await shop.db.count_agents(status=st, q=q)
     items = await shop.db.list_agents(status=st, q=q, limit=PER, offset=page * PER)
-    rows = [[btn(f"{AST.get(a['status'], a['status'])[:2]} {a['username']} · {a['user_id']}", f"adm:vpn:ag:{a['id']}", role="admin")] for a in items]
+    rows = [[btn(("✅ " if status == k else "") + lbl, f"adm:vpn:agl:{k}:0", role="admin") for k, lbl in AG_FILTERS[:3]],
+            [btn(("✅ " if status == k else "") + lbl, f"adm:vpn:agl:{k}:0", role="admin") for k, lbl in AG_FILTERS[3:]]]
+    rows += [[btn(f"{AST.get(a['status'], a['status'])[:2]} {a['username']} · {a['user_id']}", f"adm:vpn:ag:{a['id']}", role="admin")] for a in items]
     nav = []
     if page > 0:
         nav.append(btn("◀️", f"adm:vpn:agl:{status}:{page - 1}", role="back"))
@@ -242,7 +375,10 @@ async def _agents(target, shop: Shop, status: str, page: int, q=""):
         rows.append(nav)
     rows.append([btn("🔎 جستجو", "adm:vpn:agf", role="admin"), btn("🆕 ساخت برای کاربر", "adm:vpn:agn", role="admin")])
     rows.append(back_row("adm:vpn"))
-    text = f"🗂 <b>نماینده‌ها</b> ({total})" + (f" — جستجو: <code>{esc(q)}</code>" if q else "")
+    n_all = await shop.db.count_agents()
+    n_soon = await shop.db.count_agents(status="soon")
+    text = (f"🗂 <b>نماینده‌ها</b> ({total})" + (f" — جستجو: <code>{esc(q)}</code>" if q else "")
+            + f"\nکل: {n_all} | ⚠️ رو به اتمام: {n_soon}")
     if isinstance(target, CallbackQuery):
         await view(target, text, ikb(rows))
     else:

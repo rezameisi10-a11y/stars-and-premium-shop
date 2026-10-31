@@ -43,6 +43,8 @@ PAY_STATUS_FA = {"pending": N_("⏳ منتظر پرداخت"), "waiting_admin": 
                  "rejected": N_("❌ رد شد"), "expired": N_("⌛ منقضی"), "failed": N_("⚠️ ناموفق")}
 METHOD_FA = {"wallet": N_("کیف پول"), "card": N_("کارت به کارت"), "zarinpal": N_("درگاه بانکی"),
              "ton": N_("تون (TON)"), "usdt": N_("تتر (USDT TRC20)")}
+REJECT_REASONS = {"fake": N_("رسید جعلی/ساختگی بود"), "amount": N_("مبلغ واریزی کافی نبود"), "unclear": N_("رسید ناخوانا یا ناقص بود"),
+                  "notfound": N_("واریزی در حساب پیدا نشد"), "dup": N_("این رسید قبلاً استفاده شده بود")}
 KIND_FA = {"stars": N_("استارز"), "premium": N_("پریمیوم"), "gift": N_("گیفت"), "vpn": N_("VPN")}
 
 DISC_MSG = {
@@ -62,7 +64,7 @@ DISC_MSG = {
 # عملیات داخلی هر دکمه منوی اصلی ← callback_data
 MENU_CALLBACKS = {"stars": "cat:stars:0", "premium": "cat:premium:0", "gift": "cat:gift:0", "wallet": "wallet",
                   "orders": "orders", "referral": "referral", "rules": "rules", "support": "support", "admin": "adm:home",
-                  "lang": "lang", "vpn": "vpn", "vpn_my": "vpn:my", "ai": "ai:start"}
+                  "lang": "lang", "vpn": "vpn", "vpn_my": "vpn:my", "ai": "ai:start", "agent": "vpn:agh", "agent_my": "vpn:agl"}
 
 # ---------------------------------------------------------------- دسترسی ادمین‌ها
 PERMS = {
@@ -598,6 +600,10 @@ class Shop:
                 continue
             if it["action"] == "ai" and not self.ai.enabled():
                 continue
+            if it["action"] == "agent" and not (self.vpn.enabled() and await self.vpn.agents.available()):
+                continue
+            if it["action"] == "agent_my" and not (self.vpn.enabled() and await self.db.count_agents(user_id=uid)):
+                continue
             b = self._menu_button(it, lang)
             if b:
                 rows.setdefault(it["row_no"], []).append(b)
@@ -1007,6 +1013,20 @@ class Shop:
 
         raise ValueError(tr("روش پرداخت نامعتبر است."))
 
+    async def receipt_caption(self, p) -> str:
+        """متن رسید برای ادمین: مشخصات پرداخت + مشخصات کاربر (زیر رسید)."""
+        u = await self.db.get_user(p["user_id"]) or {}
+        st = await self.db.user_receipt_stats(p["user_id"])
+        name = esc(u.get("first_name") or "-")
+        who = f"{name} | " + (f"@{esc(u['username'])}" if u.get("username") else "—") + f" | <code>{p['user_id']}</code>"
+        joined = time.strftime("%Y-%m-%d", time.localtime(u["created_at"])) if u.get("created_at") else "-"
+        cap = (f"🧾 رسید کارت به کارت\nپرداخت P{p['id']} | مبلغ: {fmt(p['amount'])} تومان\n"
+               + (f"برای سفارش #{p['order_id']}" if p["order_id"] else "شارژ کیف پول")
+               + f"\n\n👤 {who}\n📅 عضویت: {joined} | 👛 موجودی: {fmt(u.get('balance') or 0)} تومان\n"
+               f"🛒 خرید موفق: {st['orders']} (جمع {fmt(st['spent'])} تومان) | رسید تأییدشده: {st['approved']} | ردشده: {st['rejected']}"
+               + ("\n⛔ این کاربر مسدود است." if u.get("banned") else ""))
+        return cap[:1020]
+
     async def submit_receipt(self, pid, file_id):
         await self.db.update_payment(pid, receipt_file_id=file_id, status="waiting_admin")
         p = await self.db.get_payment(pid)
@@ -1017,15 +1037,12 @@ class Shop:
     async def group_receipt(self, p):
         if not self.group.allowed("receipts"):
             return
-        caption = (f"🧾 رسید کارت به کارت\nپرداخت P{p['id']} | کاربر <code>{p['user_id']}</code>\nمبلغ: {fmt(p['amount'])} تومان\n"
-                   + (f"برای سفارش #{p['order_id']}" if p["order_id"] else "شارژ کیف پول"))
+        caption = await self.receipt_caption(p)
         kb = ikb([[btn("✅ تأیید", f"padm:ok:{p['id']}", role="confirm"), btn("❌ رد", f"padm:no:{p['id']}", role="reject")]])
         await self.group.post_photo("receipts", p["receipt_file_id"], caption, kb)
 
     async def send_receipt_to(self, chat_id, p):
-        caption = (f"🧾 رسید کارت به کارت\nپرداخت P{p['id']} | کاربر <code>{p['user_id']}</code>\n"
-                   f"مبلغ: {fmt(p['amount'])} تومان\n"
-                   + (f"برای سفارش #{p['order_id']}" if p["order_id"] else "شارژ کیف پول"))
+        caption = await self.receipt_caption(p)
         kb = ikb([[btn("✅ تأیید", f"padm:ok:{p['id']}", role="confirm"), btn("❌ رد", f"padm:no:{p['id']}", role="reject")]])
         try:
             await self.bot.send_photo(chat_id, p["receipt_file_id"], caption=caption, reply_markup=kb)
@@ -1257,15 +1274,26 @@ class Shop:
             return NW_("وضعیت سفارش اجازه بازگشت وجه نمی‌دهد.")
         return NW_("عملیات نامعتبر.")
 
-    async def admin_payment_action(self, act, pid, actor="admin") -> str:
+    @staticmethod
+    def reject_text(reason: str) -> str:
+        return REJECT_REASONS.get(reason, reason)
+
+    async def admin_payment_action(self, act, pid, actor="admin", reason: str = "") -> str:
+        """reason (فقط برای رد): کلید یکی از REJECT_REASONS یا متن آزاد؛ برای کاربر ارسال می‌شود."""
         p = await self.db.get_payment(pid)
         if not p:
             return NW_("پرداخت پیدا نشد.")
         await self.db.log(actor, f"payment_{act}", f"P{pid}")
         if act == "ok":
             return NW_("✅ تأیید و پردازش شد.") if await self.confirm_payment(pid, ref=f"admin:{pid}") else NW_("این پرداخت قبلاً بررسی شده است.")
-        if await self.db.reject_payment(pid):
-            await self.say(p["user_id"], "❌ پرداخت شما (کد P{pid}) تأیید نشد. در صورت اشتباه با پشتیبانی تماس بگیرید.", pid=pid)
+        reason = (reason or "").strip()
+        if await self.db.reject_payment(pid, REJECT_REASONS.get(reason, reason)):
+            tr = await self.tr_for(p["user_id"])
+            why = tr(REJECT_REASONS[reason]) if reason in REJECT_REASONS else reason[:300]
+            if why:
+                await self.say(p["user_id"], "❌ پرداخت شما (کد P{pid}) تأیید نشد.\n📝 دلیل: {why}\nدر صورت اشتباه با پشتیبانی تماس بگیرید.", pid=pid, why=esc(why))
+            else:
+                await self.say(p["user_id"], "❌ پرداخت شما (کد P{pid}) تأیید نشد. در صورت اشتباه با پشتیبانی تماس بگیرید.", pid=pid)
             return NW_("❌ رد شد.")
         return NW_("این پرداخت قبلاً بررسی شده است.")
 

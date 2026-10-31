@@ -6,7 +6,7 @@ from aiohttp import web
 
 from db import USER_FILTERS, USER_SORTS
 from i18n import N_, _
-from service import METHOD_FA, PAY_STATUS_FA, STATUS_FA, Shop
+from service import METHOD_FA, PAY_STATUS_FA, REJECT_REASONS, STATUS_FA, Shop
 from ui import esc as e
 from ui import fmt
 from webkit import (PER_PAGE, T, actor, badge, can, csv_response, csrf, fdate, get, hidden, inp, need, page_no, pager, pform, post,
@@ -395,12 +395,17 @@ async def payments_list(request):
         act = ""
         if r["status"] in ("pending", "waiting_admin"):
             nx = hidden("next", request.path_qs)
+            ropts = [("", _("— دلیل رد —"))] + [(k, _(v)) for k, v in REJECT_REASONS.items()]
             act = (pform(request, f"/payments/{r['id']}/action", hidden("act", "ok") + nx + f"<button class='b sm ok'>{T('✅ تأیید')}</button>", confirm=_("این پرداخت تأیید و سفارش پردازش شود؟"))
-                   + pform(request, f"/payments/{r['id']}/action", hidden("act", "no") + nx + f"<button class='b sm err'>{T('❌ رد')}</button>", confirm=_("رد شود؟")))
+                   + pform(request, f"/payments/{r['id']}/action", hidden("act", "no") + nx + sel("reason", ropts, "") + f"<input name='custom' placeholder='{e(_('دلیل دلخواه'))}' maxlength='300' style='max-width:140px'>"
+                           + f"<button class='b sm err'>{T('❌ رد')}</button>", confirm=_("رد شود؟")))
         rec = f"<a href='/payments/{r['id']}/receipt' target='_blank'>🧾 {T('رسید')}</a>" if r["receipt_file_id"] else ""
         crypto = f" <span class='hint'>{r['crypto_amount']}</span>" if r["crypto_amount"] else ""
-        cells.append([f"P{r['id']}", user_link(r["user_id"]), (_("سفارش #{n}", n=r["order_id"]) if r["order_id"] else _("شارژ کیف پول")),
-                      e(_(METHOD_FA.get(r["method"], r["method"]))), fmt(r["amount"]) + crypto, status_badge(r["status"], pay=True),
+        st = await shop.db.user_receipt_stats(r["user_id"])
+        brief = (f"<br><span class='hint'>{e(_('خرید موفق'))}: {st['orders']} · {e(_('جمع'))}: {fmt(st['spent'])} · {e(_('رد'))}: {st['rejected']}</span>")
+        why = f"<br><span class='hint'>📝 {e(r['reject_reason'])}</span>" if r["status"] == "rejected" and r.get("reject_reason") else ""
+        cells.append([f"P{r['id']}", user_link(r["user_id"]) + brief, (_("سفارش #{n}", n=r["order_id"]) if r["order_id"] else _("شارژ کیف پول")),
+                      e(_(METHOD_FA.get(r["method"], r["method"]))), fmt(r["amount"]) + crypto, status_badge(r["status"], pay=True) + why,
                       fdate(r["created_at"]), rec + " " + act])
     opts = [("", _("همه"))] + [(k, _(v)) for k, v in PAY_STATUS_FA.items()]
     body = (f"<div class='card'><form class='row' method='get'>{sel('status', opts, status)}<button class='b pri'>{T('فیلتر')}</button>"
@@ -413,7 +418,8 @@ async def payments_list(request):
 async def payment_action(request):
     shop: Shop = request.app["shop"]
     d = await request.post()
-    res = await shop.admin_payment_action(d.get("act", ""), to_int(request.match_info["pid"]), actor=actor(request))
+    reason = (d.get("custom") or "").strip() or (d.get("reason") or "").strip()
+    res = await shop.admin_payment_action(d.get("act", ""), to_int(request.match_info["pid"]), actor=actor(request), reason=reason)
     raise redirect(safe_next(d.get("next"), "/payments"), ok=_(res))
 
 

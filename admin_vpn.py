@@ -698,10 +698,10 @@ async def cb_plan(cb: CallbackQuery, shop: Shop):
         return
     txt = (f"📦 <b>{esc(p['title'])}</b> — {'✅ فعال' if p['active'] else '⚫️ غیرفعال'}\nپنل: {esc(p['panel_name'])}\n"
            f"مدت: {p['days'] or '∞'} روز | حجم: {p['gb']:g} GB {'(نامحدود)' if not p['gb'] else ''} | محدودیت IP: {p['ip_limit'] or '∞'}\n"
-           f"قیمت: {fmt(p['price'])} | هزینه: {fmt(p['cost'])} | سود: {fmt(p['price'] - p['cost'])}\n"
+           f"قیمت: {fmt(p['price'])} تومان\n"
            f"نوع کاربر: <code>{p.get('utype') or 'f'}</code>" + (f"\n📝 {esc(p['note'])}" if p.get("note") else ""))
     rows = [[btn("⏯ فعال/غیرفعال", f"adm:vpn:ntg:{pid}", role="action"), btn("🗑 حذف", f"adm:vpn:ndel:{pid}", role="reject")],
-            [btn("✏️ قیمت", f"adm:vpn:ne:{pid}:price", role="admin"), btn("✏️ هزینه", f"adm:vpn:ne:{pid}:cost", role="admin")],
+            [btn("✏️ قیمت", f"adm:vpn:ne:{pid}:price", role="admin")],
             [btn("✏️ روز", f"adm:vpn:ne:{pid}:days", role="admin"), btn("✏️ حجم", f"adm:vpn:ne:{pid}:gb", role="admin")],
             [btn("✏️ عنوان", f"adm:vpn:ne:{pid}:title", role="admin"), btn("✏️ محدودیت IP", f"adm:vpn:ne:{pid}:ip_limit", role="admin")],
             [btn("✏️ نوع کاربر", f"adm:vpn:ne:{pid}:utype", role="admin"), btn("📝 یادداشت", f"adm:vpn:ne:{pid}:note", role="admin")],
@@ -730,10 +730,9 @@ async def cb_plan_del(cb: CallbackQuery, shop: Shop):
 
 PLAN_STEPS = [("title", "اسم پلن را بنویسید (مثلاً «۳۰ روزه ۵۰ گیگ»):", "text"), ("days", "چند روز؟ (۰ یعنی بدون انقضا):", "int"),
               ("gb", "چند گیگ؟ (۰ یعنی نامحدود):", "float"), ("price", "قیمت فروش به تومان:", "int"),
-              ("cost", "قیمت تمام‌شده برای شما به تومان (برای حساب سود؛ نمی‌دانید ۰):", "int"),
               ("ip_limit", "حداکثر چند نفر همزمان؟ (۰ یعنی نامحدود):", "int")]
 ADDON_STEPS = [("title", "اسم بسته را بنویسید (مثلاً «۱۰ گیگ اضافه»):", "text"), ("gb", "چند گیگ اضافه شود؟ (اگر فقط زمان است ۰):", "float"),
-               ("days", "چند روز اضافه شود؟ (اگر فقط حجم است ۰):", "int"), ("price", "قیمت به تومان:", "int"), ("cost", "قیمت تمام‌شده به تومان:", "int")]
+               ("days", "چند روز اضافه شود؟ (اگر فقط حجم است ۰):", "int"), ("price", "قیمت به تومان:", "int")]
 KIND_OF = {k: t for k, _, t in PLAN_STEPS + ADDON_STEPS} | {"utype": "utype", "note": "note"}
 PROMPT_OF = {k: p for k, p, _ in PLAN_STEPS + ADDON_STEPS} | {"utype": "نوع کاربر را بفرستید: f (عادی)، n (نماینده نوع ۲) یا n2 (نماینده نوع ۳):",
                                                                "note": "یادداشت محصول را بفرستید (در پیش‌فاکتور کاربر نشان داده می‌شود). برای پاک کردن «-» بفرستید:"}
@@ -934,9 +933,9 @@ async def cb_addon(cb: CallbackQuery, shop: Shop):
         await cb.answer("پیدا نشد", show_alert=True)
         return
     rows = [[btn("⏯ فعال/غیرفعال", f"adm:vpn:atg:{aid}", role="action"), btn("🗑 حذف", f"adm:vpn:adel:{aid}", role="reject")],
-            [btn("✏️ قیمت", f"adm:vpn:aq:{aid}:price", role="admin"), btn("✏️ هزینه", f"adm:vpn:aq:{aid}:cost", role="admin")],
+            [btn("✏️ قیمت", f"adm:vpn:aq:{aid}:price", role="admin")],
             back_row("adm:vpn:ad")]
-    await view(cb, f"➕ <b>{esc(a['title'])}</b> — {'✅ فعال' if a['active'] else '⚫️ غیرفعال'}\nحجم: {a['gb']:g} GB | زمان: {a['days']} روز\nقیمت: {fmt(a['price'])} | هزینه: {fmt(a['cost'])}", ikb(rows))
+    await view(cb, f"➕ <b>{esc(a['title'])}</b> — {'✅ فعال' if a['active'] else '⚫️ غیرفعال'}\nحجم: {a['gb']:g} GB | زمان: {a['days']} روز\nقیمت: {fmt(a['price'])} تومان", ikb(rows))
     await cb.answer()
 
 

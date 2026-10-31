@@ -431,7 +431,7 @@ class VPN:
             await self._fulfil_renew(o, int(kind[2]), int(kind[3]))
         elif kind[1] == "addon":
             await self._fulfil_addon(o, int(kind[2]), int(kind[3]))
-        elif kind[1] in ("agent", "arenew"):
+        elif kind[1] in ("agent", "arenew", "aaddon"):
             await self.agents.fulfil(o)
         else:
             raise VpnError("bad vpn ref")

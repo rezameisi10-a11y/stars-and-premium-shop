@@ -102,6 +102,8 @@ MIGRATIONS = [
     ("users", "personal_discount", "INTEGER NOT NULL DEFAULT 0"),
     ("users", "vpn_level", "TEXT NOT NULL DEFAULT 'f'"),
     ("vpn_plans", "utype", "TEXT NOT NULL DEFAULT 'f'"),
+    ("vpn_agent_plans", "addon_on", "INTEGER NOT NULL DEFAULT 1"),
+    ("payments", "reject_reason", "TEXT"),
     ("orders", "orig_amount", "INTEGER"),
     ("orders", "discount_code", "TEXT"),
     ("orders", "cost", "INTEGER NOT NULL DEFAULT 0"),
@@ -167,6 +169,8 @@ DEFAULT_MENU = [
     ("wallet", N_("👛 کیف پول + شارژ"), "", 2, 0),
     ("orders", N_("🧾 سفارش‌های من"), "", 2, 1),
     ("vpn_my", N_("📡 سرویس‌های VPN من"), "", 3, 0),
+    ("agent", N_("🧑‍💼 خرید پنل نمایندگی"), "", 3, 1),
+    ("agent_my", N_("🗂 پنل‌های نمایندگی من"), "", 3, 2),
     ("referral", N_("🤝 زیرمجموعه‌گیری"), "", 4, 0),
     ("rules", N_("📜 قوانین"), "", 4, 1),
     ("ai", N_("🤖 پشتیبان هوشمند"), "primary", 5, 2),
@@ -213,7 +217,7 @@ class DB(VpnDB):
                 "INSERT INTO menu_buttons(action,label,style,row_no,pos,builtin) VALUES('lang',?,'',?,0,1)",
                 ("🌐 زبان / Language", row))
         if (await self.one("SELECT COUNT(*) c FROM menu_buttons"))["c"] > 0:      # مهاجرت: دکمه‌های VPN برای نصب‌های قبلی
-            missing = [(a, lb, st) for a, lb, st, _r, _p in DEFAULT_MENU if a in ("vpn", "vpn_my", "ai")
+            missing = [(a, lb, st) for a, lb, st, _r, _p in DEFAULT_MENU if a in ("vpn", "vpn_my", "ai", "agent", "agent_my")
                        and not await self.one("SELECT 1 x FROM menu_buttons WHERE action=?", (a,))]
             if missing:
                 row = (await self.one("SELECT COALESCE(MAX(row_no),-1)+1 r FROM menu_buttons"))["r"]
@@ -724,9 +728,15 @@ class DB(VpnDB):
                 await self.conn.rollback()
                 return False
 
-    async def reject_payment(self, pid) -> bool:
-        cur = await self.run("UPDATE payments SET status='rejected' WHERE id=? AND status IN ('pending','waiting_admin')", (pid,))
+    async def reject_payment(self, pid, reason: str = "") -> bool:
+        cur = await self.run("UPDATE payments SET status='rejected', reject_reason=? WHERE id=? AND status IN ('pending','waiting_admin')", (reason[:300] or None, pid))
         return cur.rowcount == 1
+
+    async def user_receipt_stats(self, uid) -> dict:
+        """آمار کوتاه کاربر برای نمایش زیر رسید: سفارش‌های موفق، مجموع خرید، رسیدهای ردشده/تأییدشده قبلی."""
+        o = await self.one("SELECT COUNT(*) n, COALESCE(SUM(amount),0) s FROM orders WHERE user_id=? AND status='done'", (uid,))
+        r = await self.one("SELECT SUM(status='rejected') rej, SUM(status='paid') ok FROM payments WHERE user_id=? AND method='card'", (uid,))
+        return {"orders": o["n"], "spent": o["s"], "rejected": (r or {}).get("rej") or 0, "approved": (r or {}).get("ok") or 0}
 
     async def pending_payments(self, method=None, status="pending"):
         if method:

@@ -31,8 +31,8 @@ def plan_inputs(p=None) -> str:
             f"<label class='mini'>{T('حداقل مدت کاربر (روز)')}{inp('expire_min_days', p.get('expire_min_days', 0), '', 's', 'number')}</label> "
             f"<label class='mini'>{T('حداکثر مدت کاربر (روز)')}{inp('expire_max_days', p.get('expire_max_days', 0), '', 's', 'number')}</label> "
             f"<label class='mini'>{T('قیمت (ت)')}{inp('price', p.get('price', ''), '', 'm', 'number')}</label> "
-            f"<label class='mini'>{T('هزینه (ت)')}{inp('cost', p.get('cost', 0), '', 'm', 'number')}</label> "
             f"<label class='mini'>{T('ترتیب')}{inp('sort', p.get('sort', 100), '', 's', 'number')}</label> "
+            f"<label class='mini'>{T('حجم/زمان اضافه')}{sel('addon_on', [('1', _('روشن')), ('0', _('خاموش'))], str(p.get('addon_on', 1)))}</label> "
             f"<label class='mini'>{T('توضیح برای خریدار')}{inp('note', p.get('note', ''), '', 'l')}</label>")
 
 
@@ -47,7 +47,8 @@ def _read_plan(d) -> dict:
             "modify_users": 0 if str(d.get("modify_users", "1")) == "0" else 1,
             "data_min_gb": max(to_float(d.get("data_min_gb"), 0) or 0, 0), "data_max_gb": max(to_float(d.get("data_max_gb"), 0) or 0, 0),
             "expire_min_days": max(to_int(d.get("expire_min_days"), 0) or 0, 0), "expire_max_days": max(to_int(d.get("expire_max_days"), 0) or 0, 0),
-            "price": max(to_int(d.get("price"), 0) or 0, 0), "cost": max(to_int(d.get("cost"), 0) or 0, 0), "sort": to_int(d.get("sort"), 100) or 100,
+            "price": max(to_int(d.get("price"), 0) or 0, 0), "sort": to_int(d.get("sort"), 100) or 100,
+            "addon_on": 0 if str(d.get("addon_on", "1")) == "0" else 1,
             "note": str(d.get("note", "")).strip()[:200]}
 
 
@@ -61,11 +62,24 @@ async def plans_page(request):
         edit = pform(request, f"/vpn/agent-plans/{p['id']}/edit", plan_inputs(p) + f"<button class='b sm pri'>{T('ذخیره')}</button>", cls="")
         acts = (pform(request, f"/vpn/agent-plans/{p['id']}/toggle", f"<button class='b sm'>{T('غیرفعال') if p['active'] else T('فعال')}</button>")
                 + pform(request, f"/vpn/agent-plans/{p['id']}/delete", f"<button class='b sm err'>{T('حذف')}</button>", confirm=_("پلن حذف شود؟")))
+        adds = await shop.db.list_agent_addons(p["id"])
+        arows = "".join(
+            f"<tr><td>{'+' + gb_txt(a['amount']) + ' GB' if a['kind'] == 'gb' else '+' + str(int(a['amount'])) + ' ' + T('روز')}</td><td>{fmt(a['price'])}</td><td>"
+            + pform(request, f"/vpn/agent-addons/{a['id']}/edit", f"{inp('amount', gb_txt(a['amount']), '', 's')}{inp('price', a['price'], '', 's', 'number')}<button class='b sm pri'>{T('ذخیره')}</button>", cls="")
+            + pform(request, f"/vpn/agent-addons/{a['id']}/toggle", f"<button class='b sm'>{T('غیرفعال') if a['active'] else T('فعال')}</button>")
+            + pform(request, f"/vpn/agent-addons/{a['id']}/delete", f"<button class='b sm err'>{T('حذف')}</button>", confirm=_("بسته حذف شود؟"))
+            + "</td></tr>" for a in adds)
+        aadd = pform(request, f"/vpn/agent-plans/{p['id']}/addon-add",
+                     f"<label class='mini'>{T('نوع')}{sel('kind', [('gb', _('حجم (GB)')), ('days', _('زمان (روز)'))])}</label> "
+                     f"<label class='mini'>{T('مقدار')}{inp('amount', '', '', 's', required=True)}</label> "
+                     f"<label class='mini'>{T('قیمت (ت)')}{inp('price', '', '', 'm', 'number', required=True)}</label> "
+                     f"<button class='b sm pri'>➕ {T('افزودن بسته')}</button>", cls="")
+        packs = f"<details><summary>{T('بسته‌های افزودنی')} ({len(adds)})</summary><table>{arows}</table>{aadd}</details>"
         feats = (f"{p['days'] or '∞'} {T('روز')} · " + (ltr(gb_txt(p["traffic_gb"]) + " GB") if p["traffic_gb"] else T("نامحدود")) +
                  f" · {T('سقف کاربر')}: {p['max_users'] or '∞'}")
         rows.append([p["id"], f"<b>{e(p['title'])}</b><br><span class='hint'>{e(p['panel_name'])} · {e(p['panel_type'])}</span>", feats,
-                     f"{fmt(p['price'])}<br><span class='hint'>{T('سود')}: {fmt(p['price'] - p['cost'])}</span>",
-                     badge(_("فعال"), "ok") if p["active"] else badge(_("غیرفعال"), ""), f"<details><summary>{T('ویرایش')}</summary>{edit}</details>", acts])
+                     fmt(p['price']),
+                     badge(_("فعال"), "ok") if p["active"] else badge(_("غیرفعال"), ""), f"<details><summary>{T('ویرایش')}</summary>{edit}</details>" + packs, acts])
     add = (pform(request, "/vpn/agent-plans/add", f"<label class='mini'>{T('پنل')}{sel('panel_id', [(p['id'], p['name'] + ' · ' + p['type']) for p in panels])}</label> " + plan_inputs()
                  + f"<button class='b pri'>➕ {T('افزودن پلن نمایندگی')}</button>", cls="")
            if panels else f"<p class='hint'>{T('ابتدا یک پنل پاسارگاد، مرزبان یا مرزنشین اضافه کنید.')}</p>")
@@ -120,6 +134,47 @@ async def plan_edit(request):
         raise redirect("/vpn/agent-plans", err=_("عنوان را وارد کنید."))
     await shop.db.update_agent_plan(to_int(request.match_info["pid"]), **f)
     raise redirect("/vpn/agent-plans", ok=_("ذخیره شد."))
+
+
+@post("/vpn/agent-plans/{pid}/addon-add", "vpn")
+async def addon_add(request):
+    shop: Shop = request.app["shop"]
+    d = await request.post()
+    kind = "days" if d.get("kind") == "days" else "gb"
+    amount = to_float(d.get("amount"), 0) or 0
+    price = to_int(d.get("price"), 0) or 0
+    if amount <= 0 or price <= 0 or not await shop.db.get_agent_plan(to_int(request.match_info["pid"])):
+        raise redirect("/vpn/agent-plans", err=_("مقدار و قیمت را وارد کنید."))
+    await shop.db.add_agent_addon(plan_id=to_int(request.match_info["pid"]), kind=kind, amount=amount, price=price)
+    raise redirect("/vpn/agent-plans", ok=_("بسته ثبت شد."))
+
+
+@post("/vpn/agent-addons/{aid}/edit", "vpn")
+async def addon_edit(request):
+    shop: Shop = request.app["shop"]
+    d = await request.post()
+    amount, price = to_float(d.get("amount"), 0) or 0, to_int(d.get("price"), 0) or 0
+    if amount <= 0 or price <= 0:
+        raise redirect("/vpn/agent-plans", err=_("مقدار و قیمت را وارد کنید."))
+    await shop.db.update_agent_addon(to_int(request.match_info["aid"]), amount=amount, price=price)
+    raise redirect("/vpn/agent-plans", ok=_("ذخیره شد."))
+
+
+@post("/vpn/agent-addons/{aid}/toggle", "vpn")
+async def addon_toggle(request):
+    shop: Shop = request.app["shop"]
+    aid = to_int(request.match_info["aid"])
+    a = await shop.db.get_agent_addon(aid)
+    if a:
+        await shop.db.update_agent_addon(aid, active=0 if a["active"] else 1)
+    raise redirect("/vpn/agent-plans", ok=_("انجام شد."))
+
+
+@post("/vpn/agent-addons/{aid}/delete", "vpn")
+async def addon_delete(request):
+    shop: Shop = request.app["shop"]
+    await shop.db.delete_agent_addon(to_int(request.match_info["aid"]))
+    raise redirect("/vpn/agent-plans", ok=_("حذف شد."))
 
 
 @post("/vpn/agent-plans/{pid}/toggle", "vpn")

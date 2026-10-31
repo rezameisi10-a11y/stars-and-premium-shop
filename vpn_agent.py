@@ -126,10 +126,73 @@ class AgentSales:
         return await self.db.create_vpn_order(user_id, f"{N_('تمدید پنل نمایندگی')} {ag['username']} — {plan['title']}", plan["days"],
                                               f"vpn:arenew:{agent_id}:{plan_id}", price, plan["cost"])
 
+    # ------------------------------------------------------------------ حجم / زمان اضافه
+    async def addons_for(self, ag) -> list:
+        """بسته‌های افزودنی فعال پلن فعلی نماینده (اگر ادمین برای آن پلن خاموش کرده باشد، خالی)."""
+        if not ag.get("plan_id") or ag["status"] == "deleted":
+            return []
+        plan = await self.db.get_agent_plan(ag["plan_id"])
+        if not plan or not plan.get("addon_on", 1) or plan["panel_id"] != ag["panel_id"]:
+            return []
+        return [dict(a) for a in await self.db.list_agent_addons(plan["id"], active_only=True)]
+
+    @staticmethod
+    def addon_title(a, tr=None) -> str:
+        tt = tr or (lambda x, **k: x.format(**k) if k else x)
+        return tt("➕ {g} گیگابایت حجم", g=f"{a['amount']:g}") if a["kind"] == "gb" else tt("➕ {d} روز زمان", d=f"{int(a['amount'])}")
+
+    async def addon_order(self, user_id: int, agent_id: int, addon_id: int) -> int:
+        ag = await self.db.get_agent(agent_id)
+        ad = await self.db.get_agent_addon(addon_id)
+        if not ag or ag["user_id"] != user_id or ag["status"] == "deleted":
+            raise VpnError(N_("نماینده پیدا نشد."))
+        if not ad or not ad["active"] or ad["plan_id"] != ag["plan_id"] or ad["id"] not in [a["id"] for a in await self.addons_for(ag)]:
+            raise VpnError(N_("این بسته دیگر در دسترس نیست."))
+        if ad["kind"] == "gb" and not ag["total_bytes"]:
+            raise VpnError(N_("حجم این پنل نامحدود است؛ نیازی به خرید حجم نیست."))
+        user = await self.db.get_user(user_id)
+        price = self.shop._personal(ad["price"], user)
+        return await self.db.create_vpn_order(user_id, f"{ag['username']} — {self.addon_title(ad)}", int(ad["amount"]) if ad["kind"] == "days" else 0,
+                                              f"vpn:aaddon:{agent_id}:{addon_id}", price, ad["cost"])
+
+    async def _fulfil_addon(self, o, aid, addon_id):
+        ag = await self.db.get_agent(aid)
+        ad = await self.db.get_agent_addon(addon_id)
+        if not ag or not ad or ag["status"] == "deleted":
+            raise VpnError("agent/addon missing")
+        meta = json.loads(ag["meta"] or "{}")
+        if o["id"] not in meta.get("applied", []):
+            drv = await self.vpn.driver(ag["panel_id"])
+            f = {}
+            if ad["kind"] == "gb":
+                new_total = int(ag["total_bytes"] + ad["amount"] * GB)
+                await drv.admin_set_traffic(ag["username"], new_total / GB)
+                f["total_bytes"] = new_total
+                if ag["status"] == "limited" and ag["used_bytes"] < new_total:        # حجم تمام‌شده بود: دوباره فعال
+                    await drv.admin_set_enabled(ag["username"], True, ag["password"])
+                    f["status"] = "active"
+            else:
+                base = ag["expires_at"] if ag["expires_at"] > time.time() else int(time.time())
+                exp = base + int(ad["amount"]) * 86400
+                f["expires_at"] = exp
+                if ag["status"] == "expired":
+                    await drv.admin_set_enabled(ag["username"], True, ag["password"])
+                    f["status"] = "active"
+            meta["applied"] = (meta.get("applied", []) + [o["id"]])[-30:]
+            await self.db.update_agent(aid, notified="", meta=meta, last_sync=int(time.time()), **f)
+        ag = await self.db.get_agent(aid)
+        tr = await self.shop.tr_for(ag["user_id"])
+        await self.shop.safe_send(ag["user_id"], tr("➕ بسته‌ی اضافه روی پنل نمایندگی <code>{n}</code> اعمال شد.", n=esc(ag["username"])) + "\n\n" + await self.agent_text(ag, tr),
+                                  reply_markup=self.agent_kb(ag, tr), disable_web_page_preview=True)
+        await self.vpn._notify_admin(f"➕ افزودنی پنل نمایندگی\nسفارش #{o['id']} | {esc(ag['username'])} | {esc(self.addon_title(ad))}\nکاربر: <code>{o['user_id']}</code> | مبلغ: {fmt(o['amount'])} تومان")
+        await self.shop.finish_order(o["id"], f"aaddon #{aid}")
+
     # ------------------------------------------------------------------ تحویل
     async def fulfil(self, o: dict):
         ref = (o["ref"] or "").split(":")
-        if ref[1] == "agent":
+        if ref[1] == "aaddon":
+            await self._fulfil_addon(o, int(ref[2]), int(ref[3]))
+        elif ref[1] == "agent":
             await self._fulfil_new(o, int(ref[2]), ref[3] if len(ref) > 3 else None)
         elif ref[1] == "arenew":
             await self._fulfil_renew(o, int(ref[2]), int(ref[3]))
@@ -268,17 +331,89 @@ class AgentSales:
                             ikb([[btn(tr("🔄 تمدید"), f"vpn:agn:{ag['id']}", role="action")]]), n=esc(ag["username"]))
         await self.db.update_agent(ag["id"], notified="expired")
 
-    async def _remind(self, ag):
-        rd = self._int("vpn_agent_remind_days", 3)
+    # ------------------------------------------------------------------ تمدید خودکار (اختیاری، پیش‌فرض خاموش) / تمدید یک‌کلیکی
+    def _can_auto(self, ag) -> bool:
+        return bool(self._flag("vpn_autorenew_on", "1") and ag.get("plan_id") and ag["status"] != "deleted")
+
+    def is_auto(self, ag) -> bool:
+        try:
+            return bool(json.loads(ag.get("meta") or "{}").get("auto"))
+        except (ValueError, AttributeError):
+            return False
+
+    async def set_auto(self, ag, on: bool):
+        meta = json.loads(ag["meta"] or "{}")
+        if on:
+            meta["auto"] = 1
+        else:
+            meta.pop("auto", None)
+        await self.db.update_agent(ag["id"], meta=meta)
+
+    async def quick_kb(self, ag, tr):
+        rows = []
+        plan = await self.db.get_agent_plan(ag["plan_id"]) if ag["plan_id"] else None
+        if plan and plan["active"] and plan["panel_id"] == ag["panel_id"]:
+            user = await self.db.get_user(ag["user_id"])
+            rows.append([btn(f"{tr('⚡ تمدید همین پلن')} | {fmt(self.shop._personal(plan['price'], user))} {tr('ت')}", f"vpn:agq:{ag['id']}", role="action")])
+        rows.append([btn(tr("🔄 تمدید / مشاهده"), f"vpn:ag:{ag['id']}", role="action")])
+        return ikb(rows)
+
+    async def _auto_renew(self, ag, notified: set):
+        """True = تمدید شد · None = پیام خطا فرستاده شد (notified تغییر کرد) · False = کاری نشد."""
+        if not self.is_auto(ag) or not self._can_auto(ag) or ag["status"] not in ("active", "limited", "expired"):
+            return False
         left = days_left(ag["expires_at"])
-        notified = set(filter(None, (ag["notified"] or "").split(",")))
-        if ag["status"] != "active" or not rd or left is None or left > rd or "time" in notified:
+        if not (ag["status"] == "expired" or (left is not None and left <= max(self._int("vpn_autorenew_days", 1), 0))):
+            return False
+        uid = ag["user_id"]
+        plan = await self.db.get_agent_plan(ag["plan_id"])
+        tr = await self.shop.tr_for(uid)
+        kb = await self.quick_kb(ag, tr)
+        user = await self.db.get_user(uid)
+        if not plan or not plan["active"] or plan["panel_id"] != ag["panel_id"]:
+            if "autofail" not in notified:
+                await self.shop.say(uid, "⚠️ تمدید خودکار پنل نمایندگی <code>{n}</code> انجام نشد: پلن قبلی دیگر موجود نیست. لطفاً دستی تمدید کنید.", kb, n=esc(ag["username"]))
+                notified.add("autofail")
+                return None
+            return False
+        price = self.shop._personal(plan["price"], user)
+        if (user["balance"] or 0) < price:
+            if "autofail" not in notified:
+                await self.shop.say(uid, "⚠️ تمدید خودکار پنل نمایندگی <code>{n}</code> انجام نشد: موجودی کیف پول کافی نیست (نیاز: {p} تومان). کیف پول را شارژ کنید تا خودکار تمدید شود.", kb, n=esc(ag["username"]), p=fmt(price))
+                notified.add("autofail")
+                return None
+            return False
+        try:
+            oid = await self.renew_order(uid, ag["id"], plan["id"])
+        except VpnError:
+            return False
+        if await self.shop.pay_with_wallet(oid, uid):
+            await self.db.log("auto", "agent_autorenew", f"#{ag['id']} order {oid}")
+            return True
+        return False
+
+    async def _remind(self, ag):
+        if ag["status"] not in ("active", "limited", "expired"):
             return
-        tr = await self.shop.tr_for(ag["user_id"])
-        await self.shop.say(ag["user_id"], "⏳ فقط <b>{d}</b> روز تا پایان پنل نمایندگی <code>{n}</code> مانده است.",
-                            ikb([[btn(tr("🔄 تمدید"), f"vpn:agn:{ag['id']}", role="action")]]), d=left, n=esc(ag["username"]))
-        notified.add("time")
-        await self.db.update_agent(ag["id"], notified=",".join(sorted(notified)))
+        notified = set(filter(None, (ag["notified"] or "").split(",")))
+        before = set(notified)
+        r = await self._auto_renew(ag, notified)
+        if r:
+            return                                          # تمدید شد؛ پیام تمدید خودش فرستاده می‌شود
+        if ag["status"] == "active":
+            tr = await self.shop.tr_for(ag["user_id"])
+            kb = await self.quick_kb(ag, tr)
+            left, rd = days_left(ag["expires_at"]), self._int("vpn_agent_remind_days", 3)
+            if rd and left is not None and left <= rd and "time" not in notified:
+                await self.shop.say(ag["user_id"], "⏳ فقط <b>{d}</b> روز تا پایان پنل نمایندگی <code>{n}</code> مانده است.", kb, d=left, n=esc(ag["username"]))
+                notified.add("time")
+            pct = min(max(self._int("vpn_remind_usage", 90), 0), 100)
+            if pct and ag["total_bytes"] and ag["used_bytes"] * 100 >= ag["total_bytes"] * pct and "usage" not in notified:
+                await self.shop.say(ag["user_id"], "📉 مصرف پنل نمایندگی <code>{n}</code> به {p}٪ رسید ({u}). برای جلوگیری از قطع شدن، تمدید کنید.", kb,
+                                    n=esc(ag["username"]), p=pct, u=ltr(f"{fmt_gb(ag['used_bytes'])} / {fmt_gb(ag['total_bytes'])}"))
+                notified.add("usage")
+        if notified != before:
+            await self.db.update_agent(ag["id"], notified=",".join(sorted(notified)))
 
     async def _autodelete(self):
         d = self._int("vpn_agent_autodelete_days")
@@ -390,6 +525,8 @@ class AgentSales:
             pub = ""
         base = (pub or ag.get("panel_url") or "").rstrip("/")
         t = ag.get("panel_type") or ""
+        if t in ("pasarguard", "marzban", "marzneshin"):
+            base = re.sub(r"/dashboard(/.*)?$", "", base, flags=re.I).rstrip("/")
         return base + "/dashboard/" if t in ("pasarguard", "marzban", "marzneshin") else base
 
     async def agent_text(self, ag, tr) -> str:
@@ -406,11 +543,14 @@ class AgentSales:
             lines.append(tr("مصرف: {u}", u=ltr(f"{fmt_gb(ag['used_bytes'])} / ") + tr("نامحدود")))
         lines.append(tr("تعداد کاربران: {n}", n=ltr(f"{ag['users_count']} / {ag['max_users']}" if ag["max_users"] else str(ag["users_count"]))))
         lines.append(tr("زمان باقی‌مانده: {t}", t=tr("نامحدود") if left is None else tr("{d} روز", d=left)))
+        if self._can_auto(ag):
+            lines.append(tr("🔁 تمدید خودکار: {s}", s=tr("روشن") if self.is_auto(ag) else tr("خاموش")))
         return "\n".join(lines)
 
     def agent_kb(self, ag, tr, back="vpn:agl"):
         rows = [[btn(tr("🔄 تمدید"), f"vpn:agn:{ag['id']}", role="action"), btn(tr("♻️ بروزرسانی"), f"vpn:agr:{ag['id']}", role="action")],
-                [btn(tr("🔑 رمز جدید"), f"vpn:agw:{ag['id']}", role="action")],
+                [btn(tr("➕ حجم/زمان اضافه"), f"vpn:aga:{ag['id']}", role="action"), btn(tr("🔑 رمز جدید"), f"vpn:agw:{ag['id']}", role="action")],
+                *([[btn(tr("🔁 تمدید خودکار: روشن ✅") if self.is_auto(ag) else tr("🔁 تمدید خودکار: خاموش"), f"vpn:agt:{ag['id']}", role="action")]] if self._can_auto(ag) else []),
                 [btn(tr("🔙 پنل‌های نمایندگی من"), back, role="back")]]
         return ikb(rows)
 
