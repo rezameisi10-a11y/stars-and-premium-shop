@@ -8,7 +8,7 @@ from aiogram.types import CallbackQuery, Message
 from admin_common import ans, C2S, TXT, Adm, back_row, make_router, short, view
 from apiutil import D
 from service import Shop
-from settings_schema import FIELDS, GROUP_IDS, GROUPS, SAMPLE_VARS, TEXT_KEYS, select_options
+from settings_schema import FIELDS, GROUP_IDS, GROUPS, SAMPLE_VARS, TEXT_KEYS, option_label, select_options
 from ui import ROLE_LABELS, STYLE_DOTS, btn, esc, fmt, hint_tg, ikb
 
 router = make_router()
@@ -149,7 +149,7 @@ async def cb_field(cb: CallbackQuery, shop: Shop, state: FSMContext):
         return
     if typ.startswith("select:"):
         opts = select_options(typ)
-        kb = [[btn(("✔ " if s.get(key) == o else "") + o, f"adm:sv:{key}:{i}", role="admin")] for i, o in enumerate(opts)]
+        kb = [[btn(("✔ " if s.get(key) == o else "") + option_label(key, o), f"adm:sv:{key}:{i}", role="admin")] for i, o in enumerate(opts)]
         kb.append(back_row(f"adm:sg:{gid}:{page_of(gid, key)}"))
         await view(cb, f"<b>{esc(label)}</b>\n{hint_tg(hlp)}\n\nمقدار فعلی: <code>{esc(s.get(key, '') or '—')}</code>", ikb(kb))
         await cb.answer()

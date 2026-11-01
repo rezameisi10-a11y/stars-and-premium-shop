@@ -572,36 +572,42 @@ class VPN:
             await self.shop.notify_admins(text, perm="vpn", topic="sales")
 
     # ------------------------------------------------------------------ اکانت تست
-    async def _test_panel(self, user_id: int):
-        """پنلی که اکانت تست روی آن ساخته می‌شود: پنل انتخابی تنظیمات، وگرنه اولین پنل فعال و غیردستی که تست دارد."""
-        def ok(p):
-            return bool(p) and p["enabled"] and pflag(p, "test") and not hidden_for(p, user_id) and not self.is_down(p["id"])
-        async def usable(p):
-            if not ok(p):
-                return False
-            return await self.db.vpn_stock_free(p["id"], -1) > 0 if p["type"] == "manual" else True
-        pid = self._int("vpn_test_panel")
-        panel = await self.db.get_vpn_panel(pid) if pid else None
-        if panel and await usable(panel):
-            return panel
-        for p in await self.db.list_vpn_panels(only_enabled=True):
-            if await usable(p):
-                return p
-        return None
+    async def test_options(self, user_id: int) -> list:
+        """پنل‌هایی که کاربر می‌تواند روی آن‌ها اکانت تست بگیرد (تست هر پنل جداگونه روشن/خاموش می‌شود و هر کاربر روی هر پنل یک‌بار تست می‌گیرد)."""
+        if not self.enabled() or not self._flag("vpn_test_enabled"):
+            return []
+        only = self._int("vpn_test_panel")                 # قدیمی: اگر عدد بگذارید فقط همان پنل (اگر قابل‌استفاده نبود، فیلتر نادیده گرفته می‌شود)
+        out = []
+        for flt in ((only, 0) if only else (0,)):
+            for p in await self.db.list_vpn_panels(only_enabled=True):
+                if flt and p["id"] != flt:
+                    continue
+                if not (pflag(p, "test") and not hidden_for(p, user_id) and not self.is_down(p["id"])):
+                    continue
+                if p["type"] == "manual" and await self.db.vpn_stock_free(p["id"], -1) <= 0:
+                    continue
+                if await self.db.vpn_has_test(user_id, p["id"]):
+                    continue
+                out.append(p)
+            if out:
+                break
+        return out
 
     async def can_test(self, user_id: int) -> bool:
-        return (self.enabled() and self._flag("vpn_test_enabled") and not await self.db.vpn_has_test(user_id)
-                and await self._test_panel(user_id) is not None)
+        return bool(await self.test_options(user_id))
 
-    async def create_test(self, user_id: int) -> int:
+    async def create_test(self, user_id: int, panel_id: int | None = None) -> int:
         if not self.enabled() or not self._flag("vpn_test_enabled"):
             raise VpnError(N_("اکانت تست فعال نیست."))
         lock = self._test_locks.setdefault(user_id, asyncio.Lock())
         async with lock:                     # دو کلیک همزمان نباید دو اکانت تست بسازد
-            if await self.db.vpn_has_test(user_id):
-                raise VpnError(N_("شما قبلاً اکانت تست گرفته‌اید."))
-            panel = await self._test_panel(user_id)
+            opts = await self.test_options(user_id)
+            panel = next((p for p in opts if p["id"] == panel_id), None) if panel_id else (opts[0] if opts else None)
             if not panel:
+                if panel_id and await self.db.vpn_has_test(user_id, panel_id):
+                    raise VpnError(N_("شما قبلاً روی این پنل اکانت تست گرفته‌اید."))
+                if not opts and await self.db.vpn_has_test(user_id):
+                    raise VpnError(N_("شما قبلاً اکانت تست گرفته‌اید."))
                 raise VpnError(N_("اکانت تست در حال حاضر در دسترس نیست."))
             ex = pextra(panel)
             days = max(int(float(ex.get("test_days") or self._int("vpn_test_days", 1) or 1)), 1)

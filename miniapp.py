@@ -197,9 +197,9 @@ async def a_init(ctx: Ctx, d: dict) -> dict:
     ag_n = await shop.db.count_agents(user_id=ctx.uid)
     order, hidden = miniapp_ui.load_layout(s)
     avail = {"stars": "stars" in kinds, "premium": "premium" in kinds, "gift": "gift" in kinds, "vpn": vpn_on, "agent": ag_on,
-             "vpn_my": bool(vpn_on or vpn_n), "agent_my": bool(ag_on or ag_n)}
+             "vpn_my": bool(vpn_on or vpn_n), "vpn_test": bool(vpn_on and await shop.vpn.can_test(ctx.uid)), "agent_my": bool(ag_on or ag_n)}
     tiles = [k for k in order if k not in hidden and avail.get(k) and k in ("stars", "premium", "gift", "vpn", "agent")]
-    rows = [k for k in order if k not in hidden and avail.get(k) and k in ("vpn_my", "agent_my")]
+    rows = [k for k in order if k not in hidden and avail.get(k) and k in ("vpn_test", "vpn_my", "agent_my")]
     support = s["support_username"].lstrip("@")
     ui = {k: ctx.tr(k) for k in ui_strings()}
     mui = miniapp_ui.load(s)
@@ -442,7 +442,7 @@ async def a_vpn_plans(ctx: Ctx, d: dict) -> dict:
         raise ApiError(ctx.tr("فروش VPN فعال نیست."), 403)
     u = await shop.db.get_user(ctx.uid)
     plans = await shop.vpn.plans_for(u)
-    return {"plans": [_plan_dict(ctx, p) for p in plans], "test": await shop.vpn.can_test(ctx.uid), "ask_name": (shop.s.get("vpn_name_mode") or "random") == "ask",
+    return {"plans": [_plan_dict(ctx, p) for p in plans], "test": False, "ask_name": (shop.s.get("vpn_name_mode") or "random") == "ask",
             "discount": (u or {}).get("personal_discount") or 0}
 
 
@@ -454,9 +454,14 @@ async def a_vpn_order(ctx: Ctx, d: dict) -> dict:
     return await a_order_get(ctx, {"order_id": oid})
 
 
+async def a_vpn_test_options(ctx: Ctx, d: dict) -> dict:
+    opts = await ctx.shop.vpn.test_options(ctx.uid)
+    return {"panels": [{"id": p["id"], "name": p["name"]} for p in opts]}
+
+
 async def a_vpn_test(ctx: Ctx, d: dict) -> dict:
     try:
-        sid = await ctx.shop.vpn.create_test(ctx.uid)
+        sid = await ctx.shop.vpn.create_test(ctx.uid, int(d.get("panel_id") or 0) or None)
     except VpnError as e:
         raise _vpn_err(ctx, e)
     sv = await ctx.shop.db.get_vpn_service(sid)
@@ -469,7 +474,7 @@ async def a_vpn_test(ctx: Ctx, d: dict) -> dict:
 
 async def a_vpn_services(ctx: Ctx, d: dict) -> dict:
     rows = await ctx.shop.db.list_vpn_services(user_id=ctx.uid, limit=50)
-    return {"services": [_svc_dict(ctx, r) for r in rows], "test": await ctx.shop.vpn.can_test(ctx.uid)}
+    return {"services": [_svc_dict(ctx, r) for r in rows], "test": False}
 
 
 async def a_vpn_service(ctx: Ctx, d: dict) -> dict:
@@ -656,7 +661,7 @@ async def a_agent_send(ctx: Ctx, d: dict) -> dict:
     return {"ok": True, "message": ctx.tr("در چت ربات ارسال شد.")}
 
 
-ACTIONS = {"vpn_plans": a_vpn_plans, "vpn_order": a_vpn_order, "vpn_test": a_vpn_test, "vpn_services": a_vpn_services, "vpn_service": a_vpn_service,
+ACTIONS = {"vpn_plans": a_vpn_plans, "vpn_order": a_vpn_order, "vpn_test": a_vpn_test, "vpn_test_options": a_vpn_test_options, "vpn_services": a_vpn_services, "vpn_service": a_vpn_service,
            "vpn_renew_plans": a_vpn_renew_plans, "vpn_renew": a_vpn_renew, "vpn_addons": a_vpn_addons, "vpn_addon": a_vpn_addon,
            "vpn_revoke": a_vpn_revoke, "vpn_send": a_vpn_send,
            "agent_plans": a_agent_plans, "agent_order": a_agent_order, "agent_list": a_agent_list, "agent_get": a_agent_get,

@@ -9,7 +9,7 @@ from i18n import NW_, _
 from service import Shop
 from ui import esc as e
 from ui import fmt
-from vpn_service import STATUS_FA, bar, days_left, fmt_gb, ltr
+from vpn_service import PANEL_FLAG_TITLES, PANEL_FLAGS, STATUS_FA, bar, days_left, fmt_gb, ltr, pextra, pflag
 from webkit import (T, actor, badge, fdate, get, hidden, inp, layout, page_no, pager, pform, post, redirect, sel, tbl, to_float,
                     to_int, user_link)
 
@@ -70,15 +70,22 @@ async def vpn_home(request):
     rows = []
     for p in await shop.db.list_vpn_panels():
         edit = pform(request, f"/vpn/panels/{p['id']}/edit", panel_fields_form(p) + f"<button class='b sm pri'>{T('ذخیره')}</button>", cls="")
+        ex = pextra(p)
+        flags = "".join(f"<label class='hint' style='display:block'><input type='checkbox' name='f_{k}' {'checked' if pflag(p, k) else ''}> {e(_(PANEL_FLAG_TITLES[k]))}</label>" for k in PANEL_FLAGS)
+        feat = pform(request, f"/vpn/panels/{p['id']}/features", flags
+                     + f"<label class='mini'>{e(_('روز اکانت تست این پنل'))}{inp('test_days', ex.get('test_days', ''), _('خالی = تنظیم کلی'), 'm', 'number')}</label> "
+                     + f"<label class='mini'>{e(_('حجم (GB) اکانت تست این پنل'))}{inp('test_gb', ex.get('test_gb', ''), _('خالی = تنظیم کلی؛ ۰ نامحدود'), 'm', 'number')}</label> "
+                     + f"<button class='b sm pri'>{T('ذخیره')}</button>", cls="")
         acts = (pform(request, f"/vpn/panels/{p['id']}/test", f"<button class='b sm'>🔌 {T('تست اتصال')}</button>")
                 + pform(request, f"/vpn/panels/{p['id']}/toggle", f"<button class='b sm'>{T('غیرفعال') if p['enabled'] else T('فعال')}</button>")
                 + pform(request, f"/vpn/panels/{p['id']}/delete", f"<button class='b sm err'>{T('حذف')}</button>", confirm=_("پنل و پلن‌های آن حذف شود؟")))
         rows.append([p["id"], f"<b>{e(p['name'])}</b><br><span class='hint'>{e(dict(vpn_panels.TYPES).get(p['type'], p['type']))}</span>",
-                     badge(_("فعال"), "ok") if p["enabled"] else badge(_("غیرفعال"), ""), p["n_services"], f"<details><summary>{T('ویرایش')}</summary>{edit}</details>", acts])
+                     badge(_("فعال"), "ok") if p["enabled"] else badge(_("غیرفعال"), ""), p["n_services"], f"<details><summary>{T('ویرایش')}</summary>{edit}</details>"
+                     f"<details><summary>🎁 {T('اکانت تست و ویژگی‌ها')}</summary>{feat}</details>", acts])
     add = pform(request, "/vpn/panels/add", f"<label class='mini'>{T('نوع پنل')}{sel('type', [(k, l) for k, l in vpn_panels.TYPES])}</label> " + panel_fields_form()
                 + f"<button class='b pri'>➕ {T('افزودن پنل')}</button> <button class='b' formaction='/vpn/panels/probe'>🔌 {T('تست بدون ذخیره')}</button>", cls="")
     body = (tabs("panels") + cards
-            + f"<div class='card'><h2>🖧 {T('پنل‌های VPN')}</h2>{tbl([_('#'), _('پنل'), _('وضعیت'), _('سرویس‌ها'), _('ویرایش'), _('عملیات')], rows, _('هنوز پنلی ثبت نشده است.'))}</div>"
+            + f"<div class='card'><h2>🖧 {T('پنل‌های VPN')}</h2>{tbl([_('#'), _('پنل'), _('وضعیت'), _('سرویس‌ها'), _('ویرایش'), _('ویژگی‌ها'), _('عملیات')], rows, _('هنوز پنلی ثبت نشده است.'))}</div>"
             f"<div class='card'><h2>➕ {T('افزودن پنل')}</h2>{add}"
             f"<p class='hint'>{T('بعد از ثبت حتماً «تست اتصال» بزنید؛ نتیجه‌ی تست، اینباندها/گروه‌های پنل را هم نشان می‌دهد تا شناسه‌ی درست را وارد کنید. برای 3x-ui دقیقاً یک اینباند وارد کنید.')}</p>{type_help()}</div>")
     return await layout(request, _("فروش VPN"), body, "/vpn")
@@ -132,6 +139,31 @@ async def panel_edit(request):
     await shop.db.update_vpn_panel(pid, **f)
     await shop.vpn.forget(pid)
     await shop.db.log(actor(request), "vpn_panel_edit", f"#{pid}")
+    raise redirect("/vpn", ok=_("ذخیره شد."))
+
+
+@post("/vpn/panels/{pid}/features", "vpn")
+async def panel_features(request):
+    """ویژگی‌های هر پنل (اکانت تست، تمدید، …) و روز/حجم اکانت تست همان پنل."""
+    shop: Shop = request.app["shop"]
+    pid = to_int(request.match_info["pid"])
+    p = await shop.db.get_vpn_panel(pid)
+    if not p:
+        raise redirect("/vpn", err=_("پنل پیدا نشد."))
+    d = await request.post()
+    ex = pextra(p)
+    for k in PANEL_FLAGS:
+        ex[k] = 1 if d.get("f_" + k) else 0
+    for k in ("test_days", "test_gb"):
+        v = str(d.get(k, "")).strip()
+        if not v:
+            ex.pop(k, None)
+        else:
+            n = to_float(v, 0)
+            ex[k] = int(n) if k == "test_days" else n
+    await shop.db.update_vpn_panel(pid, extra=json.dumps(ex, ensure_ascii=False))
+    await shop.vpn.forget(pid)
+    await shop.db.log(actor(request), "vpn_panel_features", f"#{pid}")
     raise redirect("/vpn", ok=_("ذخیره شد."))
 
 

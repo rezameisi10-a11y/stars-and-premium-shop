@@ -9,7 +9,7 @@ from groupfeed import TOPICS as GROUP_TOPICS
 from apiutil import D
 from i18n import NW_, _
 from service import KIND_FA, Shop
-from settings_schema import FIELDS, GROUP_IDS, GROUPS, SAMPLE_VARS, render_template, select_options
+from settings_schema import FIELDS, GROUP_IDS, GROUPS, SAMPLE_VARS, render_template, option_label, select_options
 from ui import esc as e
 from ui import fmt, hint_html
 from webkit import (T, actor, badge, can, fdate, get, hidden, inp, layout, line_chart, need, pform, post, redirect, sel,
@@ -351,7 +351,7 @@ def field_html(shop: Shop, request, key, label, typ, hlp, val):
         opts = [(l["code"], f"{l['name']} ({l['code']})") for l in shop.langs if l[field]]
         return f"<div><label class='f'>{lab}</label>{sel(key, opts, val)}{h}</div>"
     if typ.startswith("select:"):
-        return f"<div><label class='f'>{lab}</label>{sel(key, [(o, o) for o in select_options(typ)], val)}{h}</div>"
+        return f"<div><label class='f'>{lab}</label>{sel(key, [(o, T(option_label(key, o))) for o in select_options(typ)], val)}{h}</div>"
     if typ == "textarea" or typ == "json":
         mono = " class='mono'" if typ == "json" else ""
         if is_secret(key) and val:

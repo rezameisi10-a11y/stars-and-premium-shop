@@ -176,6 +176,7 @@ DEFAULT_MENU = [
     ("vpn", N_("🛡 خرید VPN"), "success", 1, 1),
     ("wallet", N_("👛 کیف پول + شارژ"), "", 2, 0),
     ("orders", N_("🧾 سفارش‌های من"), "", 2, 1),
+    ("vpn_test", N_("🎁 اکانت تست رایگان"), "success", 7, 0),
     ("vpn_my", N_("📡 سرویس‌های VPN من"), "", 3, 0),
     ("agent", N_("🧑‍💼 خرید پنل نمایندگی"), "", 3, 1),
     ("agent_my", N_("🗂 پنل‌های نمایندگی من"), "", 3, 2),
@@ -225,7 +226,7 @@ class DB(VpnDB):
                 "INSERT INTO menu_buttons(action,label,style,row_no,pos,builtin) VALUES('lang',?,'',?,0,1)",
                 ("🌐 زبان / Language", row))
         if (await self.one("SELECT COUNT(*) c FROM menu_buttons"))["c"] > 0:      # مهاجرت: دکمه‌های VPN برای نصب‌های قبلی
-            missing = [(a, lb, st) for a, lb, st, _r, _p in DEFAULT_MENU if a in ("vpn", "vpn_my", "ai", "agent", "agent_my")
+            missing = [(a, lb, st) for a, lb, st, _r, _p in DEFAULT_MENU if a in ("vpn", "vpn_my", "ai", "agent", "agent_my", "vpn_test")
                        and not await self.one("SELECT 1 x FROM menu_buttons WHERE action=?", (a,))]
             if missing:
                 row = (await self.one("SELECT COALESCE(MAX(row_no),-1)+1 r FROM menu_buttons"))["r"]

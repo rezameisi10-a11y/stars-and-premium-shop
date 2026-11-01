@@ -47,20 +47,53 @@ async def _own(cb: CallbackQuery, shop: Shop, tr, sid):
 
 
 # ---------- خرید ----------
+def _by_panel(plans) -> dict:
+    out: dict = {}
+    for p in plans:
+        out.setdefault(p["panel_id"], []).append(p)
+    return out
+
+
+async def _show_plans(cb: CallbackQuery, shop: Shop, tr, plans, panel_name="", multi=False):
+    rows = [[btn(_plan_label(p, tr, p["user_price"]), f"vpn:p:{p['id']}", role="action")] for p in plans[:40]]
+    if multi:
+        rows.append([btn(tr("🔙 انتخاب لوکیشن/پنل"), "vpn", role="back")])
+    else:
+        rows.append([btn(tr("📡 سرویس‌های من"), "vpn:my", role="action")])
+        rows.append([btn(tr("🔙 منوی اصلی"), "menu", role="back")])
+    head = tr("🛡 <b>خرید VPN</b>") + (f" — <b>{esc(panel_name)}</b>" if panel_name else "") + "\n" + (tr("یکی از پلن‌ها را انتخاب کنید:") if plans else tr("در حال حاضر پلنی برای فروش موجود نیست."))
+    await cb.message.answer(head, reply_markup=ikb(rows))
+
+
 @router.callback_query(F.data == "vpn")
 async def vpn_home(cb: CallbackQuery, shop: Shop, tr):
+    """اول پنل‌ها (مثلاً مستقیم / تانل / مولتی‌لوکیشن) را نشان می‌دهد؛ با انتخاب هر کدام فقط پلن‌های همان پنل می‌آید. با یک پنل مستقیم پلن‌ها نمایش داده می‌شود."""
     if not shop.vpn.enabled():
         await cb.answer(tr("فروش VPN فعال نیست."), show_alert=True)
         return
     u = await shop.db.get_user(cb.from_user.id)
     plans = await shop.vpn.plans_for(u)
-    rows = [[btn(_plan_label(p, tr, p["user_price"]), f"vpn:p:{p['id']}", role="action")] for p in plans[:40]]
-    if await shop.vpn.can_test(cb.from_user.id):
-        rows.append([btn(tr("🎁 دریافت اکانت تست رایگان"), "vpn:test", role="action")])
+    groups = _by_panel(plans)
+    if len(groups) <= 1:
+        await _show_plans(cb, shop, tr, plans)
+        await cb.answer()
+        return
+    rows = [[btn(f"{g[0].get('panel_name') or pid} ({len(g)})", f"vpn:pn:{pid}", role="action")] for pid, g in groups.items()]
     rows.append([btn(tr("📡 سرویس‌های من"), "vpn:my", role="action")])
     rows.append([btn(tr("🔙 منوی اصلی"), "menu", role="back")])
-    head = tr("🛡 <b>خرید VPN</b>") + "\n" + (tr("یکی از پلن‌ها را انتخاب کنید:") if plans else tr("در حال حاضر پلنی برای فروش موجود نیست."))
-    await cb.message.answer(head, reply_markup=ikb(rows))
+    await cb.message.answer(tr("🛡 <b>خرید VPN</b>") + "\n" + tr("نوع سرویس / لوکیشن را انتخاب کنید:"), reply_markup=ikb(rows))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^vpn:pn:\d+$"))
+async def vpn_panel(cb: CallbackQuery, shop: Shop, tr):
+    pid = int(cb.data.split(":")[2])
+    u = await shop.db.get_user(cb.from_user.id)
+    plans = [p for p in await shop.vpn.plans_for(u) if p["panel_id"] == pid]
+    if not plans:
+        await cb.answer(tr("در حال حاضر پلنی برای فروش موجود نیست."), show_alert=True)
+        return
+    await _show_plans(cb, shop, tr, plans, plans[0].get("panel_name") or "", multi=True)
     await cb.answer()
 
 
@@ -98,16 +131,33 @@ async def vpn_name(m: Message, shop: Shop, state: FSMContext, tr):
 
 
 # ---------- اکانت تست ----------
-@router.callback_query(F.data == "vpn:test")
-async def vpn_test(cb: CallbackQuery, shop: Shop, tr):
+async def _give_test(cb: CallbackQuery, shop: Shop, tr, panel_id=None):
     try:
-        sid = await shop.vpn.create_test(cb.from_user.id)
+        sid = await shop.vpn.create_test(cb.from_user.id, panel_id)
     except VpnError as e:
         await cb.answer(tr(str(e)), show_alert=True)
         return
     svc = await shop.db.get_vpn_service(sid)
     await shop.vpn.send_service(cb.from_user.id, svc, new=True)
     await cb.answer()
+
+
+@router.callback_query(F.data.in_({"vpn:test", "vpn:tests"}))
+async def vpn_tests(cb: CallbackQuery, shop: Shop, tr):
+    """دکمه‌ی جدای «اکانت تست رایگان» در منوی اصلی: اگر فقط یک پنل تست دارد همان‌جا ساخته می‌شود، وگرنه هر پنل یک دکمه دارد."""
+    opts = await shop.vpn.test_options(cb.from_user.id)
+    if len(opts) > 1:
+        rows = [[btn("🎁 " + p["name"], f"vpn:test:{p['id']}", role="action")] for p in opts[:30]]
+        rows.append([btn(tr("🔙 منوی اصلی"), "menu", role="back")])
+        await cb.message.answer(tr("🎁 <b>اکانت تست رایگان</b>\nپنل (لوکیشن) مورد نظر را انتخاب کنید:"), reply_markup=ikb(rows))
+        await cb.answer()
+        return
+    await _give_test(cb, shop, tr, opts[0]["id"] if opts else None)
+
+
+@router.callback_query(F.data.regexp(r"^vpn:test:\d+$"))
+async def vpn_test_panel(cb: CallbackQuery, shop: Shop, tr):
+    await _give_test(cb, shop, tr, int(cb.data.split(":")[2]))
 
 
 # ---------- سرویس‌های من ----------

@@ -644,7 +644,7 @@ document.addEventListener("error", ev => {
   v.className = "pe"; v.src = im.src; v.muted = v.loop = v.autoplay = v.playsInline = true; v.setAttribute("playsinline", "");
   v.onerror = fb; im.replaceWith(v); v.play && v.play().catch(() => {});
 }, true);
-const TAB_PAGES = ["skins", "home", "products", "wallet", "referral", "catalog", "orders", "more", "lang", "support", "rules", "vpn", "vpn_my", "agent", "agent_my"];
+const TAB_PAGES = ["skins", "home", "products", "wallet", "referral", "catalog", "orders", "more", "lang", "support", "rules", "vpn", "vpn_my", "vpn_test", "agent", "agent_my"];
 function drawTabs() {
   const box = document.getElementById("tabs");
   const show = TAB_PAGES.includes(current.name);
@@ -680,6 +680,7 @@ VIEWS.home = async () => {
   if (I.texts.welcome) html += `<div class="card hint" style="color:var(--fg)">${safeHtml(I.texts.welcome)}</div>`;
   html += `<div class="grid ${nT === 3 ? "g3" : ""}">${tiles}</div><div class="sp"></div>`;
   (I.rows || []).forEach(k => {
+    if (k === "vpn_test") html += `<button class="row" data-go="vpn_test"${CS("vpn_test")}><span>${IC("vpn_test", "🎁")} ${esc(L("vpn_test", t("اکانت تست رایگان")))}</span><span class="sub">›</span></button><div class="sp"></div>`;
     if (k === "vpn_my") html += `<button class="row" data-go="vpn_my"${CS("vpn_my")}><span>${IC("vpn_my", "📡")} ${esc(L("vpn_my", t("سرویس‌های VPN من")))}</span><span class="sub">${I.vpn.mine ? num(I.vpn.mine) : ""} ›</span></button><div class="sp"></div>`;
     if (k === "agent_my") html += `<button class="row" data-go="agent_my"${CS("agent_my")}><span>${IC("agent_my", "🧑‍💼")} ${esc(L("agent_my", t("پنل‌های نمایندگی من")))}</span><span class="sub">${I.agent.mine ? num(I.agent.mine) : ""} ›</span></button><div class="sp"></div>`;
   });
@@ -850,22 +851,39 @@ function setupReceipt(r) {
 /* ------------ VPN ------------ */
 const LTR = x => "\u2066" + x + "\u2069";            // اعداد/واحد لاتین داخل متن راست‌به‌چپ جابه‌جا نشوند
 const planLine = p => `${p.days ? t("{d} روز", {d: p.days}) : t("بدون انقضا")} · ${p.gb ? LTR(p.gb + " GB") : t("نامحدود")}`;
-VIEWS.vpn = async () => {
+VIEWS.vpn = async (pid) => {
   const r = await api("vpn_plans");
-  let h = `<h1>${IC("kind_vpn", "🛡")} ${esc(L("kind_vpn", t("خرید VPN")))}</h1><p class="hint">${esc(t("یکی از پلن‌ها را انتخاب کنید:"))}</p>`;
+  const groups = {};
+  r.plans.forEach(p => { (groups[p.panel_id] = groups[p.panel_id] || []).push(p); });
+  const ids = Object.keys(groups);
+  const pick = pid && groups[pid] ? groups[pid] : (ids.length <= 1 ? r.plans : null);
+  let h = `<h1>${IC("kind_vpn", "🛡")} ${esc(L("kind_vpn", t("خرید VPN")))}${pick && ids.length > 1 ? " — " + esc(pick[0].panel) : ""}</h1>`;
   if (r.discount) h += `<div class="card">🎁 ${esc(t("تخفیف اختصاصی شما ({p}٪) در قیمت‌ها اعمال شده است.", {p: r.discount}))}</div>`;
-  if (!r.plans.length) h += `<div class="card hint">${esc(t("در حال حاضر پلنی برای فروش موجود نیست."))}</div>`;
-  h += r.plans.map(p => `<button class="row prod k-vpn" data-id="${p.id}"><i class="ri">🛡</i><span>${esc(p.title)}<div class="sub" style="direction:inherit">${esc(planLine(p))}</div></span><b>${esc(p.price.short)}</b></button>`).join("");
-  if (r.test) h += `<div class="sp"></div><button class="b sec" id="vt">🎁 ${esc(t("دریافت اکانت تست رایگان"))}</button>`;
+  if (!pick) {
+    h += `<p class="hint">${esc(t("نوع سرویس / لوکیشن را انتخاب کنید:"))}</p>` + ids.map(i => `<button class="row prod k-vpn" data-pn="${i}"><i class="ri">🛡</i><span>${esc(groups[i][0].panel || "#" + i)}<div class="sub">${num(groups[i].length)} ${esc(t("پلن"))}</div></span><b>›</b></button>`).join("");
+  } else {
+    h += `<p class="hint">${esc(t("یکی از پلن‌ها را انتخاب کنید:"))}</p>`;
+    if (!pick.length) h += `<div class="card hint">${esc(t("در حال حاضر پلنی برای فروش موجود نیست."))}</div>`;
+    h += pick.map(p => `<button class="row prod k-vpn" data-id="${p.id}"><i class="ri">🛡</i><span>${esc(p.title)}<div class="sub" style="direction:inherit">${esc(planLine(p))}</div></span><b>${esc(p.price.short)}</b></button>`).join("");
+  }
   h += `<button class="row" id="vm"><span>📡 ${esc(t("سرویس‌های من"))}</span><span>›</span></button>`;
   $app.innerHTML = h;
-  $app.querySelectorAll(".row.prod").forEach(b => b.onclick = () => {
+  $app.querySelectorAll("[data-pn]").forEach(b => b.onclick = () => go("vpn", b.dataset.pn));
+  $app.querySelectorAll(".row.prod[data-id]").forEach(b => b.onclick = () => {
     const p = r.plans.find(x => x.id == b.dataset.id);
     if (r.ask_name) go("vpn_name", p); else run(b, async () => { const o = await api("vpn_order", {plan_id: p.id}); go("order", o.id); });
   });
-  const vt = $app.querySelector("#vt");
-  if (vt) vt.onclick = () => run(vt, async () => { const x = await api("vpn_test"); I.vpn.test = false; go("vpn_service", x.id, true); });
   $app.querySelector("#vm").onclick = () => go("vpn_my");
+};
+VIEWS.vpn_test = async () => {
+  const r = await api("vpn_test_options");
+  const mk = pid => api("vpn_test", pid ? {panel_id: pid} : {}).then(x => { I.vpn.test = false; go("vpn_service", x.id, true); });
+  if (r.panels.length === 1) { try { await mk(r.panels[0].id); } catch (e) { handleErr(e); } return; }
+  let h = `<h1>${IC("vpn_test", "🎁")} ${esc(L("vpn_test", t("اکانت تست رایگان")))}</h1>`;
+  if (!r.panels.length) h += `<div class="card hint">${esc(t("اکانت تست در حال حاضر در دسترس نیست."))}</div>`;
+  else h += `<p class="hint">${esc(t("پنل (لوکیشن) مورد نظر را انتخاب کنید:"))}</p>` + r.panels.map(p => `<button class="row prod k-vpn" data-p="${p.id}"><i class="ri">🎁</i><span>${esc(p.name)}</span><b>›</b></button>`).join("");
+  $app.innerHTML = h;
+  $app.querySelectorAll("[data-p]").forEach(b => b.onclick = () => run(b, () => mk(+b.dataset.p)));
 };
 VIEWS.vpn_name = async (p) => {
   $app.innerHTML = `<h1>${esc(p.title)}</h1><div class="card">${esc(planLine(p))}<div><b>${esc(p.price.text)}</b></div></div>
@@ -883,12 +901,9 @@ VIEWS.vpn_my = async () => {
   h += r.services.map(s => `<button class="row svc" data-id="${s.id}"><span><div class="nm">${esc(s.name)}${s.is_test ? " 🎁" : ""}</div>${svcStatusBadge(s)}
     ${s.pending ? "" : `${usageBar(s)}<div class="sline"><span>${esc(LTR(s.used_text + " / " + (s.total_text || t("نامحدود"))))}</span><span>${s.days_left == null ? esc(t("نامحدود")) : esc(t("{d} روز", {d: s.days_left}))}</span></div>`}</span><b>›</b></button>`).join("");
   h += `<div class="sp"></div><button class="b" id="vb">🛒 ${esc(t("خرید سرویس جدید"))}</button>`;
-  if (r.test) h += `<button class="b sec" id="vt">🎁 ${esc(t("دریافت اکانت تست رایگان"))}</button>`;
   $app.innerHTML = h;
   $app.querySelectorAll(".row.svc").forEach(b => b.onclick = () => go("vpn_service", +b.dataset.id));
   $app.querySelector("#vb").onclick = () => go("vpn");
-  const vt = $app.querySelector("#vt");
-  if (vt) vt.onclick = () => run(vt, async () => { const x = await api("vpn_test"); go("vpn_service", x.id, true); });
 };
 VIEWS.vpn_service = async (id, refresh) => {
   const s = await api("vpn_service", {id, refresh: refresh ? 1 : 0});

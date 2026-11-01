@@ -9,7 +9,7 @@ BACK = "/settings?g=miniapp"
 
 
 LAYOUT_UI_KEY = {"stars": "kind_stars", "premium": "kind_premium", "gift": "kind_gift", "vpn": "kind_vpn", "agent": "kind_agent",
-                 "vpn_my": "vpn_my", "agent_my": "agent_my"}
+                 "vpn_test": "vpn_test", "vpn_my": "vpn_my", "agent_my": "agent_my"}
 DEFAULT_COLOR = "#6d7cff"
 
 

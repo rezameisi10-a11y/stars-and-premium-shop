@@ -64,7 +64,7 @@ DISC_MSG = {
 # عملیات داخلی هر دکمه منوی اصلی ← callback_data
 MENU_CALLBACKS = {"stars": "cat:stars:0", "premium": "cat:premium:0", "gift": "cat:gift:0", "wallet": "wallet",
                   "orders": "orders", "referral": "referral", "rules": "rules", "support": "support", "admin": "adm:home",
-                  "lang": "lang", "vpn": "vpn", "vpn_my": "vpn:my", "ai": "ai:start", "agent": "vpn:agh", "agent_my": "vpn:agl"}
+                  "lang": "lang", "vpn": "vpn", "vpn_my": "vpn:my", "ai": "ai:start", "agent": "vpn:agh", "agent_my": "vpn:agl", "vpn_test": "vpn:tests"}
 
 # ---------------------------------------------------------------- دسترسی ادمین‌ها
 PERMS = {
@@ -599,6 +599,8 @@ class Shop:
             if it["action"] in ("vpn", "vpn_my") and not self.vpn.enabled():
                 continue
             if it["action"] == "ai" and not self.ai.enabled():
+                continue
+            if it["action"] == "vpn_test" and not (self.vpn.enabled() and await self.vpn.can_test(uid)):
                 continue
             if it["action"] == "agent" and not (self.vpn.enabled() and await self.vpn.agents.available()):
                 continue
