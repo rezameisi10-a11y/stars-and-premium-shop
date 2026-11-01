@@ -308,7 +308,12 @@ class Marzban(BasePanel):
             info = await self._call("GET", "/system")
         except PanelError:
             pass
-        n = len(await self.options())
+        try:
+            n = len(await self.options())
+        except PanelError:
+            if not self._sample_names():
+                raise
+            n = 0                                    # نماینده‌ی محدود؛ با کانفیگ نمونه کار می‌کنیم
         return {"ok": True, "version": (info or {}).get("version", "") if isinstance(info, dict) else "", "users": (info or {}).get("total_user", "") if isinstance(info, dict) else "",
                 "options": n}
 
@@ -325,7 +330,29 @@ class Marzban(BasePanel):
             pass
         return {k: v for k, v in out.items() if v not in (None, "")}
 
+    def _sample_names(self) -> list:
+        """«کانفیگ نمونه»: مقدارهای اینباند که با @ شروع می‌شوند، نام یک کاربر موجود در پنل‌اند (نماینده‌ی محدود اجازه‌ی خواندن اینباندها را ندارد)."""
+        return [str(x)[1:] for x in (self.cfg.get("inbound_ids") or []) if str(x).startswith("@") and len(str(x)) > 1]
+
+    async def _sample_user(self, uname):
+        d = await self._call("GET", f"{self.USER}/{quote(uname)}")
+        if not isinstance(d, dict):
+            raise PanelError(f"کانفیگ نمونه‌ی «{uname}» روی پنل پیدا نشد")
+        return d
+
     async def _create_body(self, name, days, gb, note):
+        smp = self._sample_names()
+        if smp:
+            try:
+                u = await self._sample_user(smp[0])
+            except PanelError as e:
+                raise PanelError(f"کانفیگ نمونه‌ی «{smp[0]}» روی پنل خوانده نشد؛ نام را بررسی کنید و مطمئن شوید این کانفیگ را همین ادمین ساخته است ({str(e)[:80]})") from None
+            proxies = {k: ({"flow": self.ex["flow"]} if k == "vless" and self.ex.get("flow") else dict(v or {})) for k, v in (u.get("proxies") or {}).items()}
+            inbounds = {k: list(v) for k, v in (u.get("inbounds") or {}).items()}
+            if not proxies:
+                raise PanelError(f"کانفیگ نمونه‌ی «{smp[0]}» پروتکلی ندارد")
+            return {"username": name, "proxies": proxies, "inbounds": inbounds, "expire": exp_ts(days), "data_limit": gb_bytes(gb),
+                    "data_limit_reset_strategy": "no_reset", "status": "active", "note": note}
         raw = await self._inbounds_raw()
         want = {str(x) for x in (self.cfg.get("inbound_ids") or [])}
         proxies, inbounds = {}, {}
@@ -446,7 +473,12 @@ class PasarGuard(Marzban):
 
     async def test(self):
         await self._auth()
-        n = len(await self.options())
+        try:
+            n = len(await self.options())
+        except PanelError:
+            if not self._sample_names():
+                raise
+            n = 0                                    # ادمین محدود اجازه‌ی خواندن گروه‌ها را ندارد؛ با کانفیگ نمونه کار می‌کنیم
         ver = ""
         try:
             s = await self._call("GET", "/system")
@@ -455,13 +487,24 @@ class PasarGuard(Marzban):
             pass
         return {"ok": True, "version": ver, "options": n}
 
+    def _sample_names(self) -> list:
+        return [(x[1:] if x.startswith("@") else x) for x in (str(y) for y in (self.cfg.get("inbound_ids") or [])) if x and not x.isdigit() and x != "-"]
+
     def _expire_value(self, ts):
         return iso(ts) if ts else None
 
     async def _create_body(self, name, days, gb, note):
-        ids = [int(x) for x in (self.cfg.get("inbound_ids") or []) if str(x).isdigit()]
+        raw = [str(x) for x in (self.cfg.get("inbound_ids") or [])]
+        ids = [int(x) for x in raw if x.isdigit()]
+        for nm in [x[1:] if x.startswith("@") else x for x in raw if not x.isdigit() and x != "-"]:    # کانفیگ نمونه: گروه‌ها از روی آن کاربر کپی می‌شود
+            try:
+                u = await self._sample_user(nm)
+            except PanelError as e:
+                raise PanelError(f"کانفیگ نمونه‌ی «{nm}» روی پنل خوانده نشد؛ نام را بررسی کنید ({str(e)[:80]})") from None
+            ids += [int(g) for g in (u.get("group_ids") or []) if str(g).isdigit()]
+        ids = list(dict.fromkeys(ids))
         if not ids:
-            raise PanelError("حداقل یک گروه (group id) در تنظیم پنل انتخاب کنید")
+            raise PanelError("گروهی پیدا نشد: شناسه‌ی گروه یا نام یک کانفیگ نمونه (که گروه‌های دلخواه به آن وصل است) را در تنظیم پنل بدهید")
         return {"username": name, "status": "active", "expire": iso(exp_ts(days)), "data_limit": gb_bytes(gb),
                 "data_limit_reset_strategy": "no_reset", "group_ids": ids, "note": note}
 
@@ -541,6 +584,9 @@ class Marzneshin(Marzban):
     TOKEN = "/admins/token"
     USER = "/users"
 
+    def _sample_names(self) -> list:
+        return [(x[1:] if x.startswith("@") else x) for x in (str(y) for y in (self.cfg.get("inbound_ids") or [])) if x and not x.isdigit() and x != "-"]
+
     async def options(self):
         d = await self._call("GET", "/services")
         items = d.get("items") if isinstance(d, dict) else d
@@ -548,12 +594,26 @@ class Marzneshin(Marzban):
 
     async def test(self):
         await self._auth()
-        return {"ok": True, "version": "", "options": len(await self.options())}
+        try:
+            n = len(await self.options())
+        except PanelError:
+            if not self._sample_names():
+                raise
+            n = 0
+        return {"ok": True, "version": "", "options": n}
 
     async def _create_body(self, name, days, gb, note):
-        ids = [int(x) for x in (self.cfg.get("inbound_ids") or []) if str(x).isdigit()]
+        raw = [str(x) for x in (self.cfg.get("inbound_ids") or [])]
+        ids = [int(x) for x in raw if x.isdigit()]
+        for nm in self._sample_names():                 # کانفیگ نمونه: سرویس‌ها از روی آن کاربر کپی می‌شود
+            try:
+                u = await self._sample_user(nm)
+            except PanelError as e:
+                raise PanelError(f"کانفیگ نمونه‌ی «{nm}» روی پنل خوانده نشد؛ نام را بررسی کنید ({str(e)[:80]})") from None
+            ids += [int(g) for g in (u.get("service_ids") or []) if str(g).isdigit()]
+        ids = list(dict.fromkeys(ids))
         if not ids:
-            raise PanelError("حداقل یک سرویس (service id) در تنظیم پنل انتخاب کنید")
+            raise PanelError("سرویسی پیدا نشد: شناسه‌ی سرویس یا نام یک کانفیگ نمونه را در تنظیم پنل بدهید")
         b = {"username": name, "data_limit": gb_bytes(gb), "data_limit_reset_strategy": "no_reset", "service_ids": ids, "note": note}
         if days and int(days) > 0:
             b.update({"expire_strategy": "fixed_date", "expire_date": iso(exp_ts(days))})

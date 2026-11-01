@@ -16,7 +16,7 @@ from webkit import (T, actor, badge, fdate, get, hidden, inp, layout, page_no, p
 PER = 20
 PANEL_FIELDS = ("name", "url", "username", "password", "token", "sub_url", "inbound_ids", "capacity")
 FIELD_LABEL = {"name": NW_("نام نمایشی"), "url": NW_("آدرس پنل"), "username": NW_("نام کاربری"), "password": NW_("رمز عبور"),
-               "token": NW_("توکن / API key"), "sub_url": NW_("آدرس پایه‌ی لینک اشتراک"), "inbound_ids": NW_("اینباند/گروه/سرویس (با کاما)"),
+               "token": NW_("توکن / API key"), "sub_url": NW_("آدرس پایه‌ی لینک اشتراک"), "inbound_ids": NW_("اینباند/گروه/سرویس (با کاما) یا نام یک کانفیگ نمونه"),
                "capacity": NW_("ظرفیت (۰=نامحدود)")}
 ST_KIND = {"active": "ok", "disabled": "err", "limited": "warn", "expired": "err", "on_hold": "warn", "pending_manual": "warn", "deleted": ""}
 

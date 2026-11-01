@@ -176,6 +176,9 @@ GROUPS = [
         ("miniapp_enabled", N_("فعال بودن مینی‌اپ"), "bool", N_("نیاز به آدرس عمومی HTTPS (همان PUBLIC_URL/دامنه‌ی پنل). همه‌ی کارهای کاربر در ربات داخل مینی‌اپ هم هست و ادمین‌ها با یک دکمه وارد پنل کامل مدیریت می‌شوند")),
         ("miniapp_menu_button", N_("دکمه‌ی مینی‌اپ کنار کادر پیام (Menu Button)"), "bool", N_("به‌جای دکمه‌ی پیش‌فرض منوی ربات، دکمه‌ی باز کردن مینی‌اپ نشان داده می‌شود")),
         ("miniapp_title", N_("متن دکمه‌ی مینی‌اپ"), "text", N_("مثال: 🛍 فروشگاه")),
+        ("miniapp_skin", N_("ظاهر پیش‌فرض مینی‌اپ"), "select:a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p", N_("a فیروزه و زعفران · b نئون شب · c مینیمال روشن · d زرین لوکس · e آب‌نباتی شاد · f اقیانوس · g جنگل · h غروب · i مونوکروم · j یاقوت سرخ · ظاهرهای متحرک: k شفق قطبی · l ستاره‌باران · m موج · n مایع · o شهر سایبری · p شکوفه‌ی بارانی (ظاهرهای b تا e و k تا p حالت روز/شب ثابت دارند)")),
+        ("miniapp_skin_pick", N_("اجازه‌ی تغییر ظاهر و حالت شب/روز به کاربر"), "bool", N_("خاموش (پیش‌فرض): کاربر نمی‌تواند ظاهر یا حالت شب/روز را عوض کند و همه همان ظاهر انتخابی شما را می‌بینند. روشن: دکمه‌ی 🎨 و ☀️/🌙 نمایش داده می‌شود")),
+        ("miniapp_mode", N_("حالت شب/روز مینی‌اپ"), "select:auto|dark|light", N_("auto طبق تلگرام کاربر · dark همیشه شب · light همیشه روز (فقط برای ظاهرهایی که هر دو حالت دارند)")),
     ]),
     ("vpn", N_("فروش VPN"), "vpn", [
         ("vpn_enabled", N_("فعال بودن فروش VPN"), "bool", N_("پنل‌ها و پلن‌ها را از «🛡 فروش VPN» در ربات یا وب‌پنل بسازید")),
@@ -244,7 +247,7 @@ TEXT_KEYS = {"welcome_text", "rules_text", "support_text", "maintenance_text", "
 
 DEFAULTS = {
     "btn_ovr": "", "force_channels": "",
-    "miniapp_ui": "", "miniapp_layout": "", "miniapp_enabled": "1", "miniapp_menu_button": "1", "miniapp_title": "🛍 فروشگاه",
+    "miniapp_ui": "", "miniapp_layout": "", "miniapp_enabled": "1", "miniapp_menu_button": "1", "miniapp_title": "🛍 فروشگاه", "miniapp_skin": "a", "miniapp_skin_pick": "0", "miniapp_mode": "auto",
     "vpn_enabled": "1", "vpn_name_mode": "random", "vpn_prefix": "vpn", "vpn_test_enabled": "0", "vpn_test_days": "1",
     "vpn_test_gb": "0.5", "vpn_test_panel": "0", "vpn_stack": "1", "vpn_allow_addon": "1", "vpn_allow_revoke": "1",
     "vpn_remind_days": "3", "vpn_remind_usage": "90", "vpn_health_on": "1", "vpn_health_min": "5", "vpn_health_fails": "2", "vpn_health_autoclose": "0", "vpn_health_cpu": "90", "vpn_health_mem": "90", "vpn_health_disk": "90", "vpn_health_cap": "90", "vpn_down": "", "vpn_autorenew_on": "1", "vpn_autorenew_days": "1", "vpn_winback_on": "0", "vpn_winback_percent": "10", "vpn_winback_after": "2", "vpn_winback_valid": "3", "vpn_autodelete_days": "0", "vpn_sync_min": "10", "vpn_notify_admin": "1",

@@ -214,6 +214,8 @@ async def a_init(ctx: Ctx, d: dict) -> dict:
                  "discount": u.get("personal_discount") or 0, "is_admin": shop.is_admin(ctx.uid)},
         "lang": ctx.lang, "rtl": bool(lang_row["rtl"]) if lang_row else True, "langs": langs if len(langs) > 1 else [],
         "ui": ui, "shop_name": s.get("shop_name") or "", "kinds": kinds, "tiles": tiles, "rows": rows,
+        "skin": (s.get("miniapp_skin") or "a") if (s.get("miniapp_skin") or "a") in tuple("abcdefghijklmnop") else "a", "skin_pick": s.get("miniapp_skin_pick", "0") == "1",
+        "mode": (s.get("miniapp_mode") or "auto") if (s.get("miniapp_mode") or "auto") in ("auto", "dark", "light") else "auto",
         "kind_titles": {k: ctx.tr(KIND_TITLE[k]) for k in KIND_TITLE},
         "texts": {"welcome": (mui.get("welcome") or {}).get("t") or shop.text("welcome_text", ctx.lang), "rules": shop.text("rules_text", ctx.lang),
                   "support": shop.text("support_text", ctx.lang)},
