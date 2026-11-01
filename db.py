@@ -393,6 +393,8 @@ class DB(VpnDB):
                 raise
 
     async def deduct_balance(self, uid, amount, reason="") -> bool:
+        if int(amount) < 0:                       # مبلغ منفی نباید موجودی را زیاد کند
+            return False
         async with self.lock:
             try:
                 cur = await self.conn.execute("UPDATE users SET balance=balance-? WHERE id=? AND balance>=?",

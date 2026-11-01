@@ -479,7 +479,8 @@ async def a_vpn_services(ctx: Ctx, d: dict) -> dict:
 
 async def a_vpn_service(ctx: Ctx, d: dict) -> dict:
     sv = await _own_svc(ctx, d.get("id"))
-    if d.get("refresh") or time.time() - (sv["last_sync"] or 0) > 60:
+    fresh = time.time() - (sv["last_sync"] or 0)
+    if (d.get("refresh") and fresh > 10) or fresh > 60:                   # «تازه‌سازی» پشت‌سرهم به پنل فشار نیاورد
         try:
             sv = await ctx.shop.vpn.sync(sv, force=bool(d.get("refresh")))
         except Exception:  # noqa: BLE001
@@ -534,6 +535,9 @@ async def a_vpn_revoke(ctx: Ctx, d: dict) -> dict:
     sv = await _own_svc(ctx, d.get("id"))
     if ctx.shop.s.get("vpn_allow_revoke", "1") != "1":
         raise ApiError(ctx.tr("این قابلیت غیرفعال است."), 403)
+    wait = ctx.shop.vpn.revoke_wait(sv["id"])
+    if wait:
+        raise ApiError(ctx.tr("لطفاً {s} ثانیه‌ی دیگر دوباره تلاش کنید.", s=wait), 429)
     ok, _m = await ctx.shop.vpn.admin_action(sv["id"], "revoke", actor=f"user:{ctx.uid}")
     if not ok:
         raise ApiError(ctx.tr("انجام نشد؛ بعداً دوباره تلاش کنید."))
@@ -598,7 +602,8 @@ async def a_agent_list(ctx: Ctx, d: dict) -> dict:
 
 async def a_agent_get(ctx: Ctx, d: dict) -> dict:
     ag = await _own_agent(ctx, d.get("id"))
-    if d.get("refresh") or time.time() - (ag["last_sync"] or 0) > 60:
+    fresh = time.time() - (ag["last_sync"] or 0)
+    if (d.get("refresh") and fresh > 10) or fresh > 60:
         try:
             ag = await ctx.shop.vpn.agents.sync(ag, force=bool(d.get("refresh")))
         except Exception:  # noqa: BLE001

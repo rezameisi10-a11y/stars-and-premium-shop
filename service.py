@@ -150,6 +150,7 @@ class Shop:
         self.bot = bot
         self.db = db
         self.cfg = cfg
+        self._wallet_locks: dict[int, asyncio.Lock] = {}
         self.http: ClientSession | None = None
         self.bot_username = ""
         self._settings_cache: dict | None = None
@@ -1073,6 +1074,11 @@ class Shop:
         return True
 
     async def pay_with_wallet(self, oid, user_id) -> bool:
+        lk = self._wallet_locks.setdefault(user_id, asyncio.Lock())     # دو پرداخت همزمان یک کاربر پشت‌سرهم اجرا شوند (ضد دور زدن سقف کد تخفیف)
+        async with lk:
+            return await self._pay_with_wallet(oid, user_id)
+
+    async def _pay_with_wallet(self, oid, user_id) -> bool:
         o = await self.db.get_order(oid)
         if not o or o["user_id"] != user_id or o["status"] != "pending_payment":
             return False

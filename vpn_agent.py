@@ -7,6 +7,7 @@
 انقضای نماینده را خود ربات اجرا می‌کند (غیرفعال‌کردن ادمین در پنل)؛ پنل‌ها برای ادمین زمان انقضا ندارند.
 """
 import json
+import math
 import logging
 import re
 import secrets
@@ -104,6 +105,7 @@ class AgentSales:
     async def create_order(self, user_id: int, plan_id: int, name: str | None = None) -> int:
         if not self.enabled():
             raise VpnError(N_("فروش پنل نمایندگی فعال نیست."))
+        await self.vpn.guard_pending(user_id)
         plan = await self.db.get_agent_plan(plan_id)
         panel = await self.db.get_vpn_panel(plan["panel_id"]) if plan else None
         await self._check_plan(plan, panel)
@@ -121,6 +123,7 @@ class AgentSales:
             raise VpnError(N_("نماینده پیدا نشد."))
         if not plan or not plan["active"] or plan["panel_id"] != ag["panel_id"]:
             raise VpnError(N_("این پلن برای تمدید مجاز نیست."))
+        await self.vpn.guard_pending(user_id)
         user = await self.db.get_user(user_id)
         price = self.shop._personal(plan["price"], user)
         return await self.db.create_vpn_order(user_id, f"{N_('تمدید پنل نمایندگی')} {ag['username']} — {plan['title']}", plan["days"],
@@ -173,21 +176,36 @@ class AgentSales:
             out[k] = cfg
         return out
 
+    @staticmethod
+    def _amt_text(amount) -> str:
+        return f"{float(amount):.2f}".rstrip("0").rstrip(".") or "0"
+
     async def custom_order(self, user_id: int, agent_id: int, kind: str, amount: float) -> int:
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError):
+            raise VpnError(N_("مقدار خارج از بازه‌ی مجاز است.")) from None
+        if not math.isfinite(amount) or amount <= 0:             # NaN / بی‌نهایت / صفر / منفی
+            raise VpnError(N_("مقدار خارج از بازه‌ی مجاز است."))
+        await self.vpn.guard_pending(user_id)
         ag = await self.db.get_agent(agent_id)
         if not ag or ag["user_id"] != user_id or ag["status"] == "deleted":
             raise VpnError(N_("نماینده پیدا نشد."))
         cfg = (await self.custom_for(ag)).get(kind)
         if not cfg:
             raise VpnError(N_("این امکان دیگر در دسترس نیست."))
-        amount = round(float(amount), 2) if kind == "gb" else int(amount)
+        amount = round(amount, 2) if kind == "gb" else int(amount)
         if amount < cfg["min"] or amount > cfg["max"]:
             raise VpnError(N_("مقدار خارج از بازه‌ی مجاز است."))
+        if kind == "days" and not ag["expires_at"]:
+            raise VpnError(N_("این پنل تاریخ انقضا ندارد؛ نیازی به خرید زمان نیست."))
         user = await self.db.get_user(user_id)
         price = self.shop._personal(int(round(cfg["price"] * amount)), user)
+        if price <= 0:                                                 # گرد شدن به صفر = سفارش رایگان؛ ممنوع
+            raise VpnError(N_("مقدار خارج از بازه‌ی مجاز است."))
         title = self.addon_title({"kind": kind, "amount": amount})
         return await self.db.create_vpn_order(user_id, f"{ag['username']} — {title}", int(amount) if kind == "days" else 0,
-                                              f"vpn:aaddon:{agent_id}:c:{kind}:{amount:g}", price, 0)
+                                              f"vpn:aaddon:{agent_id}:c:{kind}:{self._amt_text(amount)}", price, 0)
 
     async def addon_order(self, user_id: int, agent_id: int, addon_id: int) -> int:
         ag = await self.db.get_agent(agent_id)
@@ -198,6 +216,9 @@ class AgentSales:
             raise VpnError(N_("این بسته دیگر در دسترس نیست."))
         if ad["kind"] == "gb" and not ag["total_bytes"]:
             raise VpnError(N_("حجم این پنل نامحدود است؛ نیازی به خرید حجم نیست."))
+        if ad["kind"] == "days" and not ag["expires_at"]:
+            raise VpnError(N_("این پنل تاریخ انقضا ندارد؛ نیازی به خرید زمان نیست."))
+        await self.vpn.guard_pending(user_id)
         user = await self.db.get_user(user_id)
         price = self.shop._personal(ad["price"], user)
         return await self.db.create_vpn_order(user_id, f"{ag['username']} — {self.addon_title(ad)}", int(ad["amount"]) if ad["kind"] == "days" else 0,

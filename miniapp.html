@@ -425,25 +425,28 @@ html[data-skin=k][data-theme] body::before,html[data-skin=k][data-theme] body::a
 html[data-skin=m][data-theme] body::before,html[data-skin=m][data-theme] body::after,html[data-skin=o][data-theme] body::before,html[data-skin=o][data-theme] body::after,
 html[data-skin=p][data-theme] body::before,html[data-skin=p][data-theme] body::after{display:block;content:"";position:fixed;z-index:-1;pointer-events:none;border-radius:0;filter:none;opacity:1;width:auto;height:auto;inset:auto;transform:none;animation:none}
 /* k — شفق قطبی: نوارهای نور که آرام موج می‌زنند */
-html[data-skin=k][data-theme] body{background:radial-gradient(70% 40% at 50% 110%,rgba(20,184,166,.18),transparent 70%),#050d14}
+html[data-skin=k][data-theme]{background:radial-gradient(70% 40% at 50% 110%,rgba(20,184,166,.18),transparent 70%),#050d14}
+html[data-skin=k][data-theme] body{background:none}
 html[data-skin=k][data-theme] body::before{top:-12vh;left:-25vw;width:150vw;height:62vh;filter:blur(46px);opacity:.62;
   background:linear-gradient(98deg,transparent 8%,#14b8a6 28%,#22d3ee 44%,#a78bfa 62%,#f0abfc 74%,transparent 92%);transform-origin:50% 100%;animation:kAur 15s ease-in-out infinite alternate;will-change:transform}
 html[data-skin=k][data-theme] body::after{top:6vh;left:-25vw;width:150vw;height:48vh;filter:blur(54px);opacity:.42;
   background:linear-gradient(82deg,transparent 12%,#34d399 30%,#818cf8 55%,#22d3ee 72%,transparent 90%);transform-origin:50% 0;animation:kAur 21s ease-in-out -7s infinite alternate-reverse;will-change:transform}
 @keyframes kAur{0%{transform:translateX(-7%) skewX(-8deg) scaleY(.85)}100%{transform:translateX(7%) skewX(9deg) scaleY(1.2)}}
 /* l — ستاره‌باران: دو لایه ستاره با چشمک و رانش آهسته */
-html[data-skin=l][data-theme] body{background:radial-gradient(90% 50% at 50% 0%,rgba(99,102,241,.22),transparent 70%),#04050f}
-html[data-skin=l][data-theme] body::before{inset:0;background-image:radial-gradient(1.5px 1.5px at 20px 30px,#fff,transparent),radial-gradient(1px 1px at 90px 120px,#cfe3ff,transparent),
-  radial-gradient(2px 2px at 160px 60px,#fff,transparent),radial-gradient(1px 1px at 230px 180px,#fff,transparent),radial-gradient(1.5px 1.5px at 60px 210px,#ffe9b8,transparent);background-size:260px 260px;animation:lTw 4.5s ease-in-out infinite alternate}
-html[data-skin=l][data-theme] body::after{inset:0;background-image:radial-gradient(2.5px 2.5px at 40px 60px,rgba(255,255,255,.95),transparent),radial-gradient(2px 2px at 210px 150px,#ffd9f0,transparent),radial-gradient(2.5px 2.5px at 330px 300px,#bfe0ff,transparent);background-size:420px 420px;animation:lDrift 140s linear infinite,lTw 7s ease-in-out -2s infinite alternate}
-@keyframes lTw{0%{opacity:.35}100%{opacity:1}}@keyframes lDrift{to{background-position:-420px 420px}}
+html[data-skin=l][data-theme]{background:radial-gradient(90% 50% at 50% 0%,rgba(99,102,241,.22),transparent 70%),#04050f}
+html[data-skin=l][data-theme] body{background:none}
+html[data-skin=l][data-theme] body::before{inset:0;background-image:radial-gradient(2.5px 2.5px at 20px 30px,#fff,transparent),radial-gradient(2px 2px at 90px 120px,#cfe3ff,transparent),
+  radial-gradient(3px 3px at 160px 60px,#fff,transparent),radial-gradient(2px 2px at 230px 180px,#fff,transparent),radial-gradient(2.5px 2.5px at 60px 210px,#ffe9b8,transparent);background-size:240px 240px;animation:lTw 2.6s ease-in-out infinite alternate,lDrift 90s linear infinite}
+html[data-skin=l][data-theme] body::after{inset:0;background-image:radial-gradient(2.5px 2.5px at 40px 60px,rgba(255,255,255,.95),transparent),radial-gradient(2px 2px at 210px 150px,#ffd9f0,transparent),radial-gradient(2.5px 2.5px at 330px 300px,#bfe0ff,transparent);background-size:380px 380px;animation:lDrift 55s linear infinite reverse,lTw 3.8s ease-in-out -1.2s infinite alternate}
+@keyframes lTw{0%{opacity:.2}100%{opacity:1}}@keyframes lDrift{to{background-position:-420px 420px}}
 /* m — موج: دو لایه موج در پایین صفحه با سرعت متفاوت */
-html[data-skin=m][data-theme] body{background:linear-gradient(180deg,#03111f 0%,#04243d 100%)}
+html[data-skin=m][data-theme]{background:linear-gradient(180deg,#03111f 0%,#04243d 100%)}
+html[data-skin=m][data-theme] body{background:none}
 html[data-skin=m][data-theme] body::before,html[data-skin=m][data-theme] body::after{left:0;right:0;bottom:0;width:100%;
   background:radial-gradient(70px 34px at 50% 0,var(--wv) 97%,transparent 100%) 0 100%/140px 70px repeat-x,linear-gradient(to top,var(--wv),transparent 85%)}
-html[data-skin=m][data-theme] body::before{--wv:rgba(14,165,233,.28);height:30vh;animation:mWave 16s linear infinite}
-html[data-skin=m][data-theme] body::after{--wv:rgba(34,211,238,.22);height:22vh;animation:mWave 10s linear infinite reverse}
-@keyframes mWave{to{background-position:140px 100%,0 0}}
+html[data-skin=m][data-theme] body::before{--wv:rgba(14,165,233,.5);height:42vh;animation:mWave 9s linear infinite,mBob 5s ease-in-out infinite alternate}
+html[data-skin=m][data-theme] body::after{--wv:rgba(34,211,238,.4);height:32vh;animation:mWave 6s linear infinite reverse,mBob 4s ease-in-out -2s infinite alternate-reverse}
+@keyframes mWave{to{background-position:140px 100%,0 0}}@keyframes mBob{0%{transform:translateY(0)}100%{transform:translateY(-16px)}}
 /* n — مایع: پس‌زمینه و کارت کیف پول با گرادیان زنده، برق ملایم روی کاشی‌ها */
 html[data-skin=n][data-theme] body{background:linear-gradient(120deg,#0b0712,#1d0c3d,#0b1d3d,#2c0b2c,#0b0712);background-size:320% 320%;animation:nFlow 20s ease infinite}
 html[data-skin=n][data-theme] .wcard,html[data-skin=n][data-theme] .hero{background:linear-gradient(120deg,var(--w1),var(--w2),var(--w3),var(--w1));background-size:300% 300%;animation:nFlow 9s ease infinite}
@@ -451,7 +454,8 @@ html[data-skin=n][data-theme] .tile::after{content:"";position:absolute;inset:0;
 html[data-skin=n][data-theme] .tile:nth-child(2)::after{animation-delay:.7s}html[data-skin=n][data-theme] .tile:nth-child(3)::after{animation-delay:1.4s}html[data-skin=n][data-theme] .tile:nth-child(4)::after{animation-delay:2.1s}
 @keyframes nFlow{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}@keyframes nSweep{0%,55%{transform:translateX(-130%)}100%{transform:translateX(130%)}}
 /* o — شهر سایبری: کف شبکه‌ای متحرک، خطوط اسکن و تپش نئون */
-html[data-skin=o][data-theme] body{background:radial-gradient(80% 40% at 50% 0%,rgba(185,103,255,.22),transparent 70%),#05060a}
+html[data-skin=o][data-theme]{background:radial-gradient(80% 40% at 50% 0%,rgba(185,103,255,.22),transparent 70%),#05060a}
+html[data-skin=o][data-theme] body{background:none}
 html[data-skin=o][data-theme] body::before{left:-60%;width:220%;bottom:0;height:46vh;transform:perspective(260px) rotateX(62deg);transform-origin:50% 100%;opacity:.55;
   background:repeating-linear-gradient(90deg,rgba(5,217,232,.7) 0 1px,transparent 1px 52px),repeating-linear-gradient(0deg,rgba(255,42,109,.7) 0 1px,transparent 1px 52px);
   -webkit-mask-image:linear-gradient(to top,#000,transparent 85%);mask-image:linear-gradient(to top,#000,transparent 85%);animation:oGrid 1.6s linear infinite}
@@ -459,11 +463,11 @@ html[data-skin=o][data-theme] body::after{inset:0;background:repeating-linear-gr
 html[data-skin=o][data-theme] .tile{animation:oPulse 3.2s ease-in-out infinite}html[data-skin=o][data-theme] .tile:nth-child(2){animation-delay:.5s}html[data-skin=o][data-theme] .tile:nth-child(3){animation-delay:1s}html[data-skin=o][data-theme] .tile:nth-child(4){animation-delay:1.5s}
 @keyframes oGrid{to{background-position:0 52px,0 52px}}@keyframes oPulse{0%,100%{box-shadow:0 14px 28px color-mix(in srgb,var(--tg,#fff) 40%,transparent),inset 0 1px 0 rgba(255,255,255,.4)}50%{box-shadow:0 0 34px color-mix(in srgb,var(--tg,#fff) 85%,transparent),inset 0 1px 0 rgba(255,255,255,.6)}}
 /* p — شکوفه‌ی بارانی: گلبرگ‌ها آرام می‌افتند */
-html[data-skin=p][data-theme] body{background:radial-gradient(80% 40% at 80% -5%,rgba(249,168,212,.2),transparent 70%),radial-gradient(70% 35% at 0% 105%,rgba(196,181,253,.16),transparent 70%),#0a1020}
-html[data-skin=p][data-theme] body::before{inset:0;background-image:radial-gradient(5px 3px at 20px 30px,rgba(249,168,212,.95),transparent 70%),radial-gradient(4px 3px at 130px 90px,rgba(255,255,255,.9),transparent 70%),radial-gradient(6px 4px at 220px 160px,rgba(244,143,177,.9),transparent 70%),radial-gradient(3px 3px at 70px 230px,rgba(255,255,255,.85),transparent 70%);background-size:300px 300px;animation:pFall 14s linear infinite}
-html[data-skin=p][data-theme] body::after{inset:0;opacity:.7;background-image:radial-gradient(8px 5px at 60px 40px,rgba(249,168,212,.9),transparent 70%),radial-gradient(7px 5px at 250px 190px,rgba(255,255,255,.8),transparent 70%),radial-gradient(9px 6px at 150px 300px,rgba(244,143,177,.85),transparent 70%);background-size:420px 420px;animation:pFall 26s linear -9s infinite,pSway 7s ease-in-out infinite alternate}
-@keyframes pFall{to{background-position:60px 300px}}@keyframes pSway{0%{transform:translateX(-14px)}100%{transform:translateX(14px)}}
-@media (prefers-reduced-motion:reduce){html[data-skin=k] body::before,html[data-skin=k] body::after,html[data-skin=l] body::before,html[data-skin=l] body::after,html[data-skin=m] body::before,html[data-skin=m] body::after,html[data-skin=n] body,html[data-skin=n] .wcard,html[data-skin=n] .hero,html[data-skin=n] .tile::after,html[data-skin=o] body::before,html[data-skin=o] .tile,html[data-skin=p] body::before,html[data-skin=p] body::after{animation:none!important}}
+html[data-skin=p][data-theme]{background:radial-gradient(80% 40% at 80% -5%,rgba(249,168,212,.2),transparent 70%),radial-gradient(70% 35% at 0% 105%,rgba(196,181,253,.16),transparent 70%),#0a1020}
+html[data-skin=p][data-theme] body{background:none}
+html[data-skin=p][data-theme] body::before{inset:0;background-image:radial-gradient(8px 5px at 20px 30px,rgba(249,168,212,1),transparent 72%),radial-gradient(6px 4px at 130px 90px,rgba(255,255,255,.95),transparent 72%),radial-gradient(9px 6px at 220px 160px,rgba(244,143,177,1),transparent 72%),radial-gradient(5px 4px at 70px 230px,rgba(255,255,255,.9),transparent 72%);background-size:300px 300px;animation:pFall 8s linear infinite}
+html[data-skin=p][data-theme] body::after{inset:0;opacity:.7;background-image:radial-gradient(8px 5px at 60px 40px,rgba(249,168,212,.9),transparent 70%),radial-gradient(7px 5px at 250px 190px,rgba(255,255,255,.8),transparent 70%),radial-gradient(9px 6px at 150px 300px,rgba(244,143,177,.85),transparent 70%);background-size:420px 420px;animation:pFall 14s linear -5s infinite,pSway 5s ease-in-out infinite alternate}
+@keyframes pFall{to{background-position:90px 300px}}@keyframes pSway{0%{transform:translateX(-14px)}100%{transform:translateX(14px)}}
 
 /* --- رنگ سفارشی دکمه‌ها (از پنل وب): رنگ کامل و پرانرژی، نه محو --- */
 html[data-theme] .tile[style*="--cc"],html[data-theme] .row[style*="--cc"],html[data-theme] .wbtn[style*="--cc"],html[data-theme] .stile[style*="--cc"]{

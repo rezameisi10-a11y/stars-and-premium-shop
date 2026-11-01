@@ -241,6 +241,7 @@ class VPN:
         self._last_health = 0.0
         self._health: dict = {}
         self._test_locks: dict[int, asyncio.Lock] = {}
+        self._revoke_ts: dict[int, float] = {}
         from vpn_agent import AgentSales          # import تأخیری (جلوگیری از چرخه)
         self.agents = AgentSales(self)
 
@@ -360,9 +361,27 @@ class VPN:
         return n
 
     # ------------------------------------------------------------------ ساخت سفارش (قبل از پرداخت)
+    MAX_PENDING = 15                                       # سقف سفارش‌های پرداخت‌نشده‌ی VPN برای هر کاربر (ضد اسپم)
+
+    async def guard_pending(self, user_id: int):
+        if await self.db.count_pending_vpn_orders(user_id) >= self.MAX_PENDING:
+            raise VpnError(N_("سفارش‌های پرداخت‌نشده‌ی زیادی دارید؛ ابتدا آن‌ها را پرداخت کنید یا کمی صبر کنید تا منقضی شوند."))
+
+    def revoke_wait(self, sid: int, cooldown: int = 120) -> int:
+        """ثانیه‌ی باقی‌مانده تا مجاز شدن «لینک جدید» (۰ = مجاز، و همین الان ثبت می‌شود)؛ جلوی اسپم و ضربه‌زدن به پنل را می‌گیرد."""
+        now = time.time()
+        left = int(self._revoke_ts.get(sid, 0) + cooldown - now)
+        if left > 0:
+            return left
+        self._revoke_ts[sid] = now
+        if len(self._revoke_ts) > 5000:
+            self._revoke_ts = {k: v for k, v in self._revoke_ts.items() if now - v < cooldown}
+        return 0
+
     async def create_order(self, user_id: int, plan_id: int, name: str | None = None) -> int:
         if not self.enabled():
             raise VpnError(N_("فروش VPN فعال نیست."))
+        await self.guard_pending(user_id)
         plan = await self.db.get_vpn_plan(plan_id)
         panel = await self.db.get_vpn_panel(plan["panel_id"]) if plan else None
         if not plan or not plan["active"] or not panel or not panel["enabled"]:
@@ -387,6 +406,7 @@ class VPN:
     async def renew_order(self, user_id: int, service_id: int, plan_id: int) -> int:
         if not self.enabled():
             raise VpnError(N_("فروش VPN فعال نیست."))
+        await self.guard_pending(user_id)
         svc = await self.db.get_vpn_service(service_id)
         plan = await self.db.get_vpn_plan(plan_id)
         if not svc or svc["user_id"] != user_id or svc["status"] in ("deleted", "pending_manual"):
@@ -414,6 +434,11 @@ class VPN:
             raise VpnError(N_("خرید بسته‌ی اضافه برای این سرویس فعال نیست."))
         if not ad or not ad["active"]:
             raise VpnError(N_("این بسته دیگر در دسترس نیست."))
+        await self.guard_pending(user_id)
+        if ad["gb"] > 0 and not svc["total_bytes"] and svc["status"] != "pending_manual":
+            raise VpnError(N_("حجم این سرویس نامحدود است؛ نیازی به خرید حجم نیست."))
+        if ad["days"] > 0 and not svc["expires_at"]:
+            raise VpnError(N_("این سرویس تاریخ انقضا ندارد؛ نیازی به خرید زمان نیست."))
         user = await self.db.get_user(user_id)
         price = self.shop._personal(ad["price"], user)
         return await self.db.create_vpn_order(user_id, f"{svc['name']} — {ad['title']}", ad["days"],

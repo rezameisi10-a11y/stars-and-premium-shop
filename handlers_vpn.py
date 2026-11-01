@@ -259,6 +259,10 @@ async def vpn_revoke(cb: CallbackQuery, shop: Shop, tr):
     svc = await _own(cb, shop, tr, cb.data.split(":")[2])
     if not svc or shop.s.get("vpn_allow_revoke", "1") != "1":
         return
+    wait = shop.vpn.revoke_wait(svc["id"])
+    if wait:
+        await cb.answer(tr("لطفاً {s} ثانیه‌ی دیگر دوباره تلاش کنید.", s=wait), show_alert=True)
+        return
     ok, msg = await shop.vpn.admin_action(svc["id"], "revoke", actor=f"user:{cb.from_user.id}")
     if not ok:
         await cb.answer(tr("انجام نشد؛ بعداً دوباره تلاش کنید."), show_alert=True)

@@ -306,8 +306,13 @@ class VpnDB:
         rev = await self.one("SELECT COUNT(*) n, COALESCE(SUM(amount),0) revenue, COALESCE(SUM(amount-cost),0) profit FROM orders WHERE kind='vpn' AND status='done'")
         return {**dict(r), "orders": rev["n"], "revenue": rev["revenue"], "profit": rev["profit"]}
 
+    async def count_pending_vpn_orders(self, user_id) -> int:
+        return (await self.one("SELECT COUNT(*) c FROM orders WHERE user_id=? AND kind='vpn' AND status='pending_payment'", (user_id,)))["c"]
+
     async def create_vpn_order(self, user_id, title, days, ref, amount, cost=0) -> int:
         now = int(time.time())
+        if int(amount) < 0:
+            raise ValueError("negative amount")
         cur = await self.run(
             "INSERT INTO orders(user_id,product_id,kind,title,qty,ref,target_id,target_username,amount,orig_amount,cost,created_at,updated_at) "
             "VALUES(?,NULL,'vpn',?,?,?,?,NULL,?,?,?,?,?)", (user_id, title, days, ref, user_id, amount, amount, cost, now, now))
