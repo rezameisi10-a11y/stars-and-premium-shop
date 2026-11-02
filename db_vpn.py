@@ -289,6 +289,9 @@ class VpnDB:
     async def count_vpn_users(self):
         return (await self.one("SELECT COUNT(DISTINCT user_id) c FROM vpn_services WHERE status!='deleted'"))["c"]
 
+    async def vpn_test_count(self, user_id, panel_id) -> int:
+        return (await self.one("SELECT COUNT(*) c FROM vpn_services WHERE user_id=? AND is_test=1 AND panel_id=?", (user_id, panel_id)))["c"]
+
     async def vpn_has_test(self, user_id, panel_id=None) -> bool:
         """کاربر روی این پنل (یا روی هر پنلی اگر panel_id نباشد) اکانت تست گرفته است؟"""
         if panel_id:

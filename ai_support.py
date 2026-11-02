@@ -26,6 +26,8 @@ COOLDOWN = 3             # فاصله‌ی حداقل بین دو پیام یک 
 URL_RE = re.compile(r"^https?://[^\s]+$", re.I)
 
 DEFAULT_BASE = {"openai": "https://api.openai.com/v1", "anthropic": "https://api.anthropic.com", "gemini": "https://generativelanguage.googleapis.com/v1beta"}
+GEMINI_FALLBACK = ["gemini-flash-latest", "gemini-flash-lite-latest"]
+RETRY_WAIT = (1.5, 3.0, 0)
 DEFAULT_MODEL = {"openai": "gpt-4o-mini", "anthropic": "claude-haiku-5-5", "gemini": "gemini-flash-latest"}
 
 SYSTEM = """You are the customer-support assistant of an online shop that runs inside a Telegram bot.
@@ -124,7 +126,7 @@ class AiSupport:
                             bits.append("note=" + p["note"].strip()[:200].replace("\n", " "))
                         lines.append("- " + " | ".join(bits))
                     flags = []
-                    if shop.vpn._flag("vpn_test_enabled"):
+                    if any(shop.vpn.test_on(p) for p in await shop.db.list_vpn_panels(only_enabled=True)):
                         flags.append("free test account available")
                     if shop.vpn._flag("vpn_allow_addon", "1"):
                         flags.append("users can buy extra traffic/days")
@@ -191,40 +193,61 @@ class AiSupport:
         self._last[uid] = now
 
     # ------------------------------------------------------------------ تماس با مدل
-    async def _call(self, system: str, msgs: list) -> tuple[str, int]:
+    def _models(self) -> list[str]:
+        """مدل انتخابی؛ اگر خالی بود (پیش‌فرض) برای Gemini چند مدل جایگزین هم امتحان می‌شود."""
+        m = (self.s.get("ai_model") or "").strip()
+        if m:
+            return [m]
+        return GEMINI_FALLBACK if self.provider() == "gemini" else [DEFAULT_MODEL[self.provider()]]
+
+    def _build(self, system: str, msgs: list, model: str, mt: int):
         key = self.s.get("ai_api_key", "").strip()
-        timeout = aiohttp.ClientTimeout(total=60)
+        if self.provider() == "gemini":
+            return (f"{self.base_url()}/models/{model}:generateContent",
+                    {"systemInstruction": {"parts": [{"text": system}]},
+                     "contents": [{"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]} for m in msgs],
+                     "generationConfig": {"maxOutputTokens": mt, "temperature": 0.3}},
+                    {"x-goog-api-key": key, "content-type": "application/json"})
+        if self.provider() == "anthropic":
+            return (self.base_url() + "/v1/messages", {"model": model, "max_tokens": mt, "system": system, "messages": msgs},
+                    {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"})
+        return (self.base_url() + "/chat/completions",
+                {"model": model, "max_tokens": mt, "temperature": 0.3, "messages": [{"role": "system", "content": system}] + msgs},
+                {"Authorization": f"Bearer {key}", "content-type": "application/json"})
+
+    async def _call(self, system: str, msgs: list) -> tuple[str, int]:
+        """با خطاهای موقت (۴۲۹/۵xx/قطع شبکه) تا ۳ بار تلاش می‌کند؛ اگر مدل پیش‌فرض Gemini در دسترس نبود مدل بعدی را امتحان می‌کند."""
+        key = self.s.get("ai_api_key", "").strip()
+        timeout = aiohttp.ClientTimeout(total=40)
         mt = max(min(self._int("ai_max_tokens", 600), 2000), 100)
         self.last_error = ""
-        if self.provider() == "gemini":
-            url = f"{self.base_url()}/models/{self.model()}:generateContent"
-            body = {"systemInstruction": {"parts": [{"text": system}]},
-                    "contents": [{"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]} for m in msgs],
-                    "generationConfig": {"maxOutputTokens": mt, "temperature": 0.3}}
-            headers = {"x-goog-api-key": key, "content-type": "application/json"}
-        elif self.provider() == "anthropic":
-            url = self.base_url() + "/v1/messages"
-            body = {"model": self.model(), "max_tokens": mt, "system": system, "messages": msgs}
-            headers = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
-        else:
-            base = self.base_url()
-            url = base + "/chat/completions"
-            body = {"model": self.model(), "max_tokens": mt, "temperature": 0.3,
-                    "messages": [{"role": "system", "content": system}] + msgs}
-            headers = {"Authorization": f"Bearer {key}", "content-type": "application/json"}
-        try:
-            async with self.shop.http.post(url, json=body, headers=headers, timeout=timeout) as r:
-                raw = await r.text()
-                if r.status != 200:
-                    self.last_error = f"HTTP {r.status}: {raw[:300]}".replace(key, "***") if key else f"HTTP {r.status}: {raw[:300]}"
-                    log.warning("ai http %s: %s", r.status, raw[:300])
-                    raise AiError(N_("پشتیبان هوشمند موقتاً در دسترس نیست؛ کمی بعد دوباره تلاش کنید."))
-                j = json.loads(raw)
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as e:
-            self.last_error = f"{type(e).__name__}: {e}"[:300]
-            log.warning("ai call failed: %s", e)
+        raw, status = "", 0
+        for model in self._models():
+            url, body, headers = self._build(system, msgs, model, mt)
+            for attempt in range(3):
+                raw, status = "", 0
+                try:
+                    async with self.shop.http.post(url, json=body, headers=headers, timeout=timeout) as r:
+                        status, raw = r.status, await r.text()
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    self.last_error = f"{type(e).__name__}: {e}"[:300]
+                    log.warning("ai call failed: %s", e)
+                    await asyncio.sleep(RETRY_WAIT[attempt])
+                    continue
+                if status == 200:
+                    break
+                self.last_error = (f"HTTP {status} ({model}): {raw[:300]}").replace(key, "***") if key else f"HTTP {status} ({model}): {raw[:300]}"
+                log.warning("ai http %s (%s): %s", status, model, raw[:300])
+                if status in (429, 500, 502, 503, 504) and attempt < 2:
+                    await asyncio.sleep(RETRY_WAIT[attempt])
+                    continue
+                break
+            if status == 200:
+                break                                       # در غیر این صورت مدل بعدی (فقط وقتی لیست جایگزین دارد)
+        if status != 200:
             raise AiError(N_("پشتیبان هوشمند موقتاً در دسترس نیست؛ کمی بعد دوباره تلاش کنید."))
         try:
+            j = json.loads(raw)
             if self.provider() == "gemini":
                 cand = (j.get("candidates") or [{}])[0]
                 text = "".join(p_.get("text", "") for p_ in (cand.get("content") or {}).get("parts", []))

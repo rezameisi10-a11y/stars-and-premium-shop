@@ -445,7 +445,7 @@ async def agent_card(shop: Shop, ag):
     u = await shop.db.get_user(ag["user_id"])
     left = days_left(ag["expires_at"])
     txt = (f"🧑‍💼 <b>{esc(ag['username'])}</b> (#{ag['id']})\nوضعیت: {AST.get(ag['status'], ag['status'])}\nپنل: {esc(ag.get('panel_name') or '-')} | پلن: {esc(ag['title'] or '-')}\n"
-           f"آدرس: <code>{esc(shop.vpn.agents.panel_link(ag))}</code>\nرمز: <code>{esc(ag['password'])}</code>\n"
+           f"آدرس: <code>{esc(shop.vpn.agents.panel_link(ag))}</code>\nنام کاربری: <code>{esc(ag['username'])}</code>\nرمز: <code>{esc(ag['password'])}</code>\n"
            f"کاربر: <code>{ag['user_id']}</code>" + (f" @{esc(u['username'])}" if u and u.get("username") else "") + "\n"
            f"مصرف: {fmt_gb(ag['used_bytes'])} / {fmt_gb(ag['total_bytes']) if ag['total_bytes'] else 'نامحدود'}  {bar(ag['used_bytes'], ag['total_bytes'])}\n"
            f"کاربران: {ag['users_count']}" + (f" / {ag['max_users']}" if ag["max_users"] else "") + f" | زمان باقی‌مانده: {'نامحدود' if left is None else f'{left} روز'}"

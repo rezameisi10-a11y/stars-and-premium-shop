@@ -197,7 +197,7 @@ async def a_init(ctx: Ctx, d: dict) -> dict:
     ag_n = await shop.db.count_agents(user_id=ctx.uid)
     order, hidden = miniapp_ui.load_layout(s)
     avail = {"stars": "stars" in kinds, "premium": "premium" in kinds, "gift": "gift" in kinds, "vpn": vpn_on, "agent": ag_on,
-             "vpn_my": bool(vpn_on or vpn_n), "vpn_test": bool(vpn_on and await shop.vpn.can_test(ctx.uid)), "agent_my": bool(ag_on or ag_n)}
+             "vpn_my": bool(vpn_on or vpn_n), "vpn_test": bool(vpn_on and await shop.vpn.test_visible(ctx.uid)), "agent_my": bool(ag_on or ag_n)}
     tiles = [k for k in order if k not in hidden and avail.get(k) and k in ("stars", "premium", "gift", "vpn", "agent")]
     rows = [k for k in order if k not in hidden and avail.get(k) and k in ("vpn_test", "vpn_my", "agent_my")]
     support = s["support_username"].lstrip("@")
@@ -214,7 +214,7 @@ async def a_init(ctx: Ctx, d: dict) -> dict:
                  "discount": u.get("personal_discount") or 0, "is_admin": shop.is_admin(ctx.uid)},
         "lang": ctx.lang, "rtl": bool(lang_row["rtl"]) if lang_row else True, "langs": langs if len(langs) > 1 else [],
         "ui": ui, "shop_name": s.get("shop_name") or "", "kinds": kinds, "tiles": tiles, "rows": rows,
-        "skin": (s.get("miniapp_skin") or "a") if (s.get("miniapp_skin") or "a") in tuple("abcdefghijklmnop") else "a", "skin_pick": s.get("miniapp_skin_pick", "0") == "1",
+        "skin": (s.get("miniapp_skin") or "a") if (s.get("miniapp_skin") or "a") in tuple("abcdefghijklmnopq") else "a", "skin_pick": s.get("miniapp_skin_pick", "0") == "1",
         "mode": (s.get("miniapp_mode") or "auto") if (s.get("miniapp_mode") or "auto") in ("auto", "dark", "light") else "auto",
         "kind_titles": {k: ctx.tr(KIND_TITLE[k]) for k in KIND_TITLE},
         "texts": {"welcome": (mui.get("welcome") or {}).get("t") or shop.text("welcome_text", ctx.lang), "rules": shop.text("rules_text", ctx.lang),
@@ -455,8 +455,8 @@ async def a_vpn_order(ctx: Ctx, d: dict) -> dict:
 
 
 async def a_vpn_test_options(ctx: Ctx, d: dict) -> dict:
-    opts = await ctx.shop.vpn.test_options(ctx.uid)
-    return {"panels": [{"id": p["id"], "name": p["name"]} for p in opts]}
+    ps = await ctx.shop.vpn.test_panels(ctx.uid)
+    return {"panels": [{"id": p["id"], "name": p["name"], "used": used} for p, used in ps]}
 
 
 async def a_vpn_test(ctx: Ctx, d: dict) -> dict:

@@ -144,15 +144,18 @@ async def _give_test(cb: CallbackQuery, shop: Shop, tr, panel_id=None):
 
 @router.callback_query(F.data.in_({"vpn:test", "vpn:tests"}))
 async def vpn_tests(cb: CallbackQuery, shop: Shop, tr):
-    """دکمه‌ی جدای «اکانت تست رایگان» در منوی اصلی: اگر فقط یک پنل تست دارد همان‌جا ساخته می‌شود، وگرنه هر پنل یک دکمه دارد."""
-    opts = await shop.vpn.test_options(cb.from_user.id)
-    if len(opts) > 1:
-        rows = [[btn("🎁 " + p["name"], f"vpn:test:{p['id']}", role="action")] for p in opts[:30]]
+    """دکمه‌ی جدای «اکانت تست رایگان»: همیشه دیده می‌شود. اگر چند پنل تست روشن است ابتدا انتخاب پنل؛ اگر کاربر سهمش را گرفته باشد پیام «استفاده کردید»."""
+    panels = await shop.vpn.test_panels(cb.from_user.id)
+    if not panels:
+        await cb.answer(tr("اکانت تست در حال حاضر در دسترس نیست."), show_alert=True)
+        return
+    if len(panels) > 1:
+        rows = [[btn(("✅ " if used else "🎁 ") + p["name"] + (" — " + tr("استفاده شده") if used else ""), f"vpn:test:{p['id']}", role="action")] for p, used in panels[:30]]
         rows.append([btn(tr("🔙 منوی اصلی"), "menu", role="back")])
         await cb.message.answer(tr("🎁 <b>اکانت تست رایگان</b>\nپنل (لوکیشن) مورد نظر را انتخاب کنید:"), reply_markup=ikb(rows))
         await cb.answer()
         return
-    await _give_test(cb, shop, tr, opts[0]["id"] if opts else None)
+    await _give_test(cb, shop, tr, panels[0][0]["id"])
 
 
 @router.callback_query(F.data.regexp(r"^vpn:test:\d+$"))

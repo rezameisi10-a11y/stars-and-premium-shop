@@ -40,8 +40,9 @@ FIELD_PROMPT = {
     "capacity": "حداکثر تعداد سرویس روی این پنل؟ (۰ یعنی نامحدود):",
     "test_days": "اکانت تست این پنل چند روز باشد؟ (برای تنظیمات کلی «-» بفرستید):",
     "test_gb": "اکانت تست این پنل چند گیگ باشد؟ (۰ نامحدود؛ برای تنظیمات کلی «-» بفرستید):",
+    "test_max": "هر کاربر روی این پنل چند اکانت تست بتواند بگیرد؟ (عدد، حداقل ۱؛ برای پیش‌فرض «-» بفرستید):",
 }
-OPTIONAL = {"sub_url", "inbound_ids", "test_days", "test_gb"}
+OPTIONAL = {"sub_url", "inbound_ids", "test_days", "test_gb", "test_max"}
 
 
 class AV(StatesGroup):
@@ -56,7 +57,6 @@ def _ask_kb(cancel="adm:vpn"):
 # قابلیت‌های کلی (جدول «عنوان | وضعیت | ⚙️» مثل میرزا)
 # (کلید، عنوان، نوع: bool=کلید روشن/خاموش | val=مقدار عددی/متنی، تنظیمات مرتبط با ⚙️)
 FEATURES = [("vpn_enabled", "فروش VPN", "bool", ["vpn_name_mode", "vpn_prefix", "vpn_sync_min"]),
-            ("vpn_test_enabled", "اکانت تست رایگان", "bool", ["vpn_test_days", "vpn_test_gb", "vpn_test_panel"]),
             ("vpn_allow_addon", "خرید حجم/زمان اضافه", "bool", []),
             ("vpn_allow_revoke", "ساخت لینک جدید توسط کاربر", "bool", []),
             ("vpn_stack", "جمع شدن روزهای باقی‌مانده در تمدید", "bool", []),
@@ -245,14 +245,14 @@ async def cb_panels(cb: CallbackQuery, shop: Shop):
     await cb.answer()
 
 
-def panel_card(p) -> str:
+def panel_card(p, shop) -> str:
     ex = pextra(p)
     return (f"🖧 <b>{esc(p['name'])}</b> — {'✅ فعال' if p['enabled'] else '⚫️ غیرفعال'}\n"
             f"نوع: {esc(TYPE_LABEL.get(p['type'], p['type']))}\n"
             f"آدرس: <code>{esc(p['url'] or '-')}</code>\nکاربر: <code>{esc(p['username'] or '-')}</code>\n"
             f"اینباند/گروه: <code>{esc(p['inbound_ids'] or '-')}</code>\nآدرس اشتراک: <code>{esc(p['sub_url'] or '-')}</code>\n"
             f"ظرفیت: {p['capacity'] or 'نامحدود'} | سرویس‌ها: {p.get('n_services', 0)}\n"
-            f"🎁 تست: {ex.get('test_days') or 'پیش‌فرض'} روز / {ex.get('test_gb') if ex.get('test_gb') not in (None, '') else 'پیش‌فرض'} گیگ"
+            f"🎁 تست: {'روشن' if shop.vpn.test_on(p) else 'خاموش'} | {shop.vpn.test_params(p)[0]} روز / {shop.vpn.test_params(p)[1]:g} گیگ / {shop.vpn.test_params(p)[2]} بار برای هر کاربر"
             + (f"\n🚫 مخفی برای {len(ex.get('hidden', []))} کاربر" if ex.get("hidden") else ""))
 
 
@@ -267,16 +267,15 @@ async def _show_panel(cb: CallbackQuery, shop: Shop, pid: int, fresh=False):
             [btn("👤 نام کاربری", f"adm:vpn:pe:{pid}:username", role="admin"), btn("🔑 رمز", f"adm:vpn:pe:{pid}:password", role="admin")],
             [btn("🗝 توکن", f"adm:vpn:pe:{pid}:token", role="admin"), btn("🌐 آدرس اشتراک", f"adm:vpn:pe:{pid}:sub_url", role="admin")],
             [btn("🔀 اینباند/گروه", f"adm:vpn:pe:{pid}:inbound_ids", role="admin"), btn("📊 ظرفیت", f"adm:vpn:pe:{pid}:capacity", role="admin")],
-            [btn("🎁 روز تست", f"adm:vpn:pe:{pid}:test_days", role="admin"), btn("🎁 حجم تست", f"adm:vpn:pe:{pid}:test_gb", role="admin")],
             [btn("🚫 مخفی کردن برای کاربر", f"adm:vpn:ph:{pid}", role="admin")]]
     if p["type"] == "manual":
         rows += [[btn("➕ اضافه کردن کانفیگ", f"adm:vpn:cfa:{pid}", role="confirm"), btn("📦 موجودی کانفیگ", f"adm:vpn:cfs:{pid}", role="action")],
                  [btn("🗑 حذف کانفیگ", f"adm:vpn:cfd:{pid}", role="reject"), btn("✏️ ویرایش کانفیگ", f"adm:vpn:cfe:{pid}", role="admin")]]
     rows += [[btn("🗑 حذف پنل", f"adm:vpn:pdel:{pid}", role="reject")], back_row("adm:vpn:pl")]
     if fresh:
-        await ans(cb.message, panel_card(p), ikb(rows))
+        await ans(cb.message, panel_card(p, shop), ikb(rows))
     else:
-        await view(cb, panel_card(p), ikb(rows))
+        await view(cb, panel_card(p, shop), ikb(rows))
 
 
 @router.callback_query(F.data.regexp(r"^adm:vpn:p:\d+$"))
@@ -311,9 +310,14 @@ async def _panel_features(cb: CallbackQuery, shop: Shop, pid: int):
         return
     rows = [[btn("عنوان", "adm:vpn:noop", role="back"), btn("وضعیت", "adm:vpn:noop", role="back")]]
     for key in PANEL_FLAGS:
-        rows.append([btn(PANEL_FLAG_TITLES[key], "adm:vpn:noop", role="back"), btn(onoff(pflag(p, key)), f"adm:vpn:pft:{pid}:{key}", role="action")])
+        on = shop.vpn.test_on(p) if key == "test" else pflag(p, key)
+        rows.append([btn(PANEL_FLAG_TITLES[key], "adm:vpn:noop", role="back"), btn(onoff(on), f"adm:vpn:pft:{pid}:{key}", role="action")])
+    days, gb, mx = shop.vpn.test_params(p)
+    rows += [[btn("🎁 مدت تست (روز)", "adm:vpn:noop", role="back"), btn(f"{days}", f"adm:vpn:pe:{pid}:test_days", role="admin")],
+             [btn("🎁 حجم تست (GB)", "adm:vpn:noop", role="back"), btn(f"{gb:g}" if gb else "نامحدود", f"adm:vpn:pe:{pid}:test_gb", role="admin")],
+             [btn("🎁 تعداد تست هر کاربر", "adm:vpn:noop", role="back"), btn(f"{mx}", f"adm:vpn:pe:{pid}:test_max", role="admin")]]
     rows.append(back_row(f"adm:vpn:p:{pid}"))
-    await view(cb, f"🧩 <b>قابلیت‌های پنل «{esc(p['name'])}»</b>\nبرای تغییر، روی وضعیت بزنید.", ikb(rows))
+    await view(cb, f"🧩 <b>قابلیت‌های پنل «{esc(p['name'])}»</b>\nبرای تغییر، روی وضعیت یا مقدار بزنید. تنظیمات اکانت تست این پنل هم همین‌جاست.", ikb(rows))
 
 
 @router.callback_query(F.data.startswith("adm:vpn:pf:"))
@@ -340,7 +344,7 @@ async def cb_panel_flag(cb: CallbackQuery, shop: Shop):
     if not p or key not in PANEL_FLAGS:
         await cb.answer("نامعتبر", show_alert=True)
         return
-    await _set_extra(shop, int(pid), **{key: 0 if pflag(p, key) else 1})
+    await _set_extra(shop, int(pid), **{key: 0 if (shop.vpn.test_on(p) if key == "test" else pflag(p, key)) else 1})
     await _panel_features(cb, shop, int(pid))
     await cb.answer("انجام شد")
 
@@ -432,7 +436,7 @@ async def cb_panel_del(cb: CallbackQuery, shop: Shop):
 
 
 # ---- ویرایش یک فیلد پنل
-EXTRA_FIELDS = {"test_days", "test_gb"}
+EXTRA_FIELDS = {"test_days", "test_gb", "test_max"}
 
 
 @router.callback_query(F.data.startswith("adm:vpn:pe:"))
@@ -510,9 +514,9 @@ def _conv(key, text):
     text = (text or "").strip()
     if key in OPTIONAL and text == "-":
         return ""
-    if key in ("test_days", "test_gb") and text == "-":
+    if key in ("test_days", "test_gb", "test_max") and text == "-":
         return ""
-    if key in ("capacity", "test_days", "test_gb"):
+    if key in ("capacity", "test_days", "test_gb", "test_max"):
         t = text.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٫", "0123456789.")).replace(",", "")
         try:
             v = float(t)
@@ -520,6 +524,8 @@ def _conv(key, text):
             raise ValueError("فقط عدد وارد کنید.") from None
         if v < 0:
             raise ValueError("عدد منفی مجاز نیست.")
+        if key == "test_max" and v < 1:
+            raise ValueError("حداقل ۱ باشد.")
         return int(v) if key != "test_gb" else v
     if not text:
         raise ValueError("مقدار خالی است.")

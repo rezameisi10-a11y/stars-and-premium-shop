@@ -411,6 +411,8 @@ class VPN:
         plan = await self.db.get_vpn_plan(plan_id)
         if not svc or svc["user_id"] != user_id or svc["status"] in ("deleted", "pending_manual"):
             raise VpnError(N_("سرویس پیدا نشد."))
+        if svc["is_test"]:
+            raise VpnError(N_("اکانت تست قابل تمدید نیست؛ سرویس جدید بخرید."))
         if not pflag(svc, "renew"):
             raise VpnError(N_("تمدید برای این سرویس فعال نیست."))
         panel = await self.db.get_vpn_panel(svc["panel_id"])
@@ -430,6 +432,8 @@ class VPN:
         ad = await self.db.get_vpn_addon(addon_id)
         if not svc or svc["user_id"] != user_id or svc["status"] in ("deleted", "pending_manual"):
             raise VpnError(N_("سرویس پیدا نشد."))
+        if svc["is_test"]:
+            raise VpnError(N_("برای اکانت تست نمی‌شود حجم/زمان اضافه خرید."))
         if not pflag(svc, "addon"):
             raise VpnError(N_("خرید بسته‌ی اضافه برای این سرویس فعال نیست."))
         if not ad or not ad["active"]:
@@ -597,46 +601,79 @@ class VPN:
             await self.shop.notify_admins(text, perm="vpn", topic="sales")
 
     # ------------------------------------------------------------------ اکانت تست
-    async def test_options(self, user_id: int) -> list:
-        """پنل‌هایی که کاربر می‌تواند روی آن‌ها اکانت تست بگیرد (تست هر پنل جداگونه روشن/خاموش می‌شود و هر کاربر روی هر پنل یک‌بار تست می‌گیرد)."""
-        if not self.enabled() or not self._flag("vpn_test_enabled"):
+    def test_on(self, p) -> bool:
+        """اکانت تست این پنل روشن است؟ مقدار خودِ پنل (وضعیت قابلیت‌ها) مهم است؛ اگر هنوز برای پنل تنظیم نشده، تنظیم قدیمی کلی (vpn_test_enabled / vpn_test_panel) خوانده می‌شود."""
+        ex = pextra(p)
+        if "test" in ex:
+            return str(ex["test"]) != "0"
+        if not self._flag("vpn_test_enabled"):
+            return False
+        only = self._int("vpn_test_panel")
+        return not only or only == p["id"]
+
+    def test_params(self, p) -> tuple:
+        """(روز، حجم GB، تعداد تست مجاز برای هر کاربر روی این پنل)"""
+        ex = pextra(p)
+        try:
+            days = max(int(float(ex.get("test_days") or self._int("vpn_test_days", 1) or 1)), 1)
+        except (TypeError, ValueError):
+            days = 1
+        try:
+            gb = float(ex.get("test_gb") if ex.get("test_gb") not in (None, "") else (self.s.get("vpn_test_gb") or 0))
+        except (TypeError, ValueError):
+            gb = 0.0
+        try:
+            mx = max(int(float(ex.get("test_max") or 1)), 1)
+        except (TypeError, ValueError):
+            mx = 1
+        return days, max(gb, 0.0), mx
+
+    async def test_panels(self, user_id: int) -> list:
+        """[(پنل, استفاده‌شده؟)] همه‌ی پنل‌هایی که اکانت تستشان روشن است و کاربر می‌بیند؛ حتی اگر کاربر سهمش را گرفته باشد (دکمه نمی‌پرد؛ فقط پیام «استفاده کردید»)."""
+        if not self.enabled():
             return []
-        only = self._int("vpn_test_panel")                 # قدیمی: اگر عدد بگذارید فقط همان پنل (اگر قابل‌استفاده نبود، فیلتر نادیده گرفته می‌شود)
         out = []
-        for flt in ((only, 0) if only else (0,)):
-            for p in await self.db.list_vpn_panels(only_enabled=True):
-                if flt and p["id"] != flt:
-                    continue
-                if not (pflag(p, "test") and not hidden_for(p, user_id) and not self.is_down(p["id"])):
-                    continue
-                if p["type"] == "manual" and await self.db.vpn_stock_free(p["id"], -1) <= 0:
-                    continue
-                if await self.db.vpn_has_test(user_id, p["id"]):
-                    continue
-                out.append(p)
-            if out:
-                break
+        for p in await self.db.list_vpn_panels(only_enabled=True):
+            if not (self.test_on(p) and pflag(p, "show") and not hidden_for(p, user_id) and not self.is_down(p["id"])):
+                continue
+            used = await self.db.vpn_test_count(user_id, p["id"]) >= self.test_params(p)[2]
+            if p["type"] == "manual" and not used and await self.db.vpn_stock_free(p["id"], -1) <= 0:
+                continue
+            out.append((p, used))
         return out
+
+    async def test_options(self, user_id: int) -> list:
+        """پنل‌هایی که کاربر هنوز می‌تواند روی آن‌ها اکانت تست بگیرد."""
+        return [p for p, used in await self.test_panels(user_id) if not used]
+
+    async def test_visible(self, user_id: int) -> bool:
+        """دکمه‌ی «اکانت تست» در منو/مینی‌اپ دیده شود؟ (حتی بعد از گرفتن تست)"""
+        return bool(await self.test_panels(user_id))
 
     async def can_test(self, user_id: int) -> bool:
         return bool(await self.test_options(user_id))
 
     async def create_test(self, user_id: int, panel_id: int | None = None) -> int:
-        if not self.enabled() or not self._flag("vpn_test_enabled"):
+        if not self.enabled():
             raise VpnError(N_("اکانت تست فعال نیست."))
         lock = self._test_locks.setdefault(user_id, asyncio.Lock())
         async with lock:                     # دو کلیک همزمان نباید دو اکانت تست بسازد
-            opts = await self.test_options(user_id)
-            panel = next((p for p in opts if p["id"] == panel_id), None) if panel_id else (opts[0] if opts else None)
-            if not panel:
-                if panel_id and await self.db.vpn_has_test(user_id, panel_id):
-                    raise VpnError(N_("شما قبلاً روی این پنل اکانت تست گرفته‌اید."))
-                if not opts and await self.db.vpn_has_test(user_id):
-                    raise VpnError(N_("شما قبلاً اکانت تست گرفته‌اید."))
-                raise VpnError(N_("اکانت تست در حال حاضر در دسترس نیست."))
-            ex = pextra(panel)
-            days = max(int(float(ex.get("test_days") or self._int("vpn_test_days", 1) or 1)), 1)
-            gb = float(ex.get("test_gb") if ex.get("test_gb") not in (None, "") else (self.s.get("vpn_test_gb") or 0))
+            allp = await self.test_panels(user_id)
+            if not allp:
+                raise VpnError(N_("اکانت تست فعال نیست."))
+            if panel_id:
+                hit = next(((p, u) for p, u in allp if p["id"] == panel_id), None)
+                if not hit:
+                    raise VpnError(N_("اکانت تست در حال حاضر در دسترس نیست."))
+                panel, used = hit
+                if used:
+                    raise VpnError(N_("شما قبلاً از اکانت تست این پنل استفاده کرده‌اید."))
+            else:
+                opts = [p for p, u in allp if not u]
+                if not opts:
+                    raise VpnError(N_("شما قبلاً از اکانت تست استفاده کرده‌اید."))
+                panel = opts[0]
+            days, gb, _mx = self.test_params(panel)
             if panel["type"] == "manual":                       # تست از موجودی «تست»
                 st = await self.db.claim_vpn_stock(panel["id"], -1)
                 if not st:

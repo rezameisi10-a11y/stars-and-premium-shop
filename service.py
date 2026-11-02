@@ -601,7 +601,7 @@ class Shop:
                 continue
             if it["action"] == "ai" and not self.ai.enabled():
                 continue
-            if it["action"] == "vpn_test" and not (self.vpn.enabled() and await self.vpn.can_test(uid)):
+            if it["action"] == "vpn_test" and not (self.vpn.enabled() and await self.vpn.test_visible(uid)):
                 continue
             if it["action"] == "agent" and not (self.vpn.enabled() and await self.vpn.agents.available()):
                 continue

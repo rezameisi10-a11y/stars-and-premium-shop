@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#17212b">
 <title>Shop</title>
-<script>try{var _k=localStorage.getItem("ss_skin"),_p=localStorage.getItem("ss_pick");if(_p==="1"&&_k&&/^[a-p]$/.test(_k))document.documentElement.setAttribute("data-skin",_k)}catch(e){}</script>
+<script>try{var _k=localStorage.getItem("ss_skin"),_p=localStorage.getItem("ss_pick");if(_p==="1"&&_k&&/^[a-q]$/.test(_k))document.documentElement.setAttribute("data-skin",_k)}catch(e){}</script>
 <script>try{var _t=localStorage.getItem("ss_theme"),_q=localStorage.getItem("ss_pick");if(_q==="1"&&(_t==="light"||_t==="dark"))document.documentElement.setAttribute("data-theme",_t)}catch(e){}</script>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -469,6 +469,54 @@ html[data-skin=p][data-theme] body::before{inset:0;background-image:radial-gradi
 html[data-skin=p][data-theme] body::after{inset:0;opacity:.7;background-image:radial-gradient(8px 5px at 60px 40px,rgba(249,168,212,.9),transparent 70%),radial-gradient(7px 5px at 250px 190px,rgba(255,255,255,.8),transparent 70%),radial-gradient(9px 6px at 150px 300px,rgba(244,143,177,.85),transparent 70%);background-size:420px 420px;animation:pFall 14s linear -5s infinite,pSway 5s ease-in-out infinite alternate}
 @keyframes pFall{to{background-position:90px 300px}}@keyframes pSway{0%{transform:translateX(-14px)}100%{transform:translateX(14px)}}
 
+/* ===== تقویت حرکت ظاهرهای متحرک: شناور شدن کاشی‌ها، درخشش کارت کیف پول و پس‌زمینه‌های پرجنب‌وجوش ===== */
+html[data-skin=k][data-theme] .tile,html[data-skin=l][data-theme] .tile,html[data-skin=m][data-theme] .tile,html[data-skin=n][data-theme] .tile,html[data-skin=p][data-theme] .tile{animation:tFloat 4.6s ease-in-out infinite;will-change:transform}
+html[data-skin=k][data-theme] .tile:nth-child(2){animation-delay:-1.8s}
+html[data-skin=k][data-theme] .tile:nth-child(3){animation-delay:-2.7s}
+html[data-skin=k][data-theme] .tile:nth-child(4){animation-delay:-3.6s}
+html[data-skin=k][data-theme] .tile:nth-child(5){animation-delay:-4.5s}
+html[data-skin=l][data-theme] .tile:nth-child(2){animation-delay:-1.8s}
+html[data-skin=l][data-theme] .tile:nth-child(3){animation-delay:-2.7s}
+html[data-skin=l][data-theme] .tile:nth-child(4){animation-delay:-3.6s}
+html[data-skin=l][data-theme] .tile:nth-child(5){animation-delay:-4.5s}
+html[data-skin=m][data-theme] .tile:nth-child(2){animation-delay:-1.8s}
+html[data-skin=m][data-theme] .tile:nth-child(3){animation-delay:-2.7s}
+html[data-skin=m][data-theme] .tile:nth-child(4){animation-delay:-3.6s}
+html[data-skin=m][data-theme] .tile:nth-child(5){animation-delay:-4.5s}
+html[data-skin=n][data-theme] .tile:nth-child(2){animation-delay:-1.8s}
+html[data-skin=n][data-theme] .tile:nth-child(3){animation-delay:-2.7s}
+html[data-skin=n][data-theme] .tile:nth-child(4){animation-delay:-3.6s}
+html[data-skin=n][data-theme] .tile:nth-child(5){animation-delay:-4.5s}
+html[data-skin=p][data-theme] .tile:nth-child(2){animation-delay:-1.8s}
+html[data-skin=p][data-theme] .tile:nth-child(3){animation-delay:-2.7s}
+html[data-skin=p][data-theme] .tile:nth-child(4){animation-delay:-3.6s}
+html[data-skin=p][data-theme] .tile:nth-child(5){animation-delay:-4.5s}
+html[data-skin=o][data-theme] .tile{animation:oPulse 2.4s ease-in-out infinite,tFloat 4.6s ease-in-out infinite}
+html[data-skin=k][data-theme] .wcard,html[data-skin=l][data-theme] .wcard,html[data-skin=m][data-theme] .wcard,html[data-skin=n][data-theme] .wcard,html[data-skin=o][data-theme] .wcard,html[data-skin=p][data-theme] .wcard{position:relative;overflow:hidden}
+html[data-skin=k][data-theme] .wcard::after,html[data-skin=l][data-theme] .wcard::after,html[data-skin=m][data-theme] .wcard::after,html[data-skin=n][data-theme] .wcard::after,html[data-skin=o][data-theme] .wcard::after,html[data-skin=p][data-theme] .wcard::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 35%,rgba(255,255,255,.35) 50%,transparent 65%);transform:translateX(-120%);animation:wShine 4s ease-in-out infinite;pointer-events:none}
+@keyframes tFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}@keyframes wShine{0%,45%{transform:translateX(-120%)}100%{transform:translateX(120%)}}
+html[data-skin=k][data-theme] body::before{opacity:.85;animation:kAur2 9s ease-in-out infinite alternate}
+html[data-skin=k][data-theme] body::after{opacity:.6;animation:kAur2 13s ease-in-out -4s infinite alternate-reverse}
+@keyframes kAur2{0%{transform:translateX(-18%) skewX(-14deg) scaleY(.7)}100%{transform:translateX(18%) skewX(16deg) scaleY(1.35)}}
+html[data-skin=l][data-theme] body::before{animation:lTw 1.6s ease-in-out infinite alternate,lDrift 45s linear infinite}
+html[data-skin=l][data-theme] body::after{animation:lDrift 22s linear infinite reverse,lTw 2.2s ease-in-out -.8s infinite alternate}
+html[data-skin=m][data-theme] body::before{animation:mWave 5s linear infinite,mBob 3.4s ease-in-out infinite alternate}
+html[data-skin=m][data-theme] body::after{animation:mWave 3.4s linear infinite reverse,mBob 2.8s ease-in-out -1.4s infinite alternate-reverse}
+@keyframes mBob{0%{transform:translateY(0)}100%{transform:translateY(-30px)}}
+html[data-skin=n][data-theme]{background:linear-gradient(120deg,#0b0712,#2a0f5e,#0b2a5e,#5e0b4a,#0b0712);background-size:400% 400%;animation:nFlow 8s ease infinite}
+html[data-skin=n][data-theme] .wcard,html[data-skin=n][data-theme] .hero{animation:nFlow 5s ease infinite}
+html[data-skin=o][data-theme] body::before{animation:oGrid .8s linear infinite}
+html[data-skin=o][data-theme] body::after{background:repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px),linear-gradient(180deg,transparent 0,rgba(5,217,232,.18) 50%,transparent 100%) 0 0/100% 22vh no-repeat;animation:oScan 4.5s linear infinite}
+@keyframes oScan{from{background-position:0 0,0 -22vh}to{background-position:0 0,0 110vh}}
+html[data-skin=p][data-theme] body::before{animation:pFall 5s linear infinite,pSway 3.2s ease-in-out infinite alternate}
+html[data-skin=p][data-theme] body::after{animation:pFall 9s linear -3s infinite,pSway 4.4s ease-in-out -1s infinite alternate-reverse}
+@keyframes pSway{0%{transform:translateX(-30px)}100%{transform:translateX(30px)}}
+/* q — مینیمال ساده: تخت و بدون جلوه، با حالت شب و روز */
+html[data-skin=q][data-theme=dark]{--bg:#0f1115;--fg:#eef1f6;--hint:#8b94a5;--surface:#171a21;--raised:#1e222b;--line:#262b35;--card:#171a21;--glass:#171a21;--glass2:#1e222b;--edge:#262b35;--btn:#4f8cff;--btnfg:#fff;--a1:#4f8cff;--a2:#8b94a5;--a3:#4f8cff;--gold:#f0b429;--ok:#35d49a;--err:#ff6b6b;--warn:#ffb627;--shd:0 6px 18px rgba(0,0,0,.35);--w1:#2b3445;--w2:#1b2230;--w3:#121723;--s1:#2b3445;--s2:#3a4558;--s3:#4f8cff;--s4:#8b94a5;--add1:#7aa8ff;--add2:#4f8cff;--on-add:#fff;--c-stars:#f0b429;--on-stars:#241a00;--c-premium:#5b8def;--on-premium:#fff;--c-gift:#ef6a8a;--on-gift:#fff;--c-vpn:#2fb98d;--on-vpn:#03261a;--c-agent:#8b95a7;--on-agent:#10131a}
+html[data-skin=q][data-theme=light]{--bg:#f6f7f9;--fg:#14171c;--hint:#6b7280;--surface:#ffffff;--raised:#f1f3f6;--line:#e4e7ec;--card:#ffffff;--glass:#ffffff;--glass2:#f1f3f6;--edge:#e4e7ec;--btn:#2563eb;--btnfg:#fff;--a1:#2563eb;--a2:#6b7280;--a3:#2563eb;--gold:#d99a0b;--ok:#1a9d6c;--err:#d92d3a;--warn:#c98200;--shd:0 4px 14px rgba(20,23,28,.08);--w1:#2563eb;--w2:#1d4ed8;--w3:#1e40af;--s1:#2563eb;--s2:#6b7280;--s3:#d99a0b;--s4:#d92d3a;--add1:#60a5fa;--add2:#2563eb;--on-add:#fff;--c-stars:#f0b429;--on-stars:#241a00;--c-premium:#2563eb;--on-premium:#fff;--c-gift:#e5486b;--on-gift:#fff;--c-vpn:#14946b;--on-vpn:#fff;--c-agent:#6b7280;--on-agent:#fff}
+html[data-skin=q] .card,html[data-skin=q] .tile,html[data-skin=q] .row,html[data-skin=q] .seg,html[data-skin=q] .tabs,html[data-skin=q] #thm{-webkit-backdrop-filter:none;backdrop-filter:none}
+html[data-skin=q] body::before,html[data-skin=q] body::after{display:none}
+
 /* --- رنگ سفارشی دکمه‌ها (از پنل وب): رنگ کامل و پرانرژی، نه محو --- */
 html[data-theme] .tile[style*="--cc"],html[data-theme] .row[style*="--cc"],html[data-theme] .wbtn[style*="--cc"],html[data-theme] .stile[style*="--cc"]{
   background:linear-gradient(150deg,color-mix(in srgb,var(--cc) 86%,#fff),var(--cc) 42%,color-mix(in srgb,var(--cc) 68%,#000));
@@ -522,8 +570,9 @@ const SKINS = [
   {k: "n", n: "مایع", m: "dark", an: 1, d: ["#ec4899", "#8b5cf6", "#06b6d4", "#fbbf24"]},
   {k: "o", n: "شهر سایبری", m: "dark", an: 1, d: ["#ff2a6d", "#7b2cbf", "#05d9e8", "#fcee0a"]},
   {k: "p", n: "شکوفه‌ی بارانی", m: "dark", an: 1, d: ["#be185d", "#6d28d9", "#fbcfe8", "#fde68a"]},
+  {k: "q", n: "مینیمال ساده", d: ["#4f8cff", "#2fb98d", "#f0b429", "#ef6a8a"]},
 ];
-const SKN = () => ({a: t("فیروزه و زعفران"), b: t("نئون شب"), c: t("مینیمال روشن"), d: t("زرین لوکس"), e: t("آب‌نباتی شاد"), f: t("اقیانوس"), g: t("جنگل"), h: t("غروب"), i: t("مونوکروم"), j: t("یاقوت سرخ"), k: t("شفق قطبی"), l: t("ستاره‌باران"), m: t("موج"), n: t("مایع"), o: t("شهر سایبری"), p: t("شکوفه‌ی بارانی")});
+const SKN = () => ({a: t("فیروزه و زعفران"), b: t("نئون شب"), c: t("مینیمال روشن"), d: t("زرین لوکس"), e: t("آب‌نباتی شاد"), f: t("اقیانوس"), g: t("جنگل"), h: t("غروب"), i: t("مونوکروم"), j: t("یاقوت سرخ"), k: t("شفق قطبی"), l: t("ستاره‌باران"), m: t("موج"), n: t("مایع"), o: t("شهر سایبری"), p: t("شکوفه‌ی بارانی"), q: t("مینیمال ساده")});
 function savedTheme() { try { if (!(I && I.skin_pick)) return I && (I.mode === "light" || I.mode === "dark") ? I.mode : ""; const x = localStorage.getItem("ss_theme"); return x === "light" || x === "dark" ? x : ""; } catch (e) { return ""; } }
 function applySkin(k, save) {
   const s = SKINS.find(x => x.k === k) || SKINS[0];
@@ -882,10 +931,10 @@ VIEWS.vpn = async (pid) => {
 VIEWS.vpn_test = async () => {
   const r = await api("vpn_test_options");
   const mk = pid => api("vpn_test", pid ? {panel_id: pid} : {}).then(x => { I.vpn.test = false; go("vpn_service", x.id, true); });
-  if (r.panels.length === 1) { try { await mk(r.panels[0].id); } catch (e) { handleErr(e); } return; }
+  if (r.panels.length === 1 && !r.panels[0].used) { try { await mk(r.panels[0].id); } catch (e) { handleErr(e); } return; }
   let h = `<h1>${IC("vpn_test", "🎁")} ${esc(L("vpn_test", t("اکانت تست رایگان")))}</h1>`;
   if (!r.panels.length) h += `<div class="card hint">${esc(t("اکانت تست در حال حاضر در دسترس نیست."))}</div>`;
-  else h += `<p class="hint">${esc(t("پنل (لوکیشن) مورد نظر را انتخاب کنید:"))}</p>` + r.panels.map(p => `<button class="row prod k-vpn" data-p="${p.id}"><i class="ri">🎁</i><span>${esc(p.name)}</span><b>›</b></button>`).join("");
+  else h += `<p class="hint">${esc(t("پنل (لوکیشن) مورد نظر را انتخاب کنید:"))}</p>` + r.panels.map(p => `<button class="row prod k-vpn" data-p="${p.id}"><i class="ri">${p.used ? "✅" : "🎁"}</i><span>${esc(p.name)}${p.used ? `<div class="sub">${esc(t("استفاده شده"))}</div>` : ""}</span><b>›</b></button>`).join("");
   $app.innerHTML = h;
   $app.querySelectorAll("[data-p]").forEach(b => b.onclick = () => run(b, () => mk(+b.dataset.p)));
 };
