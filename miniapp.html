@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#17212b">
 <title>Shop</title>
-<script>try{var _k=localStorage.getItem("ss_skin"),_p=localStorage.getItem("ss_pick");if(_p==="1"&&_k&&/^[a-q]$/.test(_k))document.documentElement.setAttribute("data-skin",_k)}catch(e){}</script>
+<script>try{var _k=localStorage.getItem("ss_skin"),_p=localStorage.getItem("ss_pick");if(_p==="1"&&_k&&/^[a-t]$/.test(_k))document.documentElement.setAttribute("data-skin",_k)}catch(e){}</script>
 <script>try{var _t=localStorage.getItem("ss_theme"),_q=localStorage.getItem("ss_pick");if(_q==="1"&&(_t==="light"||_t==="dark"))document.documentElement.setAttribute("data-theme",_t)}catch(e){}</script>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -511,6 +511,33 @@ html[data-skin=o][data-theme] body::after{background:repeating-linear-gradient(0
 html[data-skin=p][data-theme] body::before{animation:pFall 5s linear infinite,pSway 3.2s ease-in-out infinite alternate}
 html[data-skin=p][data-theme] body::after{animation:pFall 9s linear -3s infinite,pSway 4.4s ease-in-out -1s infinite alternate-reverse}
 @keyframes pSway{0%{transform:translateX(-30px)}100%{transform:translateX(30px)}}
+/* r s t — تم‌های روشن خیلی متحرک */
+html[data-skin=r][data-theme]{--bg:#fffaf0;--fg:#2b2140;--hint:#8a7a99;--surface:rgba(255,255,255,.82);--raised:rgba(255,255,255,.9);--line:rgba(255,170,60,.28);--card:rgba(255,255,255,.82);--glass:rgba(255,255,255,.82);--glass2:rgba(255,255,255,.9);--edge:rgba(255,170,60,.28);--btn:#f97316;--btnfg:#fff;--a1:#f97316;--a2:#ec4899;--a3:#f97316;--gold:#d99a0b;--ok:#1a9d6c;--err:#d92d3a;--warn:#c98200;--shd:0 8px 22px rgba(30,30,60,.12);--w1:#f97316;--w2:#ec4899;--w3:#8b5cf6;--s1:#f97316;--s2:#ec4899;--s3:#d99a0b;--s4:#e5486b;--add1:#ffd36b;--add2:#ffb627;--on-add:#2a1a00;--c-stars:#f0b429;--on-stars:#241a00;--c-premium:#f97316;--on-premium:#fff;--c-gift:#e5486b;--on-gift:#fff;--c-vpn:#14946b;--on-vpn:#fff;--c-agent:#8b5cf6;--on-agent:#fff}
+html[data-skin=s][data-theme]{--bg:#f0f9ff;--fg:#12304a;--hint:#5f8aa8;--surface:rgba(255,255,255,.82);--raised:rgba(255,255,255,.9);--line:rgba(56,189,248,.3);--card:rgba(255,255,255,.82);--glass:rgba(255,255,255,.82);--glass2:rgba(255,255,255,.9);--edge:rgba(56,189,248,.3);--btn:#0ea5e9;--btnfg:#fff;--a1:#0ea5e9;--a2:#14b8a6;--a3:#0ea5e9;--gold:#d99a0b;--ok:#1a9d6c;--err:#d92d3a;--warn:#c98200;--shd:0 8px 22px rgba(30,30,60,.12);--w1:#0ea5e9;--w2:#14b8a6;--w3:#6366f1;--s1:#0ea5e9;--s2:#14b8a6;--s3:#d99a0b;--s4:#e5486b;--add1:#ffd36b;--add2:#ffb627;--on-add:#2a1a00;--c-stars:#f0b429;--on-stars:#241a00;--c-premium:#0ea5e9;--on-premium:#fff;--c-gift:#e5486b;--on-gift:#fff;--c-vpn:#14946b;--on-vpn:#fff;--c-agent:#6366f1;--on-agent:#fff}
+html[data-skin=t][data-theme]{--bg:#fdf4ff;--fg:#3b1d52;--hint:#9a7bb0;--surface:rgba(255,255,255,.82);--raised:rgba(255,255,255,.9);--line:rgba(217,70,239,.25);--card:rgba(255,255,255,.82);--glass:rgba(255,255,255,.82);--glass2:rgba(255,255,255,.9);--edge:rgba(217,70,239,.25);--btn:#c026d3;--btnfg:#fff;--a1:#c026d3;--a2:#6366f1;--a3:#c026d3;--gold:#d99a0b;--ok:#1a9d6c;--err:#d92d3a;--warn:#c98200;--shd:0 8px 22px rgba(30,30,60,.12);--w1:#c026d3;--w2:#6366f1;--w3:#0ea5e9;--s1:#c026d3;--s2:#6366f1;--s3:#d99a0b;--s4:#e5486b;--add1:#ffd36b;--add2:#ffb627;--on-add:#2a1a00;--c-stars:#f0b429;--on-stars:#241a00;--c-premium:#c026d3;--on-premium:#fff;--c-gift:#e5486b;--on-gift:#fff;--c-vpn:#14946b;--on-vpn:#fff;--c-agent:#0ea5e9;--on-agent:#fff}
+html[data-skin=r] #thm [data-th],html[data-skin=s] #thm [data-th],html[data-skin=t] #thm [data-th]{display:none}
+html[data-skin=r][data-theme] body::before,html[data-skin=r][data-theme] body::after,html[data-skin=s][data-theme] body::before,html[data-skin=s][data-theme] body::after,html[data-skin=t][data-theme] body::before,html[data-skin=t][data-theme] body::after{display:block;content:"";position:fixed;z-index:-1;pointer-events:none;border-radius:0;transform:none}
+html[data-skin=r][data-theme] body,html[data-skin=s][data-theme] body,html[data-skin=t][data-theme] body{background:none}
+html[data-skin=r][data-theme] .card,html[data-skin=s][data-theme] .card,html[data-skin=t][data-theme] .card,html[data-skin=r][data-theme] .row,html[data-skin=s][data-theme] .row,html[data-skin=t][data-theme] .row{-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+/* r — صبح آفتابی: لکه‌های نور رنگی که شناورند */
+html[data-skin=r][data-theme]{background:#fffaf0}
+html[data-skin=r][data-theme] body::before{inset:-20vh -20vw auto -20vw;height:90vh;filter:blur(50px);opacity:.75;background:radial-gradient(40% 50% at 20% 40%,#fdba74,transparent 70%),radial-gradient(35% 45% at 70% 30%,#f9a8d4,transparent 70%),radial-gradient(30% 40% at 50% 80%,#fde68a,transparent 70%);animation:rDrift 7s ease-in-out infinite alternate}
+html[data-skin=r][data-theme] body::after{inset:auto -20vw -25vh -20vw;height:80vh;filter:blur(55px);opacity:.65;background:radial-gradient(40% 50% at 30% 60%,#c4b5fd,transparent 70%),radial-gradient(35% 45% at 75% 50%,#fdba74,transparent 70%);animation:rDrift 9s ease-in-out -3s infinite alternate-reverse}
+@keyframes rDrift{0%{transform:translate(-8vw,-4vh) scale(1) rotate(0)}100%{transform:translate(8vw,6vh) scale(1.25) rotate(14deg)}}
+html[data-skin=r][data-theme] .tile{animation:tFloat 3s ease-in-out infinite}html[data-skin=r][data-theme] .tile:nth-child(2){animation-delay:.4s}html[data-skin=r][data-theme] .tile:nth-child(3){animation-delay:.8s}html[data-skin=r][data-theme] .tile:nth-child(4){animation-delay:1.2s}
+/* s — حباب‌های شاد: حباب‌هایی که مدام بالا می‌روند و موج پایین صفحه */
+html[data-skin=s][data-theme]{background:linear-gradient(180deg,#e0f2fe,#f0f9ff 60%,#ecfeff)}
+html[data-skin=s][data-theme] body::before{inset:0;background:radial-gradient(circle,rgba(56,189,248,.55) 0 14px,transparent 15px) 0 0/130px 190px,radial-gradient(circle,rgba(20,184,166,.5) 0 9px,transparent 10px) 50px 80px/90px 150px,radial-gradient(circle,rgba(99,102,241,.4) 0 20px,transparent 21px) 20px 40px/210px 260px;animation:sRise 7s linear infinite}
+html[data-skin=s][data-theme] body::after{inset:0;background:radial-gradient(circle,rgba(255,255,255,.9) 0 5px,transparent 6px) 10px 0/70px 120px,radial-gradient(circle,rgba(14,165,233,.35) 0 12px,transparent 13px) 30px 60px/160px 210px;animation:sRise 4.2s linear infinite,sSway 2.6s ease-in-out infinite alternate}
+@keyframes sRise{to{background-position:0 -190px,50px -70px,20px -220px}}@keyframes sSway{0%{transform:translateX(-14px)}100%{transform:translateX(14px)}}
+html[data-skin=s][data-theme] .wcard,html[data-skin=s][data-theme] .hero{animation:nFlow 6s ease infinite;background-size:300% 300%}
+/* t — رنگین‌کمان: گرادیان پاستلی روان با برق عبوری */
+html[data-skin=t][data-theme]{background:linear-gradient(120deg,#fdf4ff,#e0e7ff,#cffafe,#fef9c3,#fce7f3,#fdf4ff);background-size:400% 400%;animation:nFlow 8s ease infinite}
+html[data-skin=t][data-theme] body::before{inset:0;background:linear-gradient(115deg,transparent 40%,rgba(255,255,255,.65) 50%,transparent 60%);animation:tSweep 5s ease-in-out infinite}
+html[data-skin=t][data-theme] body::after{inset:0;background:radial-gradient(circle at 20% 30%,rgba(217,70,239,.14),transparent 40%),radial-gradient(circle at 80% 70%,rgba(14,165,233,.16),transparent 40%);animation:rDrift 6s ease-in-out infinite alternate}
+@keyframes tSweep{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+html[data-skin=t][data-theme] .wcard,html[data-skin=t][data-theme] .hero{background:linear-gradient(120deg,var(--w1),var(--w2),var(--w3),var(--w1));background-size:300% 300%;animation:nFlow 4s ease infinite}
+html[data-skin=t][data-theme] .tile::after{content:"";position:absolute;inset:0;background:linear-gradient(115deg,transparent 38%,rgba(255,255,255,.55) 50%,transparent 62%);transform:translateX(-130%);animation:nSweep 3.5s ease-in-out infinite;pointer-events:none}
 /* q — مینیمال ساده: تخت و بدون جلوه، با حالت شب و روز */
 html[data-skin=q][data-theme=dark]{--bg:#0f1115;--fg:#eef1f6;--hint:#8b94a5;--surface:#171a21;--raised:#1e222b;--line:#262b35;--card:#171a21;--glass:#171a21;--glass2:#1e222b;--edge:#262b35;--btn:#4f8cff;--btnfg:#fff;--a1:#4f8cff;--a2:#8b94a5;--a3:#4f8cff;--gold:#f0b429;--ok:#35d49a;--err:#ff6b6b;--warn:#ffb627;--shd:0 6px 18px rgba(0,0,0,.35);--w1:#2b3445;--w2:#1b2230;--w3:#121723;--s1:#2b3445;--s2:#3a4558;--s3:#4f8cff;--s4:#8b94a5;--add1:#7aa8ff;--add2:#4f8cff;--on-add:#fff;--c-stars:#f0b429;--on-stars:#241a00;--c-premium:#5b8def;--on-premium:#fff;--c-gift:#ef6a8a;--on-gift:#fff;--c-vpn:#2fb98d;--on-vpn:#03261a;--c-agent:#8b95a7;--on-agent:#10131a}
 html[data-skin=q][data-theme=light]{--bg:#f6f7f9;--fg:#14171c;--hint:#6b7280;--surface:#ffffff;--raised:#f1f3f6;--line:#e4e7ec;--card:#ffffff;--glass:#ffffff;--glass2:#f1f3f6;--edge:#e4e7ec;--btn:#2563eb;--btnfg:#fff;--a1:#2563eb;--a2:#6b7280;--a3:#2563eb;--gold:#d99a0b;--ok:#1a9d6c;--err:#d92d3a;--warn:#c98200;--shd:0 4px 14px rgba(20,23,28,.08);--w1:#2563eb;--w2:#1d4ed8;--w3:#1e40af;--s1:#2563eb;--s2:#6b7280;--s3:#d99a0b;--s4:#d92d3a;--add1:#60a5fa;--add2:#2563eb;--on-add:#fff;--c-stars:#f0b429;--on-stars:#241a00;--c-premium:#2563eb;--on-premium:#fff;--c-gift:#e5486b;--on-gift:#fff;--c-vpn:#14946b;--on-vpn:#fff;--c-agent:#6b7280;--on-agent:#fff}
@@ -571,8 +598,11 @@ const SKINS = [
   {k: "o", n: "شهر سایبری", m: "dark", an: 1, d: ["#ff2a6d", "#7b2cbf", "#05d9e8", "#fcee0a"]},
   {k: "p", n: "شکوفه‌ی بارانی", m: "dark", an: 1, d: ["#be185d", "#6d28d9", "#fbcfe8", "#fde68a"]},
   {k: "q", n: "مینیمال ساده", d: ["#4f8cff", "#2fb98d", "#f0b429", "#ef6a8a"]},
+  {k: "r", n: "صبح آفتابی", m: "light", an: 1, d: ["#f97316", "#ec4899", "#8b5cf6", "#fde68a"]},
+  {k: "s", n: "حباب‌های شاد", m: "light", an: 1, d: ["#0ea5e9", "#14b8a6", "#6366f1", "#e0f2fe"]},
+  {k: "t", n: "رنگین‌کمان", m: "light", an: 1, d: ["#c026d3", "#6366f1", "#0ea5e9", "#fef9c3"]},
 ];
-const SKN = () => ({a: t("فیروزه و زعفران"), b: t("نئون شب"), c: t("مینیمال روشن"), d: t("زرین لوکس"), e: t("آب‌نباتی شاد"), f: t("اقیانوس"), g: t("جنگل"), h: t("غروب"), i: t("مونوکروم"), j: t("یاقوت سرخ"), k: t("شفق قطبی"), l: t("ستاره‌باران"), m: t("موج"), n: t("مایع"), o: t("شهر سایبری"), p: t("شکوفه‌ی بارانی"), q: t("مینیمال ساده")});
+const SKN = () => ({a: t("فیروزه و زعفران"), b: t("نئون شب"), c: t("مینیمال روشن"), d: t("زرین لوکس"), e: t("آب‌نباتی شاد"), f: t("اقیانوس"), g: t("جنگل"), h: t("غروب"), i: t("مونوکروم"), j: t("یاقوت سرخ"), k: t("شفق قطبی"), l: t("ستاره‌باران"), m: t("موج"), n: t("مایع"), o: t("شهر سایبری"), p: t("شکوفه‌ی بارانی"), q: t("مینیمال ساده"), r: t("صبح آفتابی"), s: t("حباب‌های شاد"), t: t("رنگین‌کمان")});
 function savedTheme() { try { if (!(I && I.skin_pick)) return I && (I.mode === "light" || I.mode === "dark") ? I.mode : ""; const x = localStorage.getItem("ss_theme"); return x === "light" || x === "dark" ? x : ""; } catch (e) { return ""; } }
 function applySkin(k, save) {
   const s = SKINS.find(x => x.k === k) || SKINS[0];

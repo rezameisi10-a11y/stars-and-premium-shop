@@ -244,6 +244,17 @@ class Pricing:
             mode = "manual"
         return n * self._star_unit_cost(mode)
 
+    def toman_to_stars(self, amount) -> int:
+        """تبدیل مبلغ تومان به تعداد ستاره (همان نرخ فروش ستاره: دلار/تون/API مارکت‌اپ). ۰ = نرخ در دسترس نیست."""
+        try:
+            per = self.stars_cost(100) / 100
+        except Exception:
+            return 0
+        if per <= 0:
+            return 0
+        import math
+        return max(1, math.ceil(Decimal(str(amount)) / per))
+
     def premium_cost(self, months: int) -> Decimal:
         s = self.s
         mode = s.get("price_mode_premium", "stars")

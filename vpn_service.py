@@ -20,6 +20,7 @@ import aiohttp
 
 import vpn_panels
 import vpn_qr
+import wg_file
 from i18n import N_
 from ui import btn, esc, fmt, ikb
 from vpn_panels import GB, PanelError
@@ -1320,6 +1321,55 @@ class VPN:
             await self.shop.safe_send(uid, t, reply_markup=kb if i == len(texts) - 1 else None, disable_web_page_preview=True)
         if help_t:
             await self.shop.safe_send(uid, help_t, disable_web_page_preview=True)
+        try:
+            await self.send_wireguard(uid, svc, tr)
+        except Exception as e:  # noqa: BLE001
+            log.warning("wireguard send failed: %s", e)
+
+    async def wg_confs(self, svc) -> list[tuple[str, str]]:
+        """[(نام فایل، متن .conf)] اگر سرویس وایرگارد دارد. فقط پنل‌های پاسارگارد بررسی می‌شوند (یک درخواست اضافه)."""
+        if svc["status"] == "pending_manual" or (svc.get("panel_type") or "") != "pasarguard" or not svc["sub_url"]:
+            return []
+        base = svc["name"]
+        out: list[tuple[str, str]] = []
+        links = [x for x in json.loads(svc["links"] or "[]") if wg_file.is_wg_uri(x)]
+        if not links:
+            try:
+                links = [x for x in await self.fetch_sub_configs(svc["sub_url"]) if wg_file.is_wg_uri(x)]
+            except Exception:  # noqa: BLE001
+                links = []
+        for i, uri in enumerate(links[:5]):
+            c = wg_file.conf_from_uri(uri)
+            if c:
+                nm = wg_file.safe_filename(wg_file.parse_wg_uri(uri).get("name") or base, base)
+                out.append((f"{nm}{'' if len(links) == 1 else '-' + str(i + 1)}.conf", c))
+        if not out:                                          # فایل آماده‌ی خود پنل (اگر پنل مسیر /wireguard را بدهد)
+            try:
+                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10), connector=aiohttp.TCPConnector(ssl=False)) as ses:
+                    async with ses.get(svc["sub_url"].rstrip("/") + "/wireguard", headers={"User-Agent": "WireGuard"}) as r:
+                        if r.status == 200:
+                            txt = (await r.content.read(200_000)).decode("utf-8", "ignore")
+                            if wg_file.looks_like_conf(txt):
+                                out.append((f"{wg_file.safe_filename(base)}.conf", txt if txt.endswith("\n") else txt + "\n"))
+            except Exception:  # noqa: BLE001
+                pass
+        return out
+
+    async def send_wireguard(self, uid, svc, tr=None):
+        """اگر سرویس وایرگارد دارد: فایل .conf + QR (برای اسکن در اپ) + راهنمای ساده."""
+        confs = await self.wg_confs(svc)
+        if not confs:
+            return False
+        tr = tr or await self.shop.tr_for(uid)
+        for fname, text in confs:
+            await self.shop.bot.send_document(uid, BufferedInputFile(text.encode(), filename=fname),
+                                              caption=tr("📄 فایل {wg} سرویس {n}", wg=f"{wg_file.LRM}WireGuard{wg_file.PDI}", n=f"<code>{esc(svc['name'])}</code>"))
+            png = await self.qr_png(text, bg="") if len(text.encode()) < 2300 else None
+            if png:
+                await self.shop.bot.send_photo(uid, BufferedInputFile(png, filename=fname.rsplit(".", 1)[0] + ".png"),
+                                               caption=tr("QR کد برای اسکن داخل برنامه‌ی {wg}", wg=f"{wg_file.LRM}WireGuard{wg_file.PDI}"))
+        await self.shop.safe_send(uid, wg_file.guide_text(tr, svc["name"]), disable_web_page_preview=True)
+        return True
 
     async def send_qr(self, uid, svc):
         data = self._qr_data(svc)

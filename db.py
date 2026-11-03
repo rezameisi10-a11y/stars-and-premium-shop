@@ -148,7 +148,7 @@ DEFAULT_SETTINGS = {
     "min_topup": "50000",
     "max_topup": "500000000",
     "star_alert_threshold": "500",
-    "pm_wallet": "1", "pm_card": "1", "pm_zarinpal": "1", "pm_ton": "1", "pm_usdt": "1",
+    "pm_wallet": "1", "pm_card": "1", "pm_zarinpal": "1", "pm_ton": "1", "pm_usdt": "1", "pm_stars": "0", "audit_notify": "1",
     "card_number": "", "card_owner": "", "card_note": "",
     "pay_timeout_min": "30",
     "welcome_text": N_("به فروشگاه خدمات مجازی تلگرام خوش آمدید 🌟\nیکی از گزینه‌های زیر را انتخاب کنید."),
@@ -192,7 +192,7 @@ BUILTIN_ACTIONS = {a for a, *_ in DEFAULT_MENU}
 # فیلترها و مرتب‌سازی لیست کاربران
 USER_FILTERS = ("all", "active", "banned", "balance", "buyers", "nobuy", "referrers", "vip", "new7", "inactive30")
 USER_SORTS = {"new": "u.created_at DESC", "old": "u.created_at ASC", "seen": "u.last_seen DESC",
-              "balance": "u.balance DESC", "spent": "spent DESC", "orders": "orders_n DESC"}
+              "balance": "u.balance DESC", "spent": "spent DESC", "orders": "orders_n DESC", "refs": "refs_n DESC, u.created_at DESC"}
 
 
 class DB(VpnDB):
@@ -477,7 +477,8 @@ class DB(VpnDB):
         return await self.all(
             "SELECT u.*, "
             "(SELECT COALESCE(SUM(amount),0) FROM orders o WHERE o.user_id=u.id AND o.status='done') AS spent, "
-            "(SELECT COUNT(*) FROM orders o WHERE o.user_id=u.id AND o.status='done') AS orders_n "
+            "(SELECT COUNT(*) FROM orders o WHERE o.user_id=u.id AND o.status='done') AS orders_n, "
+            "(SELECT COUNT(*) FROM referrals r WHERE r.referrer_id=u.id) AS refs_n "
             f"FROM users u{w} ORDER BY {order} LIMIT ? OFFSET ?", (*a, limit, offset))
 
     async def count_users(self, q="", flt="all"):

@@ -164,6 +164,8 @@ async def _pay_methods(ctx: Ctx, order_id=None, allow_wallet=True) -> list[dict]
         out.append({"id": "ton", "label": ctx.tr(METHOD_FA["ton"])})
     if s["pm_usdt"] == "1" and shop.gw("usdt_wallet"):
         out.append({"id": "usdt", "label": ctx.tr(METHOD_FA["usdt"])})
+    if order_id and await shop.stars_ok(order_id):
+        out.append({"id": "stars", "label": ctx.tr(METHOD_FA["stars"])})
     return out
 
 
@@ -214,7 +216,7 @@ async def a_init(ctx: Ctx, d: dict) -> dict:
                  "discount": u.get("personal_discount") or 0, "is_admin": shop.is_admin(ctx.uid)},
         "lang": ctx.lang, "rtl": bool(lang_row["rtl"]) if lang_row else True, "langs": langs if len(langs) > 1 else [],
         "ui": ui, "shop_name": s.get("shop_name") or "", "kinds": kinds, "tiles": tiles, "rows": rows,
-        "skin": (s.get("miniapp_skin") or "a") if (s.get("miniapp_skin") or "a") in tuple("abcdefghijklmnopq") else "a", "skin_pick": s.get("miniapp_skin_pick", "0") == "1",
+        "skin": (s.get("miniapp_skin") or "a") if (s.get("miniapp_skin") or "a") in tuple("abcdefghijklmnopqrst") else "a", "skin_pick": s.get("miniapp_skin_pick", "0") == "1",
         "mode": (s.get("miniapp_mode") or "auto") if (s.get("miniapp_mode") or "auto") in ("auto", "dark", "light") else "auto",
         "kind_titles": {k: ctx.tr(KIND_TITLE[k]) for k in KIND_TITLE},
         "texts": {"welcome": (mui.get("welcome") or {}).get("t") or shop.text("welcome_text", ctx.lang), "rules": shop.text("rules_text", ctx.lang),
@@ -317,7 +319,7 @@ async def a_pay(ctx: Ctx, d: dict) -> dict:
     else:
         order = await _own_pending(ctx, d.get("order_id"))
         amount = order["amount"]
-    if method not in [m["id"] for m in await _pay_methods(ctx, allow_wallet=order is not None)]:
+    if method not in [m["id"] for m in await _pay_methods(ctx, order["id"] if order else None, allow_wallet=order is not None)]:
         raise ApiError(ctx.tr("روش پرداخت نامعتبر است."))
     if method == "wallet":
         if not await shop.pay_with_wallet(order["id"], ctx.uid):
@@ -337,6 +339,8 @@ async def a_pay(ctx: Ctx, d: dict) -> dict:
         out.update(address=shop.gw("ton_wallet"), crypto=round(p["crypto_amount"], 5))
     elif method == "usdt":
         out.update(address=shop.gw("usdt_wallet"), crypto=round(p["crypto_amount"], 3))
+    elif method == "stars":
+        out.update(stars=int(p["crypto_amount"]), message=ctx.tr("⭐ فاکتور در چت ربات ارسال شد؛ آنجا پرداخت کنید."))
     return out
 
 

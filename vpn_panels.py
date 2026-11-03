@@ -55,6 +55,9 @@ class PanelAdmin:
     max_users: int = 0              # ۰ = نامحدود
 
 
+_L, _P = "\u2066", "\u2069"          # جداکننده‌ی چپ‌به‌راست؛ نوشته‌ی انگلیسی داخل متن فارسی به‌هم نریزد
+
+
 def gen_password(n: int = 16) -> str:
     """رمز قوی که قوانین همه‌ی پنل‌ها (پاسارگارد: ≥۱۲ حرف، ۲ رقم، ۲ بزرگ، ۲ کوچک، ۱ نماد، بدون ") را رعایت کند."""
     rnd = secrets.SystemRandom()
@@ -262,7 +265,7 @@ class Marzban(BasePanel):
     LABEL = "مرزبان ⁦Marzban⁩"
     NEEDS = ("url", "username", "password")
     OPTION_LABEL = "اینباند (tag)"
-    HELP = "آدرس پنل را مثل https://panel.example.com:8000 بفرستید. انتخاب اینباند اختیاری است."
+    HELP = f"آدرس پنل را بفرستید؛ مثلاً {_L}https://panel.example.com:8000{_P}. انتخاب اینباند اختیاری است؛ اگر انتخاب نکنید، کاربر روی همه‌ی اینباندها ساخته می‌شود."
     API = "/api"
     TOKEN = "/admin/token"
     USER = "/user"
@@ -464,7 +467,9 @@ class PasarGuard(Marzban):
     TYPE = "pasarguard"
     LABEL = "پاسارگارد ⁦PasarGuard⁩"
     OPTION_LABEL = "گروه (id)"
-    HELP = "آدرس پنل را مثل https://panel.example.com:8000 بفرستید و گروه‌ها را انتخاب کنید."
+    HELP = (f"آدرس پنل را بفرستید؛ مثلاً {_L}https://panel.example.com:8000{_P}. بعد باید «گروه» را مشخص کنید؛ کاربرها روی همان گروه ساخته می‌شوند. "
+            f"اگر حسابتان ادمین محدود است و لیست گروه‌ها را نمی‌بیند، داخل پنل یک کانفیگ بسازید، اینباندهای دلخواه را به آن وصل کنید و به‌جای شماره‌ی گروه فقط اسم آن کانفیگ را بدهید. "
+            f"پروتکل {_L}WireGuard{_P} هم پشتیبانی می‌شود: ربات خودش فایل و QR می‌فرستد.")
 
     async def options(self):
         d = await self._call("GET", "/groups")
@@ -701,8 +706,8 @@ class XUI(BasePanel):
     LABEL = "ثنایی ⁦3x-ui⁩"
     NEEDS = ("url", "inbound_ids")
     OPTION_LABEL = "اینباند (id)"
-    HELP = ("آدرس پنل را با مسیر مخفی آن بفرستید، مثل https://host:2053/abc/. "
-            "برای ورود، «توکن API» یا نام کاربری و رمز را بدهید. آدرس اشتراک اختیاری است.")
+    HELP = (f"آدرس پنل را همراه مسیر مخفی‌اش بفرستید؛ مثلاً {_L}https://host:2053/abc/{_P}. "
+            "برای ورود یا کلید API بدهید، یا نام کاربری و رمز. آدرس اشتراک اختیاری است. فقط یک اینباند را انتخاب کنید.")
     PREFIXES = ["/panel/api/inbounds", "/xui/API/inbounds", "/xui/inbound"]
 
     def __init__(self, cfg):
@@ -1112,8 +1117,8 @@ class Hiddify(BasePanel):
     TYPE = "hiddify"
     LABEL = "هیدیفای ⁦Hiddify⁩"
     NEEDS = ("url", "token", "sub_url")
-    HELP = ("آدرس مدیریت را مثل https://domain/مسیر-ادمین بفرستید. توکن، همان کلید API ادمین است. "
-            "آدرس اشتراک را هم از صفحه‌ی کاربران بردارید.")
+    HELP = (f"آدرس صفحه‌ی مدیریت را بفرستید؛ مثلاً {_L}https://domain/admin-path{_P}. توکن همان کلید {_L}API{_P} ادمین است. "
+            "آدرس اشتراک را از صفحه‌ی کاربران پنل بردارید.")
 
     async def status(self):
         d = await self._call("GET", "/server_status/")
@@ -1213,7 +1218,7 @@ class Manual(BasePanel):
     TYPE = "manual"
     LABEL = "فروش دستی"
     NEEDS = ()
-    HELP = "بدون اتصال به پنل. بعد از پرداخت، شما کانفیگ را خودتان برای کاربر می‌فرستید."
+    HELP = "این نوع به پنلی وصل نمی‌شود. بعد از پرداخت کاربر، شما خودتان کانفیگ را برایش می‌فرستید (یا از موجودی آماده برمی‌دارید)."
     manual = True
 
     async def test(self):

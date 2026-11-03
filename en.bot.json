@@ -534,5 +534,16 @@
  "اکانت تست قابل تمدید نیست؛ سرویس جدید بخرید.": "A test account can't be renewed; please buy a new service.",
  "برای اکانت تست نمی‌شود حجم/زمان اضافه خرید.": "Extra data/time can't be bought for a test account.",
  "شما قبلاً از اکانت تست این پنل استفاده کرده‌اید.": "You have already used the test account on this panel.",
- "شما قبلاً از اکانت تست استفاده کرده‌اید.": "You have already used the test account."
+ "شما قبلاً از اکانت تست استفاده کرده‌اید.": "You have already used the test account.",
+ "صبح آفتابی": "Sunny Morning",
+ "حباب‌های شاد": "Happy Bubbles",
+ "رنگین‌کمان": "Rainbow",
+ "ستاره تلگرام": "Telegram Stars",
+ "⭐ فاکتور {n} ستاره بالا ارسال شد؛ دکمه‌ی پرداخت زیر آن را بزنید.": "⭐ An invoice for {n} Stars was sent above; tap its Pay button.",
+ "پرداخت با استارز برای این سفارش فعال نیست.": "Paying with Stars is not available for this order.",
+ "⭐ استارز تلگرام": "⭐ Telegram Stars",
+ "پرداخت سفارش #{oid}": "Pay for order #{oid}",
+ "پرداخت {n} ستاره تلگرام": "Pay {n} Telegram Stars",
+ "📄 فایل {wg} سرویس {n}": "📄 {wg} file for service {n}",
+ "QR کد برای اسکن داخل برنامه‌ی {wg}": "QR code to scan in the {wg} app"
 }

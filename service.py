@@ -42,7 +42,7 @@ STATUS_FA = {
 PAY_STATUS_FA = {"pending": N_("⏳ منتظر پرداخت"), "waiting_admin": N_("🧾 منتظر تأیید ادمین"), "confirmed": N_("✅ تأیید شد"),
                  "rejected": N_("❌ رد شد"), "expired": N_("⌛ منقضی"), "failed": N_("⚠️ ناموفق")}
 METHOD_FA = {"wallet": N_("کیف پول"), "card": N_("کارت به کارت"), "zarinpal": N_("درگاه بانکی"),
-             "ton": N_("تون (TON)"), "usdt": N_("تتر (USDT TRC20)")}
+             "ton": N_("تون (TON)"), "usdt": N_("تتر (USDT TRC20)"), "stars": N_("ستاره تلگرام")}
 REJECT_REASONS = {"fake": N_("رسید جعلی/ساختگی بود"), "amount": N_("مبلغ واریزی کافی نبود"), "unclear": N_("رسید ناخوانا یا ناقص بود"),
                   "notfound": N_("واریزی در حساب پیدا نشد"), "dup": N_("این رسید قبلاً استفاده شده بود")}
 KIND_FA = {"stars": N_("استارز"), "premium": N_("پریمیوم"), "gift": N_("گیفت"), "vpn": N_("VPN")}
@@ -549,6 +549,25 @@ class Shop:
         if topic:                       # کپی در تاپیک مربوط گروه (اگر متصل و روشن باشد)
             await self.group.post(topic, text, markup=markup)
 
+    async def audit(self, actor, text):
+        """اعلان عملیات ادمین به بقیه‌ی ادمین‌ها (خود انجام‌دهنده دریافت نمی‌کند). actor مثل tg:123 یا web:نام."""
+        try:
+            if (await self.settings()).get("audit_notify", "1") != "1":
+                return
+            actor = str(actor or "")
+            aid = int(actor[3:]) if actor.startswith("tg:") and actor[3:].isdigit() else None
+            if aid:
+                u = await self.db.get_user(aid)
+                nm = (u or {}).get("first_name") or str(aid)
+                who = f"{esc(nm)}" + (f" (@{esc(u['username'])})" if u and u.get("username") else "") + f" <code>{aid}</code>"
+            else:
+                who = esc(actor or "پنل وب")
+            for a in self.admins_with(None):
+                if a != aid:
+                    await self.safe_send(a, f"🔔 <b>اقدام ادمین</b>\n👮 {who}\n{text}")
+        except Exception:
+            log.exception("audit failed")
+
     def warn_once(self, key: str, hours: float = 6) -> bool:
         """True اگر در ساعت‌های اخیر برای این کلید هشدار نداده‌ایم (برای جلوگیری از اسپم هشدار)."""
         if time.time() - self._warned.get(key, 0) > hours * 3600:
@@ -880,6 +899,14 @@ class Shop:
             await self._create_reward(ref["referrer_id"], o["user_id"], o["id"], "commission", commission)
 
     # ---------- کیبورد روش‌های پرداخت ----------
+    async def stars_ok(self, ctx) -> bool:
+        """پرداخت با استارز فقط برای سفارش VPN/نماینده و وقتی نرخ ستاره در دسترس است."""
+        s = await self.settings()
+        if s.get("pm_stars", "0") != "1" or not str(ctx).isdigit():
+            return False
+        o = await self.db.get_order(int(ctx))
+        return bool(o and str(o.get("ref") or "").startswith("vpn:") and self.pricing.toman_to_stars(o["amount"]) > 0)
+
     async def pay_methods_kb(self, ctx: str, user_id: int, allow_wallet: bool, tr=None, step=None):
         """step: None → خلاصه‌ی سفارش (کیف پول، کد تخفیف، «پرداخت») برای سفارش‌ها؛ "methods" → فهرست روش‌های پرداخت.
         شارژ کیف پول (ctx با t) و حالت خاموش بودن pay_step مستقیم روش‌ها را نشان می‌دهد."""
@@ -907,6 +934,8 @@ class Shop:
             rows.append([btn(tr("💎 تون (TON)"), f"pay:ton:{ctx}", role="pay")])
         if s["pm_usdt"] == "1" and self.gw("usdt_wallet"):
             rows.append([btn(tr("💵 تتر (USDT TRC20)"), f"pay:usdt:{ctx}", role="pay")])
+        if await self.stars_ok(ctx):
+            rows.append([btn(tr("⭐ استارز تلگرام"), f"pay:stars:{ctx}", role="pay")])
         if two_step:
             if s["pm_wallet"] == "1":
                 u = await self.db.get_user(user_id)
@@ -972,6 +1001,17 @@ class Shop:
             url = f"https://payment.zarinpal.com/pg/StartPay/{authority}"
             return pid, tr("🏦 برای پرداخت <b>{amount}</b> تومان روی دکمه زیر بزنید. بعد از پرداخت، نتیجه خودکار اعلام می‌شود.", amount=fmt(amount)), \
                 ikb([[btn(tr("پرداخت آنلاین"), url=url, role="pay")]])
+
+        if method == "stars":
+            if not (order_id and await self.stars_ok(order_id)):
+                raise ValueError(tr("پرداخت با استارز برای این سفارش فعال نیست."))
+            n = self.pricing.toman_to_stars(amount)
+            pid = await self.db.create_payment(user_id, order_id, "stars", amount, n)
+            from aiogram.types import LabeledPrice
+            await self.bot.send_invoice(user_id, title=tr("پرداخت سفارش #{oid}", oid=order_id)[:32],
+                                        description=tr("پرداخت {n} ستاره تلگرام", n=n)[:255], payload=f"pay:{pid}",
+                                        currency="XTR", prices=[LabeledPrice(label="Stars", amount=n)])
+            return pid, tr("⭐ فاکتور {n} ستاره بالا ارسال شد؛ دکمه‌ی پرداخت زیر آن را بزنید.", n=n), None
 
         if method == "ton":
             rate = self.pricing.ton_toman()
@@ -1292,8 +1332,12 @@ class Shop:
         if not p:
             return NW_("پرداخت پیدا نشد.")
         await self.db.log(actor, f"payment_{act}", f"P{pid}")
+        what = f"{fmt(p['amount'])} تومان — {METHOD_FA.get(p['method'], p['method'])} — کاربر <code>{p['user_id']}</code>"
         if act == "ok":
-            return NW_("✅ تأیید و پردازش شد.") if await self.confirm_payment(pid, ref=f"admin:{pid}") else NW_("این پرداخت قبلاً بررسی شده است.")
+            if await self.confirm_payment(pid, ref=f"admin:{pid}"):
+                await self.audit(actor, f"✅ رسید/پرداخت <b>P{pid}</b> را <b>تأیید</b> کرد\n{what}")
+                return NW_("✅ تأیید و پردازش شد.")
+            return NW_("این پرداخت قبلاً بررسی شده است.")
         reason = (reason or "").strip()
         if await self.db.reject_payment(pid, REJECT_REASONS.get(reason, reason)):
             tr = await self.tr_for(p["user_id"])
@@ -1302,6 +1346,7 @@ class Shop:
                 await self.say(p["user_id"], "❌ پرداخت شما (کد P{pid}) تأیید نشد.\n📝 دلیل: {why}\nدر صورت اشتباه با پشتیبانی تماس بگیرید.", pid=pid, why=esc(why))
             else:
                 await self.say(p["user_id"], "❌ پرداخت شما (کد P{pid}) تأیید نشد. در صورت اشتباه با پشتیبانی تماس بگیرید.", pid=pid)
+            await self.audit(actor, f"❌ رسید/پرداخت <b>P{pid}</b> را <b>رد</b> کرد\n{what}" + (f"\n📝 دلیل: {esc(why)}" if why else ""))
             return NW_("❌ رد شد.")
         return NW_("این پرداخت قبلاً بررسی شده است.")
 
@@ -1326,6 +1371,9 @@ class Shop:
         else:
             return False, NW_("عملیات نامعتبر.")
         await self.db.log(actor, "balance", f"{uid} {op} {amount} {reason}"[:200])
+        nm = {"add": "➕ افزایش", "sub": "➖ کاهش", "set": "🟰 تنظیم"}.get(op, op)
+        await self.audit(actor, f"{nm} موجودی کاربر <code>{uid}</code> ({esc(u.get('first_name') or '')}): <b>{fmt(amount)}</b> تومان"
+                         + (f"\n📝 دلیل: {esc(reason)}" if reason else ""))
         return True, NW_("موجودی بروزرسانی شد.")
 
     async def admin_set_ban(self, uid, banned: bool, reason, actor):
@@ -1336,6 +1384,7 @@ class Shop:
             return False, NW_("ادمین را نمی‌توان مسدود کرد.")
         await self.db.set_banned(uid, banned, reason)
         await self.db.log(actor, "ban" if banned else "unban", f"{uid} {reason}"[:200])
+        await self.audit(actor, ("⛔ کاربر مسدود شد" if banned else "✅ مسدودی کاربر برداشته شد") + f": <code>{uid}</code>" + (f"\n📝 {esc(reason)}" if reason else ""))
         if banned:
             await self.say(uid, "⛔ حساب شما مسدود شد.") if not reason else \
                 await self.say(uid, "⛔ حساب شما مسدود شد.\nدلیل: {r}", r=esc(reason))

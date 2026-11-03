@@ -24,7 +24,23 @@ router = make_router()
 
 FILTER_LABELS = {"all": "همه", "active": "فعال", "banned": "⛔ مسدود", "balance": "👛 دارای موجودی", "buyers": "🛒 خریدار",
                  "nobuy": "بدون خرید", "referrers": "🤝 معرف", "vip": "🎁 تخفیف شخصی", "new7": "🆕 ۷ روز اخیر", "inactive30": "😴 غیرفعال ۳۰ روز"}
+# رتبه‌بندی‌ها: نام → (فیلتر، مرتب‌سازی)
+RANKS = {"top_ref": ("referrers", "refs"), "top_spent": ("buyers", "spent"), "top_orders": ("buyers", "orders"),
+         "richest": ("balance", "balance"), "newest": ("all", "new"), "oldest": ("all", "old"), "recent": ("all", "seen")}
+RANK_LABELS = {"top_ref": "🏆 بیشترین زیرمجموعه", "top_spent": "💰 بیشترین خرید (مبلغ)", "top_orders": "🛒 بیشترین تعداد خرید",
+               "richest": "👛 بیشترین موجودی", "newest": "🆕 تازه‌ترین عضو‌ها", "oldest": "📅 قدیمی‌ترین عضو‌ها", "recent": "🕒 آخرین بازدید"}
 UPER = 8
+
+
+def jdate(ts) -> str:
+    """تاریخ شمسی (به وقت تهران)."""
+    if not ts:
+        return "-"
+    from datetime import timedelta, timezone
+    from webkit import g2j
+    d = datetime.fromtimestamp(ts, timezone(timedelta(hours=3, minutes=30)))
+    jy, jm, jd = g2j(d.year, d.month, d.day)
+    return f"{jy}/{jm:02d}/{jd:02d}"
 
 
 # ============================================================ خانه
@@ -236,6 +252,8 @@ def users_menu_kb():
     items = list(FILTER_LABELS.items())
     for i in range(0, len(items), 2):
         rows.append([btn(lab, f"adm:ul:{k}:0", role="admin") for k, lab in items[i:i + 2]])
+    for k, lab in RANK_LABELS.items():
+        rows.append([btn(lab, f"adm:ul:{k}:0", role="admin")])
     rows.append(back_row())
     return ikb(rows)
 
@@ -259,11 +277,24 @@ async def cb_users_q(cb: CallbackQuery, state: FSMContext):
 async def cb_user_list(cb: CallbackQuery, shop: Shop):
     _, _, flt, page = cb.data.split(":")
     page = int(page)
-    if flt not in USER_FILTERS:
+    rank = flt if flt in RANKS else None
+    sort = "new"
+    if rank:
+        flt, sort = RANKS[rank]
+    elif flt not in USER_FILTERS:
         flt = "all"
     total = await shop.db.count_users("", flt)
-    users = await shop.db.search_users("", UPER, page * UPER, flt)
-    kb = [[btn(f"{'⛔' if u['banned'] else '👤'} {u['first_name'] or ''} @{u['username'] or '-'} · {fmt(u['balance'])}ت", f"adm:u:{u['id']}", role="admin")] for u in users]
+    users = await shop.db.search_users("", UPER, page * UPER, flt, sort)
+
+    def metric(u):
+        if rank == "top_ref": return f"🤝{u['refs_n']}"
+        if rank == "top_spent": return f"💰{fmt(u['spent'])}ت"
+        if rank == "top_orders": return f"🛒{u['orders_n']}"
+        if rank in ("newest", "oldest"): return f"📅{jdate(u['created_at'])}"
+        if rank == "recent": return f"🕒{jdate(u.get('last_seen'))}"
+        return f"{fmt(u['balance'])}ت"
+    kb = [[btn(f"{'⛔' if u['banned'] else '👤'} {u['first_name'] or ''} @{u['username'] or '-'} · {metric(u)}", f"adm:u:{u['id']}", role="admin")] for u in users]
+    flt = rank or flt
     nav = []
     if page > 0:
         nav.append(btn("◀️", f"adm:ul:{flt}:{page - 1}", role="nav"))
@@ -272,7 +303,7 @@ async def cb_user_list(cb: CallbackQuery, shop: Shop):
     if nav:
         kb.append(nav)
     kb.append(back_row("adm:users"))
-    await view(cb, f"👥 {FILTER_LABELS.get(flt, flt)} — {fmt(total)} کاربر (صفحه {page + 1})", ikb(kb))
+    await view(cb, f"👥 {RANK_LABELS.get(flt) or FILTER_LABELS.get(flt, flt)} — {fmt(total)} کاربر (صفحه {page + 1})", ikb(kb))
     await cb.answer()
 
 
@@ -301,6 +332,7 @@ async def user_card(shop: Shop, uid) -> tuple[str, object] | None:
     codes = await shop.db.user_discounts(uid)
     lines = [f"👤 <b>{esc(u['first_name'])}</b> @{esc(u['username'] or '-')}",
              f"آیدی: <code>{uid}</code> · زبان: {esc(u.get('lang') or '-')}",
+             f"📅 تاریخ عضویت: {jdate(u.get('created_at'))}",
              f"👛 موجودی: <b>{fmt(u['balance'])}</b> تومان",
              f"🧾 سفارش‌ها: {st['orders']} (تحویل‌شده {st['done']}) · مجموع خرید: {fmt(st['spent'])} ت · سود از او: {fmt(st['profit'])} ت",
              f"🤝 زیرمجموعه: {ref['count']} (تأییدشده {ref['active']}، در انتظار {ref['pending']})",
@@ -314,8 +346,7 @@ async def user_card(shop: Shop, uid) -> tuple[str, object] | None:
     if u.get("note"):
         lines.append(f"📝 {esc(u['note'])}")
     kb = ikb([
-        [btn("➕ افزایش", f"adm:ub:{uid}:a", role="confirm"), btn("➖ کاهش", f"adm:ub:{uid}:s", role="reject"),
-         btn("🟰 تنظیم دقیق", f"adm:ub:{uid}:t", role="action")],
+        [btn("➕ افزایش موجودی", f"adm:ub:{uid}:a", role="confirm"), btn("➖ کاهش موجودی", f"adm:ub:{uid}:s", role="reject")],
         [btn("✅ رفع مسدودی" if u["banned"] else "⛔ مسدود کردن", f"adm:ubn:{uid}", role="confirm" if u["banned"] else "reject"),
          btn("✉️ پیام", f"adm:um:{uid}", role="action")],
         [btn("🎁 تخفیف شخصی ٪", f"adm:upd:{uid}", role="action"), btn("🏷 فعال‌سازی کد", f"adm:ucd:{uid}", role="action")],
@@ -418,13 +449,20 @@ async def got_ban_reason(m: Message, shop: Shop, state: FSMContext):
     await show_user(m, shop, d["uid"])
 
 
+BAL_REASONS = {"a": [("جبران خسارت", "compensation"), ("هدیه / جایزه", "gift"), ("اصلاح خطای حساب", "fix"), ("بازگشت وجه", "refund")],
+               "s": [("اصلاح خطای حساب", "fix"), ("استفاده‌ی نادرست / تخلف", "abuse"), ("برداشت درخواستی کاربر", "withdraw"), ("واریز اشتباهی", "mistake")]}
+
+
 @router.callback_query(F.data.startswith("adm:ub:"))
 async def cb_bal(cb: CallbackQuery, state: FSMContext):
     _, _, uid, op = cb.data.split(":")
+    if op not in ("a", "s"):
+        await cb.answer()
+        return
     await state.set_state(Adm.bal)
     await state.update_data(uid=int(uid), op=op)
-    what = {"a": "مبلغ افزایش", "s": "مبلغ کاهش", "t": "موجودی جدید (دقیق)"}[op]
-    await cb.message.answer(f"{what} را به تومان بفرستید؛ اگر خواستید دلیل هم بنویسید بعد از عدد، مثلاً:\n<code>50000 جبران خسارت</code>\n(برای لغو /admin)")
+    what = "مبلغی که اضافه شود" if op == "a" else "مبلغی که کم شود"
+    await cb.message.answer(f"{what} را به تومان بفرستید (فقط عدد). برای لغو /admin")
     await cb.answer()
 
 
@@ -432,15 +470,51 @@ async def cb_bal(cb: CallbackQuery, state: FSMContext):
 async def got_bal(m: Message, shop: Shop, state: FSMContext):
     parts = m.text.strip().split(maxsplit=1)
     amt = num(parts[0]) if parts else None
-    if amt is None or amt > 10_000_000_000 or (amt == 0 and (await state.get_data())["op"] != "t"):
-        await m.answer("فقط یک عدد معتبر (و اختیاری دلیل) بفرستید.")
+    if amt is None or amt <= 0 or amt > 10_000_000_000:
+        await m.answer("فقط یک عدد معتبر و بیشتر از صفر بفرستید.")
         return
     d = await state.get_data()
-    await state.clear()
-    op = {"a": "add", "s": "sub", "t": "set"}[d["op"]]
-    ok, msg = await shop.admin_adjust_balance(d["uid"], op, amt, parts[1] if len(parts) > 1 else "", f"tg:{m.from_user.id}")
+    if len(parts) > 1:                      # میان‌بر: «عدد + دلیل» در یک پیام
+        await state.clear()
+        await _apply_bal(m, shop, d["uid"], d["op"], amt, parts[1][:100])
+        return
+    await state.update_data(amt=amt)
+    rows = [[btn(lab, f"adm:ubr:{k}", role="action")] for lab, k in BAL_REASONS[d["op"]]]
+    rows.append([btn("✍️ دلیل دلخواه", "adm:ubr:custom", role="action"), btn("➖ بدون دلیل", "adm:ubr:none", role="action")])
+    await m.answer(f"مبلغ: <b>{fmt(amt)}</b> تومان — {'افزایش' if d['op'] == 'a' else 'کاهش'}\nدلیل را انتخاب کنید:", reply_markup=ikb(rows))
+
+
+async def _apply_bal(m, shop, uid, op, amt, reason):
+    who = getattr(m, "chat", None) and m.chat.id
+    actor = f"tg:{who}"
+    ok, msg = await shop.admin_adjust_balance(uid, "add" if op == "a" else "sub", amt, reason, actor)
     await m.answer(("✅ " if ok else "❌ ") + msg)
-    await show_user(m, shop, d["uid"])
+    await show_user(m, shop, uid)
+
+
+@router.callback_query(F.data.startswith("adm:ubr:"), Adm.bal)
+async def cb_bal_reason(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    k = cb.data.split(":")[2]
+    d = await state.get_data()
+    if not d.get("amt"):
+        await cb.answer("اول مبلغ را بفرستید.", show_alert=True)
+        return
+    if k == "custom":
+        await state.set_state(Adm.bal_reason)
+        await cb.message.answer("دلیل را بنویسید (برای لغو /admin):")
+        await cb.answer()
+        return
+    reason = "" if k == "none" else next((lab for lab, kk in BAL_REASONS[d["op"]] + BAL_REASONS["a" if d["op"] == "s" else "s"] if kk == k), "")
+    await state.clear()
+    await cb.answer()
+    await _apply_bal(cb.message, shop, d["uid"], d["op"], d["amt"], reason)
+
+
+@router.message(Adm.bal_reason, TXT)
+async def got_bal_reason(m: Message, shop: Shop, state: FSMContext):
+    d = await state.get_data()
+    await state.clear()
+    await _apply_bal(m, shop, d["uid"], d["op"], d["amt"], m.text.strip()[:100])
 
 
 @router.callback_query(F.data.startswith("adm:um:"))
@@ -761,13 +835,27 @@ async def got_topup(m: Message, shop: Shop, state: FSMContext):
 
 @router.pre_checkout_query()
 async def pre_checkout(q: PreCheckoutQuery, shop: Shop):
-    await q.answer(ok=(q.invoice_payload == "botstars" and shop.can(q.from_user.id, "stars")), error_message="درخواست نامعتبر")
+    pl = q.invoice_payload or ""
+    if pl.startswith("pay:") and pl[4:].isdigit():
+        p = await shop.db.get_payment(int(pl[4:]))
+        ok = bool(p and p["method"] == "stars" and p["status"] == "pending" and p["user_id"] == q.from_user.id
+                  and int(p["crypto_amount"] or 0) == q.total_amount)
+        await q.answer(ok=ok, error_message="این پرداخت دیگر معتبر نیست")
+        return
+    await q.answer(ok=(pl == "botstars" and shop.can(q.from_user.id, "stars")), error_message="درخواست نامعتبر")
 
 
 @router.message(F.successful_payment)
 async def paid_stars(m: Message, shop: Shop):
     sp = m.successful_payment
-    if sp.invoice_payload != "botstars":
+    pl = sp.invoice_payload or ""
+    if pl.startswith("pay:") and pl[4:].isdigit():
+        pid = int(pl[4:])
+        p = await shop.db.get_payment(pid)
+        if p and p["method"] == "stars" and p["user_id"] == m.from_user.id:
+            await shop.confirm_payment(pid, ref=f"xtr:{sp.telegram_payment_charge_id}")
+        return
+    if pl != "botstars":
         return
     await shop.db.log(f"tg:{m.from_user.id}", "bot_stars_topup", str(sp.total_amount))
     n = await shop.retry_queue()

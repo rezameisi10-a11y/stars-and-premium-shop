@@ -24,6 +24,7 @@ class Adm(StatesGroup):
     user_q = State()
     reject_reason = State()
     bal = State()
+    bal_reason = State()
     ban_reason = State()
     msg_user = State()
     user_note = State()
@@ -63,7 +64,7 @@ PERM_MAP = [
     ("adm:pays", "receipts"), ("padm:", "receipts"),
     ("adm:users", "users_view"), ("adm:ul:", "users_view"), ("adm:u:", "users_view"), ("adm:uo:", "users_view"),
     ("adm:up:", "users_view"), ("adm:ur:", "users_view"), ("adm:uw:", "users_view"),
-    ("adm:ub:", "users_edit"), ("adm:ubn:", "users_edit"), ("adm:um:", "users_edit"), ("adm:unb:", "users_edit"),
+    ("adm:ub:", "users_edit"), ("adm:ubr:", "users_edit"), ("adm:ubn:", "users_edit"), ("adm:um:", "users_edit"), ("adm:unb:", "users_edit"),
     ("adm:upd:", "users_edit"), ("adm:ucd:", "users_edit"), ("adm:upc:", "users_edit"), ("adm:unote:", "users_edit"),
     ("adm:ulg:", "users_edit"), ("adm:ulang:", "users_edit"), ("adm:urf:", "users_edit"),
     ("adm:prod", "products"), ("adm:pk:", "products"), ("adm:gsync", "products"), ("adm:p:", "products"),
