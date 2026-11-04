@@ -511,6 +511,23 @@ html[data-skin=o][data-theme] body::after{background:repeating-linear-gradient(0
 html[data-skin=p][data-theme] body::before{animation:pFall 5s linear infinite,pSway 3.2s ease-in-out infinite alternate}
 html[data-skin=p][data-theme] body::after{animation:pFall 9s linear -3s infinite,pSway 4.4s ease-in-out -1s infinite alternate-reverse}
 @keyframes pSway{0%{transform:translateX(-30px)}100%{transform:translateX(30px)}}
+/* c و q — مینیمال با حرکت خیلی زیاد: لکه‌های نور شناور، کاشی‌های معلق با برق عبوری، کارت کیف پول زنده */
+html[data-skin=c][data-theme],html[data-skin=q][data-theme]{background:var(--bg)}
+html[data-skin=c][data-theme] body,html[data-skin=q][data-theme] body{background:none}
+html[data-skin=c][data-theme] body::before,html[data-skin=c][data-theme] body::after,html[data-skin=q][data-theme] body::before,html[data-skin=q][data-theme] body::after{display:block;content:"";position:fixed;z-index:-1;pointer-events:none;width:auto;height:auto;border-radius:0;transform:none}
+html[data-skin=c][data-theme] body::before,html[data-skin=q][data-theme] body::before{inset:-15vh -25vw auto -25vw;height:75vh;filter:blur(46px);opacity:.55;
+  background:radial-gradient(38% 50% at 18% 45%,#60a5fa,transparent 70%),radial-gradient(34% 46% at 72% 30%,#34d399,transparent 70%),radial-gradient(30% 40% at 55% 85%,#fbbf24,transparent 70%);animation:qDrift 6s ease-in-out infinite alternate}
+html[data-skin=c][data-theme] body::after,html[data-skin=q][data-theme] body::after{inset:auto -25vw -20vh -25vw;height:70vh;filter:blur(52px);opacity:.5;
+  background:radial-gradient(40% 50% at 30% 55%,#f472b6,transparent 70%),radial-gradient(36% 46% at 78% 45%,#818cf8,transparent 70%);animation:qDrift 8s ease-in-out -3s infinite alternate-reverse}
+html[data-skin=q][data-theme=dark] body::before{opacity:.38}html[data-skin=q][data-theme=dark] body::after{opacity:.34}
+@keyframes qDrift{0%{transform:translate(-10vw,-5vh) scale(1) rotate(0)}100%{transform:translate(10vw,7vh) scale(1.3) rotate(16deg)}}
+html[data-skin=c][data-theme] .tile,html[data-skin=q][data-theme] .tile{animation:tFloat 2.6s ease-in-out infinite;position:relative;overflow:hidden}
+html[data-skin=c][data-theme] .tile:nth-child(2),html[data-skin=q][data-theme] .tile:nth-child(2){animation-delay:.35s}
+html[data-skin=c][data-theme] .tile:nth-child(3),html[data-skin=q][data-theme] .tile:nth-child(3){animation-delay:.7s}
+html[data-skin=c][data-theme] .tile:nth-child(4),html[data-skin=q][data-theme] .tile:nth-child(4){animation-delay:1.05s}
+html[data-skin=c][data-theme] .tile::after,html[data-skin=q][data-theme] .tile::after{content:"";position:absolute;inset:0;background:linear-gradient(115deg,transparent 38%,rgba(255,255,255,.55) 50%,transparent 62%);transform:translateX(-130%);animation:nSweep 3.2s ease-in-out infinite;pointer-events:none}
+html[data-skin=c][data-theme] .wcard,html[data-skin=c][data-theme] .hero,html[data-skin=q][data-theme] .wcard,html[data-skin=q][data-theme] .hero{background:linear-gradient(120deg,var(--w1),var(--w2),var(--w3),var(--w1));background-size:300% 300%;animation:nFlow 5s ease infinite}
+html[data-skin=c][data-theme] .card,html[data-skin=q][data-theme] .card,html[data-skin=c][data-theme] .row,html[data-skin=q][data-theme] .row{animation:cardin .7s ease both}
 /* r s t — تم‌های روشن خیلی متحرک */
 html[data-skin=r][data-theme]{--bg:#fffaf0;--fg:#2b2140;--hint:#8a7a99;--surface:rgba(255,255,255,.82);--raised:rgba(255,255,255,.9);--line:rgba(255,170,60,.28);--card:rgba(255,255,255,.82);--glass:rgba(255,255,255,.82);--glass2:rgba(255,255,255,.9);--edge:rgba(255,170,60,.28);--btn:#f97316;--btnfg:#fff;--a1:#f97316;--a2:#ec4899;--a3:#f97316;--gold:#d99a0b;--ok:#1a9d6c;--err:#d92d3a;--warn:#c98200;--shd:0 8px 22px rgba(30,30,60,.12);--w1:#f97316;--w2:#ec4899;--w3:#8b5cf6;--s1:#f97316;--s2:#ec4899;--s3:#d99a0b;--s4:#e5486b;--add1:#ffd36b;--add2:#ffb627;--on-add:#2a1a00;--c-stars:#f0b429;--on-stars:#241a00;--c-premium:#f97316;--on-premium:#fff;--c-gift:#e5486b;--on-gift:#fff;--c-vpn:#14946b;--on-vpn:#fff;--c-agent:#8b5cf6;--on-agent:#fff}
 html[data-skin=s][data-theme]{--bg:#f0f9ff;--fg:#12304a;--hint:#5f8aa8;--surface:rgba(255,255,255,.82);--raised:rgba(255,255,255,.9);--line:rgba(56,189,248,.3);--card:rgba(255,255,255,.82);--glass:rgba(255,255,255,.82);--glass2:rgba(255,255,255,.9);--edge:rgba(56,189,248,.3);--btn:#0ea5e9;--btnfg:#fff;--a1:#0ea5e9;--a2:#14b8a6;--a3:#0ea5e9;--gold:#d99a0b;--ok:#1a9d6c;--err:#d92d3a;--warn:#c98200;--shd:0 8px 22px rgba(30,30,60,.12);--w1:#0ea5e9;--w2:#14b8a6;--w3:#6366f1;--s1:#0ea5e9;--s2:#14b8a6;--s3:#d99a0b;--s4:#e5486b;--add1:#ffd36b;--add2:#ffb627;--on-add:#2a1a00;--c-stars:#f0b429;--on-stars:#241a00;--c-premium:#0ea5e9;--on-premium:#fff;--c-gift:#e5486b;--on-gift:#fff;--c-vpn:#14946b;--on-vpn:#fff;--c-agent:#6366f1;--on-agent:#fff}
@@ -583,7 +600,7 @@ function markTheme() {
 const SKINS = [
   {k: "a", n: "فیروزه و زعفران", d: ["#0b9a8d", "#ffb627", "#6f5cff", "#ff5c93"]},
   {k: "b", n: "نئون شب", m: "dark", d: ["#ff3df0", "#2de2ff", "#b86bff", "#ffe14d"]},
-  {k: "c", n: "مینیمال روشن", m: "light", d: ["#2563eb", "#14171f", "#f59e0b", "#e11d48"]},
+  {k: "c", n: "مینیمال روشن", m: "light", an: 1, d: ["#2563eb", "#14171f", "#f59e0b", "#e11d48"]},
   {k: "d", n: "زرین لوکس", m: "dark", d: ["#e4b44c", "#f7dc8a", "#b8862b", "#6b5420"]},
   {k: "e", n: "آب‌نباتی شاد", m: "light", d: ["#ff5d8f", "#ff9a3d", "#9b6bff", "#32cfc0"]},
   {k: "f", n: "اقیانوس", d: ["#0b74c9", "#22d3ee", "#6366f1", "#fbbf24"]},
@@ -597,7 +614,7 @@ const SKINS = [
   {k: "n", n: "مایع", m: "dark", an: 1, d: ["#ec4899", "#8b5cf6", "#06b6d4", "#fbbf24"]},
   {k: "o", n: "شهر سایبری", m: "dark", an: 1, d: ["#ff2a6d", "#7b2cbf", "#05d9e8", "#fcee0a"]},
   {k: "p", n: "شکوفه‌ی بارانی", m: "dark", an: 1, d: ["#be185d", "#6d28d9", "#fbcfe8", "#fde68a"]},
-  {k: "q", n: "مینیمال ساده", d: ["#4f8cff", "#2fb98d", "#f0b429", "#ef6a8a"]},
+  {k: "q", n: "مینیمال ساده", an: 1, d: ["#4f8cff", "#2fb98d", "#f0b429", "#ef6a8a"]},
   {k: "r", n: "صبح آفتابی", m: "light", an: 1, d: ["#f97316", "#ec4899", "#8b5cf6", "#fde68a"]},
   {k: "s", n: "حباب‌های شاد", m: "light", an: 1, d: ["#0ea5e9", "#14b8a6", "#6366f1", "#e0f2fe"]},
   {k: "t", n: "رنگین‌کمان", m: "light", an: 1, d: ["#c026d3", "#6366f1", "#0ea5e9", "#fef9c3"]},

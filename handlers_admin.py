@@ -269,7 +269,7 @@ async def cb_users(cb: CallbackQuery, state: FSMContext, shop: Shop):
 @router.callback_query(F.data == "adm:users:q")
 async def cb_users_q(cb: CallbackQuery, state: FSMContext):
     await state.set_state(Adm.user_q)
-    await cb.message.answer("👥 آیدی عددی یا یوزرنیم یا نام کاربر را بفرستید (برای لغو /admin):")
+    await cb.message.answer("🔎 آیدی عددی، یوزرنیم، نام کاربر، نام سرویس VPN، نام نماینده یا لینک اشتراک را بفرستید (برای لغو /admin):")
     await cb.answer()
 
 
@@ -309,17 +309,22 @@ async def cb_user_list(cb: CallbackQuery, shop: Shop):
 
 @router.message(Adm.user_q, TXT)
 async def got_user_q(m: Message, shop: Shop, state: FSMContext):
-    users = await shop.db.search_users(m.text.strip(), limit=10)
-    if not users:
-        await m.answer("کاربری پیدا نشد. دوباره بفرستید یا /admin.")
+    q = m.text.strip()
+    users = await shop.db.search_users(q, limit=10)
+    svcs = await shop.db.list_vpn_services(q=q, limit=8)           # سرویس‌های VPN مطابق (نام، لینک ساب، یادداشت، کاربر)
+    ags = await shop.db.list_agents(q=q, limit=8) if hasattr(shop.db, "list_agents") else []
+    if not (users or svcs or ags):
+        await m.answer("چیزی پیدا نشد. دوباره بفرستید یا /admin.")
         return
     await state.clear()
-    if len(users) == 1:
+    if len(users) == 1 and not svcs and not ags:
         await show_user(m, shop, users[0]["id"])
         return
-    kb = [[btn(f"{u['first_name'] or ''} @{u['username'] or '-'} ({u['id']})", f"adm:u:{u['id']}", role="admin")] for u in users]
+    kb = [[btn(f"📡 {s['name']} · {s.get('panel_name') or ''} · {s['user_id']}", f"adm:vpn:s:{s['id']}", role="admin")] for s in svcs]
+    kb += [[btn(f"🧑‍💼 {a['username']} · {a.get('panel_name') or ''} · {a['user_id']}", f"adm:vpn:ag:{a['id']}", role="admin")] for a in ags]
+    kb += [[btn(f"👤 {u['first_name'] or ''} @{u['username'] or '-'} ({u['id']})", f"adm:u:{u['id']}", role="admin")] for u in users]
     kb.append(back_row("adm:users"))
-    await m.answer("نتایج:", reply_markup=ikb(kb))
+    await m.answer(f"نتایج «{esc(q[:40])}»: " + f"{len(svcs)} سرویس VPN، {len(ags)} نماینده، {len(users)} کاربر\n(سرویس‌ها و نماینده‌ها اول آمده‌اند)", reply_markup=ikb(kb))
 
 
 async def user_card(shop: Shop, uid) -> tuple[str, object] | None:

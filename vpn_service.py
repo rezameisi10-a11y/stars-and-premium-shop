@@ -122,6 +122,26 @@ def bar(used, total, n=10) -> str:
     return "▓" * k + "░" * (n - k) + f" {int(r * 100)}%"
 
 
+def jdate(ts) -> str:
+    """تاریخ شمسی به وقت تهران."""
+    from datetime import datetime, timedelta, timezone
+    from webkit import g2j
+    d = datetime.fromtimestamp(ts, timezone(timedelta(hours=3, minutes=30)))
+    jy, jm, jd = g2j(d.year, d.month, d.day)
+    return f"{jy}/{jm:02d}/{jd:02d}"
+
+
+def left_text(ts, tr) -> str:
+    """«۲۶ روز و ۱۷ ساعت و ۴۳ دقیقه»؛ اگر گذشته باشد «پایان‌یافته»."""
+    d = int(ts - time.time())
+    if d <= 0:
+        return tr("پایان‌یافته")
+    days, rem = divmod(d, 86400)
+    h, rem = divmod(rem, 3600)
+    parts = ([tr("{n} روز", n=days)] if days else []) + ([tr("{n} ساعت", n=h)] if h else []) + ([tr("{n} دقیقه", n=rem // 60)] if not days and rem // 60 else [])
+    return (" " + tr("و") + " ").join(parts) or tr("کمتر از ۱ دقیقه")
+
+
 def days_left(ts) -> int | None:
     if not ts:
         return None
@@ -134,9 +154,12 @@ def valid_name(n: str) -> bool:
 
 
 # تنظیمات هر پنل (داخل ستون extra؛ مثل «قابلیت‌های پنل» در میرزا). مقدار 1 = روشن
-PANEL_FLAGS = {"show": 1, "test": 1, "renew": 1, "addon": 1, "sub": 1, "config": 1, "qr": 1, "copy_sub": 1, "copy_cfg": 1}
+PANEL_FLAGS = {"show": 1, "test": 1, "renew": 1, "addon": 1, "sub": 1, "config": 1, "qr": 1, "copy_sub": 1, "copy_cfg": 1,
+               "revoke": 1, "toggle": 1, "transfer": 1, "unote": 1, "refund": 0}
 PANEL_FLAG_TITLES = {"show": N_("نمایش پنل به کاربران"), "test": N_("اکانت تست"), "renew": N_("تمدید"), "addon": N_("حجم/زمان اضافه"),
                      "sub": N_("ارسال لینک اشتراک"), "config": N_("ارسال کانفیگ مستقیم"), "qr": N_("دکمه‌ی QR کد"),
+                     "revoke": N_("دکمه‌ی تغییر لینک"), "toggle": N_("دکمه‌ی خاموش/روشن کردن اکانت"), "transfer": N_("دکمه‌ی انتقال سرویس به کاربر دیگر"),
+                     "unote": N_("دکمه‌ی تغییر یادداشت"), "refund": N_("دکمه‌ی بازگشت وجه (با محدودیت‌های تنظیمات)"),
                      "copy_sub": N_("کپی لینک اشتراک با یک کلیک (خاموش = نگه‌داشتن انگشت)"), "copy_cfg": N_("کپی کانفیگ‌ها با یک کلیک (خاموش = نگه‌داشتن انگشت)")}
 
 
@@ -155,12 +178,33 @@ def pflag(panel, key) -> bool:
     return str(pextra(panel).get(key, PANEL_FLAGS.get(key, 1))) != "0"
 
 
+def plimit(panel, key) -> int:
+    """محدودیت عددی هر پنل (۰ یا خالی = بدون محدودیت)."""
+    try:
+        return max(int(float(pextra(panel).get(key) or 0)), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def hidden_for(panel, uid) -> bool:
     return uid in [int(x) for x in pextra(panel).get("hidden", []) if str(x).lstrip("-").isdigit()]
 
 
 def parse_ref(ref: str) -> list[str]:
     return (ref or "").split(":")
+
+
+def _ago(ts, tr) -> str:
+    if not ts:
+        return tr("متصل نشده")
+    d = max(int(time.time() - ts), 0)
+    if d < 90:
+        return tr("همین الان")
+    if d < 5400:
+        return tr("{n} دقیقه پیش", n=d // 60)
+    if d < 172800:
+        return tr("{n} ساعت پیش", n=d // 3600)
+    return tr("{n} روز پیش", n=d // 86400)
 
 
 def _hb(n) -> str:
@@ -368,6 +412,114 @@ class VPN:
         if await self.db.count_pending_vpn_orders(user_id) >= self.MAX_PENDING:
             raise VpnError(N_("سفارش‌های پرداخت‌نشده‌ی زیادی دارید؛ ابتدا آن‌ها را پرداخت کنید یا کمی صبر کنید تا منقضی شوند."))
 
+    # ---------- ابزارهای کاربر روی سرویس خودش ----------
+    def refund_info(self, svc):
+        """(مجاز؟، مبلغ، پیام خطا) — بازگشت وجه فقط برای سفارش پرداخت‌شده، در مهلت و با سقف مصرف تنظیم‌شده."""
+        if svc["is_test"] or not svc.get("order_id") or svc["status"] in ("deleted", "pending_manual"):
+            return False, 0, "این سرویس قابل بازگشت وجه نیست."
+        hours = self._int("vpn_refund_hours", 24)
+        if hours <= 0:
+            return False, 0, "بازگشت وجه غیرفعال است."
+        if time.time() - svc["created_at"] > hours * 3600:
+            return False, 0, f"مهلت بازگشت وجه ({hours} ساعت) گذشته است."
+        mx = float(self.s.get("vpn_refund_max_used_pct") or 5)
+        used_pct = (svc["used_bytes"] / svc["total_bytes"] * 100) if svc["total_bytes"] else (100 if svc["used_bytes"] > 50 * 2**20 else 0)
+        if used_pct > mx:
+            return False, 0, f"بیش از {mx:g}٪ حجم مصرف شده است."
+        m = json.loads(svc["meta"] or "{}")
+        if m.get("refunded"):
+            return False, 0, "قبلاً بازگشت وجه شده است."
+        return True, 0, ""
+
+    async def user_refund(self, uid, sid):
+        svc = await self.db.get_vpn_service(sid)
+        if not svc or svc["user_id"] != uid:
+            return False, "سرویس پیدا نشد."
+        if not pflag(svc, "refund"):
+            return False, "این قابلیت غیرفعال است."
+        await self.sync_safe(svc)
+        svc = await self.db.get_vpn_service(sid)
+        ok, _a, why = self.refund_info(svc)
+        if not ok:
+            return False, why
+        o = await self.db.get_order(svc["order_id"])
+        if not o or o["user_id"] != uid or o["status"] not in ("done", "manual_pending"):
+            return False, "سفارش قابل بازگشت نیست."
+        ok, msg = await self.admin_delete(sid, refund=True, actor=f"user:{uid}")
+        if ok:
+            await self.shop.audit(f"user:{uid}", f"💸 کاربر <code>{uid}</code> بازگشت وجه سرویس <code>{esc(svc['name'])}</code> را انجام داد ({fmt(o['amount'])} تومان)")
+        return ok, msg
+
+    async def sync_safe(self, svc, min_gap=5):
+        """همگام‌سازی لحظه‌ای با پنل (حداکثر هر min_gap ثانیه)؛ خطا نادیده گرفته می‌شود."""
+        if time.time() - (svc.get("last_sync") or 0) < min_gap:
+            return svc
+        try:
+            return await self.sync(svc, force=False)
+        except Exception:  # noqa: BLE001
+            return svc
+
+    async def user_toggle(self, uid, sid):
+        svc = await self.db.get_vpn_service(sid)
+        if not svc or svc["user_id"] != uid or not pflag(svc, "toggle"):
+            return False, "سرویس پیدا نشد."
+        if svc["status"] not in ("active", "disabled"):
+            return False, "در این وضعیت امکان تغییر نیست."
+        if err := self.limit_error(svc, "toggle"):
+            return False, err
+        m = json.loads(svc["meta"] or "{}")
+        gap = (plimit(svc, "toggle_gap") or self._int("vpn_toggle_cooldown_min", 10)) * 60
+        if time.time() - m.get("toggle_at", 0) < gap:
+            return False, f"لطفاً {int((m.get('toggle_at', 0) + gap - time.time()) // 60) + 1} دقیقه‌ی دیگر دوباره تلاش کنید."
+        ok, msg = await self.admin_action(sid, "enable" if svc["status"] == "disabled" else "disable", actor=f"user:{uid}")
+        if ok:
+            svc = await self.db.get_vpn_service(sid)
+            m = json.loads(svc["meta"] or "{}")
+            m["toggle_at"] = int(time.time())
+            m["n_toggle"] = int(m.get("n_toggle", 0)) + 1
+            await self.db.update_vpn_service(sid, meta=m)
+        return ok, msg
+
+    async def user_set_note(self, uid, sid, text):
+        svc = await self.db.get_vpn_service(sid)
+        if not svc or svc["user_id"] != uid or not pflag(svc, "unote"):
+            return False
+        m = json.loads(svc["meta"] or "{}")
+        m["unote"] = (text or "").strip()[:60]
+        await self.db.update_vpn_service(sid, meta=m)
+        return True
+
+    async def user_transfer(self, uid, sid, target):
+        svc = await self.db.get_vpn_service(sid)
+        if not svc or svc["user_id"] != uid or not pflag(svc, "transfer"):
+            return False, "سرویس پیدا نشد."
+        if target == uid or not await self.db.get_user(target):
+            return False, "کاربر مقصد پیدا نشد (او باید قبلاً ربات را استارت کرده باشد)."
+        m = json.loads(svc["meta"] or "{}")
+        mx = self._int("vpn_transfer_max", 1)
+        if mx > 0 and m.get("transfers", 0) >= mx:
+            return False, "سقف تعداد انتقال این سرویس تمام شده است."
+        m["transfers"] = m.get("transfers", 0) + 1
+        await self.db.update_vpn_service(sid, user_id=target, meta=m)
+        await self.db.log(f"user:{uid}", "vpn_transfer", f"#{sid} -> {target}")
+        await self.shop.audit(f"user:{uid}", f"🚚 انتقال سرویس <code>{esc(svc['name'])}</code> از <code>{uid}</code> به <code>{target}</code>")
+        return True, "انجام شد."
+
+    def limit_error(self, svc, kind: str) -> str:
+        """kind: revoke | toggle | addon — اگر سقف تعداد هر سرویس (تنظیم پنل) پر شده باشد، پیام خطا برمی‌گرداند."""
+        mx = plimit(svc, f"{kind}_max")
+        n = int(json.loads(svc["meta"] or "{}").get(f"n_{kind}", 0))
+        if mx and n >= mx:
+            return N_("سقف مجاز این قابلیت برای سرویس شما پر شده است؛ با پشتیبانی تماس بگیرید.")
+        return ""
+
+    async def count_use(self, sid: int, kind: str):
+        svc = await self.db.get_vpn_service(sid)
+        if svc:
+            m = json.loads(svc["meta"] or "{}")
+            m[f"n_{kind}"] = int(m.get(f"n_{kind}", 0)) + 1
+            await self.db.update_vpn_service(sid, meta=m)
+
     def revoke_wait(self, sid: int, cooldown: int = 120) -> int:
         """ثانیه‌ی باقی‌مانده تا مجاز شدن «لینک جدید» (۰ = مجاز، و همین الان ثبت می‌شود)؛ جلوی اسپم و ضربه‌زدن به پنل را می‌گیرد."""
         now = time.time()
@@ -437,6 +589,8 @@ class VPN:
             raise VpnError(N_("برای اکانت تست نمی‌شود حجم/زمان اضافه خرید."))
         if not pflag(svc, "addon"):
             raise VpnError(N_("خرید بسته‌ی اضافه برای این سرویس فعال نیست."))
+        if err := self.limit_error(svc, "addon"):
+            raise VpnError(err)
         if not ad or not ad["active"]:
             raise VpnError(N_("این بسته دیگر در دسترس نیست."))
         await self.guard_pending(user_id)
@@ -590,6 +744,7 @@ class VPN:
             if ad["days"] > 0:
                 u = await drv.add_days(svc["name"], meta, ad["days"])
             await self._mark_applied(svc, o["id"])
+            await self.count_use(sid, "addon")
             if u:
                 await self._apply_user(svc, u)
         svc = await self.db.get_vpn_service(sid)
@@ -731,6 +886,8 @@ class VPN:
             f["sub_url"] = u.sub_url
         if u.links:
             f["links"] = u.links
+        meta.update(online_at=u.online_at or 0, sub_updated=getattr(u, "sub_updated", 0) or 0, ua=getattr(u, "ua", "") or "")
+        f["meta"] = meta
         await self.db.update_vpn_service(svc["id"], **f)
         return await self.db.get_vpn_service(svc["id"])
 
@@ -1201,9 +1358,25 @@ class VPN:
                  tr("وضعیت: {s}", s=tr(STATUS_FA.get(svc["status"], svc["status"])))]
         if svc["status"] != "pending_manual":
             lines.append(tr("مصرف: {u}", u=ltr(f"{fmt_gb(svc['used_bytes'])} / " + (fmt_gb(total) if total else tr("نامحدود")))) + f"\n{bar(svc['used_bytes'], total)}")
+            if total:
+                rest = max(total - svc["used_bytes"], 0)
+                lines.append(tr("حجم باقی‌مانده: {r}", r=ltr(f"{fmt_gb(rest)} ({int(rest * 100 / total)}%)")))
             lines.append(tr("زمان باقی‌مانده: {t}", t=tr("نامحدود") if left is None else tr("{d} روز", d=left)))
+            if svc["expires_at"]:
+                lines.append(tr("📅 تاریخ پایان: {d} ({t})", d=ltr(jdate(svc["expires_at"])), t=left_text(svc["expires_at"], tr)))
+            if svc.get("panel_name") and svc.get("panel_type") != "manual":
+                lines.append(tr("🌍 موقعیت: {p}", p=esc(svc["panel_name"])))
         else:
             lines.append(tr("سرویس شما پس از آماده‌سازی توسط پشتیبانی ارسال می‌شود."))
+        m = json.loads(svc["meta"] or "{}")
+        if m.get("unote"):
+            lines.append(tr("📝 یادداشت: {n}", n=esc(m["unote"])))
+        if svc["status"] != "pending_manual":
+            lines.append(tr("🟢 آخرین اتصال: {t}", t=_ago(m.get("online_at"), tr)))
+            if m.get("sub_updated"):
+                lines.append(tr("🔄 آخرین آپدیت لینک اشتراک: {t}", t=_ago(m["sub_updated"], tr)))
+            if m.get("ua"):
+                lines.append(tr("📱 کلاینت: {c}", c=ltr(esc(m["ua"]))))
         show_sub, show_cfg = pflag(svc, "sub"), pflag(svc, "config")
         tap_sub, tap_cfg = pflag(svc, "copy_sub"), pflag(svc, "copy_cfg")
         if svc["sub_url"] and show_sub:
@@ -1228,17 +1401,38 @@ class VPN:
                 row = []
                 if pflag(svc, "renew"):
                     row.append(btn(tr("🔄 تمدید"), f"vpn:rn:{sid}", role="action"))
-                if self._flag("vpn_allow_addon", "1") and pflag(svc, "addon"):
-                    row.append(btn(tr("➕ حجم/زمان اضافه"), f"vpn:ad:{sid}", role="action"))
                 if row:
                     rows.append(row)
+                if self._flag("vpn_allow_addon", "1") and pflag(svc, "addon"):
+                    rows.append([btn(tr("➕ خرید حجم اضافه"), f"vpn:ad:{sid}:gb", role="action"), btn(tr("⏳ خرید زمان اضافه"), f"vpn:ad:{sid}:days", role="action")])
                 if self._can_auto(svc):
                     on = bool(json.loads(svc["meta"] or "{}").get("auto"))
                     rows.append([btn(tr("🔁 تمدید خودکار: روشن ✅") if on else tr("🔁 تمدید خودکار: خاموش"), f"vpn:au:{sid}", role="action")])
+            row = []
+            if pflag(svc, "sub") and svc["sub_url"]:
+                row.append(btn(tr("🔗 لینک اشتراک"), f"vpn:sl:{sid}", role="action"))
+            if pflag(svc, "config"):
+                row.append(btn(tr("📥 دریافت کانفیگ"), f"vpn:cf:{sid}", role="action"))
+            if row:
+                rows.append(row)
             row = [btn(tr("📲 QR کد"), f"vpn:qr:{sid}", role="action")] if pflag(svc, "qr") else []
             rows.append(row + [btn(tr("♻️ بروزرسانی"), f"vpn:rf:{sid}", role="action")])
-            if self._flag("vpn_allow_revoke", "1") and svc["sub_url"]:
+            if self._flag("vpn_allow_revoke", "1") and svc["sub_url"] and pflag(svc, "revoke"):
                 rows.append([btn(tr("🔑 لینک جدید"), f"vpn:rv:{sid}", role="action")])
+            row = []
+            if pflag(svc, "toggle") and svc["status"] in ("active", "disabled"):
+                row.append(btn(tr("⏻ روشن کردن اکانت") if svc["status"] == "disabled" else tr("⏻ خاموش کردن اکانت"), f"vpn:tg:{sid}", role="action"))
+            if pflag(svc, "unote"):
+                row.append(btn(tr("📝 تغییر یادداشت"), f"vpn:nt:{sid}", role="action"))
+            if row:
+                rows.append(row)
+            row = []
+            if pflag(svc, "transfer"):
+                row.append(btn(tr("🚚 انتقال به کاربر دیگر"), f"vpn:tf:{sid}", role="action"))
+            if pflag(svc, "refund") and self.refund_info(svc)[0]:
+                row.append(btn(tr("💸 بازگشت وجه"), f"vpn:rfd:{sid}", role="reject"))
+            if row:
+                rows.append(row)
         rows.append([btn(tr("🔙 سرویس‌های من"), back, role="back")])
         return ikb(rows)
 

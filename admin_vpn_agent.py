@@ -467,6 +467,12 @@ async def cb_agent(cb: CallbackQuery, shop: Shop):
     if not ag:
         await cb.answer("پیدا نشد", show_alert=True)
         return
+    if ag["status"] != "deleted" and time.time() - (ag["last_sync"] or 0) > 3:      # آمار لحظه‌ای از پنل
+        try:
+            await shop.vpn.agents.sync(ag, force=False)
+            ag = await shop.db.get_agent(ag["id"]) or ag
+        except Exception:  # noqa: BLE001
+            pass
     text, kb = await agent_card(shop, ag)
     await view(cb, text, kb)
     await cb.answer()

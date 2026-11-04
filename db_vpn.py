@@ -264,9 +264,12 @@ class VpnDB:
             w.append("s.panel_id=?")
             a.append(panel_id)
         if q:
-            qq = f"%{q.strip().lstrip('@')}%"
-            w.append("(s.name LIKE ? OR CAST(s.user_id AS TEXT) LIKE ? OR CAST(s.id AS TEXT)=? OR EXISTS(SELECT 1 FROM users u WHERE u.id=s.user_id AND u.username LIKE ?))")
-            a += [qq, qq, q.strip(), qq]
+            qs = q.strip().lstrip("@")
+            tok = qs.rstrip("/").rsplit("/", 1)[-1] if "/" in qs else qs        # لینک کامل ساب → توکن آخر
+            qq, qt = f"%{qs}%", f"%{tok}%"
+            w.append("(s.name LIKE ? OR CAST(s.user_id AS TEXT) LIKE ? OR CAST(s.id AS TEXT)=? OR s.sub_url LIKE ? OR s.note LIKE ? OR s.title LIKE ? "
+                     "OR EXISTS(SELECT 1 FROM users u WHERE u.id=s.user_id AND (u.username LIKE ? OR u.first_name LIKE ?)))")
+            a += [qq, qq, q.strip(), qt, qq, qq, qq, qq]
         return (" WHERE " + " AND ".join(w)) if w else "", tuple(a)
 
     async def list_vpn_services(self, user_id=None, status=None, q="", panel_id=None, limit=50, offset=0):
@@ -411,8 +414,9 @@ class VpnDB:
             a.append(panel_id)
         if q:
             qq = f"%{q.strip().lstrip('@')}%"
-            w.append("(a.username LIKE ? OR CAST(a.user_id AS TEXT) LIKE ? OR CAST(a.id AS TEXT)=? OR EXISTS(SELECT 1 FROM users u WHERE u.id=a.user_id AND u.username LIKE ?))")
-            a += [qq, qq, q.strip(), qq]
+            w.append("(a.username LIKE ? OR CAST(a.user_id AS TEXT) LIKE ? OR CAST(a.id AS TEXT)=? OR a.note LIKE ? OR a.title LIKE ? "
+                     "OR EXISTS(SELECT 1 FROM users u WHERE u.id=a.user_id AND (u.username LIKE ? OR u.first_name LIKE ?)))")
+            a += [qq, qq, q.strip(), qq, qq, qq, qq]
         return " WHERE " + " AND ".join(w), tuple(a)
 
     async def list_agents(self, user_id=None, status=None, q="", panel_id=None, limit=50, offset=0):

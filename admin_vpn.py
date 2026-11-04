@@ -12,7 +12,7 @@ import vpn_panels
 from admin_common import TXT, back_row, make_router, view
 from service import Shop
 from ui import btn, esc, fmt, ikb, rtl_fix
-from vpn_service import PANEL_FLAG_TITLES, PANEL_FLAGS, STATUS_FA, bar, days_left, fmt_gb, hidden_for, parse_stock_text, pextra, pflag
+from vpn_service import PANEL_FLAG_TITLES, PANEL_FLAGS, STATUS_FA, bar, days_left, fmt_gb, hidden_for, parse_stock_text, pextra, pflag, plimit
 
 router = make_router()
 PER = 8
@@ -48,9 +48,15 @@ FIELD_PROMPT = {
     "capacity": "حداکثر چند سرویس روی این پنل ساخته شود؟ برای بدون محدودیت عدد ۰ بفرستید.",
     "test_days": "اکانت تست این پنل چند روز اعتبار داشته باشد؟ (برای مقدار پیش‌فرض «-» بفرستید)",
     "test_gb": "اکانت تست این پنل چند گیگابایت حجم داشته باشد؟ (۰ یعنی نامحدود؛ برای مقدار پیش‌فرض «-» بفرستید)",
+    "revoke_max": "هر سرویس حداکثر چند بار بتواند «لینک جدید» بگیرد؟ (۰ = بدون محدودیت)",
+    "revoke_gap": "بین دو بار «لینک جدید» حداقل چند دقیقه فاصله باشد؟ (۰ = پیش‌فرض ۲ دقیقه)",
+    "toggle_max": "هر سرویس حداکثر چند بار بتواند خودش اکانت را خاموش/روشن کند؟ (۰ = بدون محدودیت)",
+    "toggle_gap": "بین دو بار خاموش/روشن کردن حداقل چند دقیقه فاصله باشد؟ (۰ = تنظیم عمومی)",
+    "addon_max": "هر سرویس حداکثر چند بار بتواند حجم/زمان اضافه بخرد؟ (۰ = بدون محدودیت)",
     "test_max": "هر کاربر روی این پنل حداکثر چند اکانت تست بتواند بگیرد؟ (یک عدد، حداقل ۱؛ برای مقدار پیش‌فرض «-» بفرستید)",
 }
-OPTIONAL = {"sub_url", "inbound_ids", "test_days", "test_gb", "test_max"}
+LIMIT_KEYS = ("revoke_max", "revoke_gap", "toggle_max", "toggle_gap", "addon_max")
+OPTIONAL = {"sub_url", "inbound_ids", "test_days", "test_gb", "test_max", *LIMIT_KEYS}
 
 
 class AV(StatesGroup):
@@ -324,6 +330,10 @@ async def _panel_features(cb: CallbackQuery, shop: Shop, pid: int):
     rows += [[btn("🎁 مدت تست (روز)", "adm:vpn:noop", role="back"), btn(f"{days}", f"adm:vpn:pe:{pid}:test_days", role="admin")],
              [btn("🎁 حجم تست (GB)", "adm:vpn:noop", role="back"), btn(f"{gb:g}" if gb else "نامحدود", f"adm:vpn:pe:{pid}:test_gb", role="admin")],
              [btn("🎁 تعداد تست هر کاربر", "adm:vpn:noop", role="back"), btn(f"{mx}", f"adm:vpn:pe:{pid}:test_max", role="admin")]]
+    for k, lab in (("revoke_max", "🔑 سقف دفعات لینک جدید"), ("revoke_gap", "🔑 فاصله لینک جدید (دقیقه)"), ("toggle_max", "⏻ سقف دفعات خاموش/روشن"),
+                   ("toggle_gap", "⏻ فاصله خاموش/روشن (دقیقه)"), ("addon_max", "➕ سقف دفعات خرید حجم/زمان اضافه")):
+        v = plimit(p, k)
+        rows.append([btn(lab, "adm:vpn:noop", role="back"), btn(f"{v}" if v else "بدون محدودیت", f"adm:vpn:pe:{pid}:{k}", role="admin")])
     rows.append(back_row(f"adm:vpn:p:{pid}"))
     await view(cb, f"🧩 <b>قابلیت‌های پنل «{esc(p['name'])}»</b>\nبرای تغییر، روی وضعیت یا مقدار بزنید. تنظیمات اکانت تست این پنل هم همین‌جاست.", ikb(rows))
 
@@ -444,7 +454,7 @@ async def cb_panel_del(cb: CallbackQuery, shop: Shop):
 
 
 # ---- ویرایش یک فیلد پنل
-EXTRA_FIELDS = {"test_days", "test_gb", "test_max"}
+EXTRA_FIELDS = {"test_days", "test_gb", "test_max", *LIMIT_KEYS}
 
 
 @router.callback_query(F.data.startswith("adm:vpn:pe:"))
@@ -519,9 +529,9 @@ def _conv(key, text):
     text = (text or "").strip()
     if key in OPTIONAL and text == "-":
         return ""
-    if key in ("test_days", "test_gb", "test_max") and text == "-":
+    if key in ("test_days", "test_gb", "test_max", *LIMIT_KEYS) and text == "-":
         return ""
-    if key in ("capacity", "test_days", "test_gb", "test_max"):
+    if key in ("capacity", "test_days", "test_gb", "test_max", *LIMIT_KEYS):
         t = text.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٫", "0123456789.")).replace(",", "")
         try:
             v = float(t)
@@ -1047,6 +1057,9 @@ async def cb_service(cb: CallbackQuery, shop: Shop):
     if not svc:
         await cb.answer("پیدا نشد", show_alert=True)
         return
+    if svc["status"] not in ("deleted", "pending_manual"):         # آمار لحظه‌ای از پنل
+        svc = await shop.vpn.sync_safe(svc, min_gap=3)
+        svc = await shop.db.get_vpn_service(svc["id"]) or svc
     text, kb = await svc_card(shop, svc)
     await view(cb, text, kb)
     await cb.answer()

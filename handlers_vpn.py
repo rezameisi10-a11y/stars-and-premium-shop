@@ -12,7 +12,7 @@ from i18n import N_
 from service import Shop
 from ui import btn, esc, fmt, ikb
 from vpn_panels import PanelError
-from vpn_service import STATUS_FA, VpnError, ltr
+from vpn_service import STATUS_FA, VpnError, ltr, pflag
 
 router = Router()
 router.message.filter(F.chat.type == "private")
@@ -202,7 +202,7 @@ async def vpn_show(cb: CallbackQuery, shop: Shop, tr):
     svc = await _own(cb, shop, tr, cb.data.split(":")[2])
     if not svc:
         return
-    if time.time() - (svc["last_sync"] or 0) > 60:
+    if time.time() - (svc["last_sync"] or 0) > 3:
         try:
             svc = await shop.vpn.sync(svc, force=False)
         except Exception:
@@ -262,7 +262,11 @@ async def vpn_revoke(cb: CallbackQuery, shop: Shop, tr):
     svc = await _own(cb, shop, tr, cb.data.split(":")[2])
     if not svc or shop.s.get("vpn_allow_revoke", "1") != "1":
         return
-    wait = shop.vpn.revoke_wait(svc["id"])
+    if err := shop.vpn.limit_error(svc, "revoke"):
+        await cb.answer(tr(err), show_alert=True)
+        return
+    from vpn_service import plimit
+    wait = shop.vpn.revoke_wait(svc["id"], (plimit(svc, "revoke_gap") or 2) * 60)
     if wait:
         await cb.answer(tr("لطفاً {s} ثانیه‌ی دیگر دوباره تلاش کنید.", s=wait), show_alert=True)
         return
@@ -270,6 +274,7 @@ async def vpn_revoke(cb: CallbackQuery, shop: Shop, tr):
     if not ok:
         await cb.answer(tr("انجام نشد؛ بعداً دوباره تلاش کنید."), show_alert=True)
         return
+    await shop.vpn.count_use(svc["id"], "revoke")
     svc = await shop.db.get_vpn_service(svc["id"])
     await shop.vpn.send_service(cb.from_user.id, svc, tr=tr)
     await cb.answer()
@@ -364,6 +369,11 @@ async def vpn_addons(cb: CallbackQuery, shop: Shop, tr):
         return
     u = await shop.db.get_user(cb.from_user.id)
     adds = await shop.db.list_vpn_addons(active_only=True)
+    kind = cb.data.split(":")[3] if cb.data.count(":") >= 3 else ""
+    if kind == "gb":
+        adds = [a for a in adds if a["gb"] > 0]
+    elif kind == "days":
+        adds = [a for a in adds if a["days"] > 0]
     if not adds or shop.s.get("vpn_allow_addon", "1") != "1":
         await cb.answer(tr("بسته‌ی اضافه‌ای موجود نیست."), show_alert=True)
         return
@@ -372,6 +382,42 @@ async def vpn_addons(cb: CallbackQuery, shop: Shop, tr):
     if not await _swap_kb(cb, ikb(rows)):
         await cb.message.answer(tr("➕ بسته‌ی اضافه برای {n}", n=f"<code>{esc(svc['name'])}</code>") + "\n" + tr("یکی را انتخاب کنید:"), reply_markup=ikb(rows))
     await cb.answer(tr("یکی از بسته‌ها را انتخاب کنید."))
+
+
+@router.callback_query(F.data.startswith("vpn:sl:"))
+async def vpn_sub_link(cb: CallbackQuery, shop: Shop, tr):
+    svc = await _own(cb, shop, tr, cb.data.split(":")[2])
+    if not svc:
+        return
+    if not svc["sub_url"] or not pflag(svc, "sub"):
+        await cb.answer(tr("لینک اشتراک موجود نیست."), show_alert=True)
+        return
+    code = f"<code>{esc(svc['sub_url'])}</code>" if pflag(svc, "copy_sub") else esc(svc["sub_url"])
+    await cb.message.answer(tr("🔗 لینک اشتراک (روی آن بزنید تا کپی شود):") + "\n" + code, disable_web_page_preview=True)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("vpn:cf:"))
+async def vpn_get_configs(cb: CallbackQuery, shop: Shop, tr):
+    svc = await _own(cb, shop, tr, cb.data.split(":")[2])
+    if not svc:
+        return
+    if not pflag(svc, "config"):
+        await cb.answer(tr("ارسال کانفیگ برای این سرویس غیرفعال است."), show_alert=True)
+        return
+    try:
+        await shop.vpn.refresh_links(svc)
+    except Exception:  # noqa: BLE001
+        pass
+    svc = await shop.db.get_vpn_service(svc["id"])
+    links = json.loads(svc["links"] or "[]")
+    if not links:
+        await cb.answer(tr("کانفیگ مستقیمی موجود نیست؛ از لینک اشتراک استفاده کنید."), show_alert=True)
+        return
+    tap = pflag(svc, "copy_cfg")
+    for i in range(0, min(len(links), 100), 10):
+        await cb.message.answer("\n\n".join((f"<code>{esc(x)}</code>" if tap else esc(x)) for x in links[i:i + 10]), disable_web_page_preview=True)
+    await cb.answer()
 
 
 @router.callback_query(F.data.startswith("vpn:adb:"))
@@ -480,7 +526,7 @@ async def agent_show(cb: CallbackQuery, shop: Shop, tr):
     ag = await _own_agent(cb, shop, tr, cb.data.split(":")[2])
     if not ag:
         return
-    if time.time() - (ag["last_sync"] or 0) > 60:
+    if time.time() - (ag["last_sync"] or 0) > 3:
         try:
             ag = await shop.vpn.agents.sync(ag, force=False)
             ag = await shop.db.get_agent(ag["id"])

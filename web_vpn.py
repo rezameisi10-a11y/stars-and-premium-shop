@@ -76,6 +76,9 @@ async def vpn_home(request):
                      + f"<label class='mini'>{e(_('روز اکانت تست این پنل'))}{inp('test_days', ex.get('test_days', ''), _('پیش‌فرض ۱ روز'), 'm', 'number')}</label> "
                      + f"<label class='mini'>{e(_('حجم (GB) اکانت تست این پنل'))}{inp('test_gb', ex.get('test_gb', ''), _('خالی = پیش‌فرض؛ ۰ نامحدود'), 'm', 'number')}</label> "
                      + f"<label class='mini'>{e(_('تعداد تست هر کاربر روی این پنل'))}{inp('test_max', ex.get('test_max', ''), _('پیش‌فرض ۱'), 'm', 'number')}</label> "
+                     + "".join(f"<label class='mini'>{e(_(lab))}{inp(k, ex.get(k, ''), _('۰ = بدون محدودیت'), 'm', 'number')}</label> " for k, lab in
+                               (("revoke_max", "سقف دفعات لینک جدید هر سرویس"), ("revoke_gap", "فاصله بین دو لینک جدید (دقیقه)"), ("toggle_max", "سقف دفعات خاموش/روشن هر سرویس"),
+                                ("toggle_gap", "فاصله خاموش/روشن (دقیقه)"), ("addon_max", "سقف دفعات خرید حجم/زمان اضافه هر سرویس")))
                      + f"<button class='b sm pri'>{T('ذخیره')}</button>", cls="")
         acts = (pform(request, f"/vpn/panels/{p['id']}/test", f"<button class='b sm'>🔌 {T('تست اتصال')}</button>")
                 + pform(request, f"/vpn/panels/{p['id']}/toggle", f"<button class='b sm'>{T('غیرفعال') if p['enabled'] else T('فعال')}</button>")
@@ -155,7 +158,7 @@ async def panel_features(request):
     ex = pextra(p)
     for k in PANEL_FLAGS:
         ex[k] = 1 if d.get("f_" + k) else 0
-    for k in ("test_days", "test_gb", "test_max"):
+    for k in ("test_days", "test_gb", "test_max", "revoke_max", "revoke_gap", "toggle_max", "toggle_gap", "addon_max"):
         v = str(d.get(k, "")).strip()
         if not v:
             ex.pop(k, None)

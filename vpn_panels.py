@@ -43,6 +43,8 @@ class PanelUser:
     sub_url: str = ""
     links: list = field(default_factory=list)
     online_at: int = 0
+    sub_updated: int = 0            # آخرین زمان آپدیت لینک اشتراک توسط کلاینت
+    ua: str = ""                    # نام کلاینت (User-Agent) آخرین دریافت لینک
 
 
 @dataclass
@@ -377,7 +379,8 @@ class Marzban(BasePanel):
         if st == "active":                 # پنل با کمی تأخیر وضعیت را به‌روز می‌کند؛ خودمان هم از روی انقضا/حجم محاسبه می‌کنیم
             st = derive_status(True, used, total, exp)
         return PanelUser(d.get("username", ""), st, used, total, exp,
-                         self._abs(d.get("subscription_url") or ""), list(d.get("links") or []), to_ts(d.get("online_at")))
+                         self._abs(d.get("subscription_url") or ""), list(d.get("links") or []), to_ts(d.get("online_at")),
+                         to_ts(d.get("sub_updated_at")), str(d.get("sub_last_user_agent") or "")[:120])
 
     async def create(self, name, days, gb, note="", tg_id=0, limit_ip=0):
         d = await self._call("POST", self.USER, json=await self._create_body(name, days, gb, note))
@@ -636,7 +639,7 @@ class Marzneshin(Marzban):
             st = "expired"
         if d.get("data_limit_reached"):
             st = "limited"
-        return PanelUser(d.get("username", ""), st, used, total, exp, self._abs(d.get("subscription_url") or ""), [], to_ts(d.get("online_at")))
+        return PanelUser(d.get("username", ""), st, used, total, exp, self._abs(d.get("subscription_url") or ""), [], to_ts(d.get("online_at")), to_ts(d.get("sub_updated_at")), str(d.get("sub_last_user_agent") or "")[:120])
 
     def _limits_body(self, total, expire, revive):
         b = {"data_limit": int(total)}
