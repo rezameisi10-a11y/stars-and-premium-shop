@@ -153,22 +153,12 @@ class AgentSales:
         if plan and (not plan.get("addon_on", 1) or plan["panel_id"] != ag["panel_id"]):
             return {}
         out = {}
-        for k, g in (("gb", "cgb"), ("days", "cd")):
+        for k in ("gb", "days"):
             if k == "gb" and not ag["total_bytes"]:
                 continue
-            if plan and (plan.get(f"custom_{k}_price") or 0) > 0:
-                if not plan.get(f"custom_{k}_on"):
-                    continue
-                cfg = {"price": int(plan[f"custom_{k}_price"]), "min": plan[f"custom_{k}_min"], "max": plan[f"custom_{k}_max"]}
-            else:
-                sv = self.s
-                if sv.get(f"vpn_agent_{g}_on", "0") != "1":
-                    continue
-                try:
-                    cfg = {"price": int(float(sv.get(f"vpn_agent_{g}_price") or 0)), "min": float(sv.get(f"vpn_agent_{g}_min") or 1),
-                           "max": float(sv.get(f"vpn_agent_{g}_max") or 0)}
-                except ValueError:
-                    continue
+            if not plan or not plan.get(f"custom_{k}_on") or (plan.get(f"custom_{k}_price") or 0) <= 0:
+                continue
+            cfg = {"price": int(plan[f"custom_{k}_price"]), "min": plan[f"custom_{k}_min"], "max": plan[f"custom_{k}_max"]}
             if cfg["price"] <= 0:
                 continue
             cfg["min"] = cfg["min"] or 1
