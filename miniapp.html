@@ -1050,10 +1050,13 @@ VIEWS.vpn_renew = async (id) => {
 VIEWS.vpn_addons = async (id) => {
   const r = await api("vpn_addons", {id});
   let h = `<h1>➕ ${esc(t("بسته‌ی اضافه برای {n}", {n: r.service.name}))}</h1><p class="hint">${esc(t("یکی را انتخاب کنید:"))}</p>`;
-  if (!r.addons.length) h += `<div class="card hint">${esc(t("بسته‌ی اضافه‌ای موجود نیست."))}</div>`;
+  const cu = r.custom || {};
+  if (!r.addons.length && !Object.keys(cu).length) h += `<div class="card hint">${esc(t("بسته‌ی اضافه‌ای موجود نیست."))}</div>`;
   h += r.addons.map(a => `<button class="row prod k-vpn" data-id="${a.id}"><i class="ri">➕</i><span>${esc(a.title)}</span><b>${esc(a.price.short)}</b></button>`).join("");
+  h += Object.keys(cu).map(k => { const c = cu[k]; return `<div class="card"><div class="nm">✏️ ${esc(k === "gb" ? t("حجم دلخواه") : t("زمان دلخواه"))}</div><p class="hint">${esc((k === "gb" ? t("حداقل حجم خرید {a} گیگ و حداکثر {b} گیگ", {a: c.min, b: c.max}) : t("حداقل زمان خرید {a} روز و حداکثر {b} روز", {a: c.min, b: c.max})))} · ${esc(c.price.short)}/${esc(k === "gb" ? "GB" : t("روز"))}</p><div class="grid"><input type="number" min="${c.min}" max="${c.max}" step="${k === "gb" ? "any" : "1"}" id="cu-${k}" placeholder="${c.min}"><button class="b" data-cu="${k}">${esc(t("خرید"))}</button></div></div>`; }).join("");
   $app.innerHTML = h;
   $app.querySelectorAll(".row.prod").forEach(b => b.onclick = () => run(b, async () => { const o = await api("vpn_addon", {id, addon_id: +b.dataset.id}); go("order", o.id); }));
+  $app.querySelectorAll("[data-cu]").forEach(b => b.onclick = () => run(b, async () => { const v = +document.getElementById("cu-" + b.dataset.cu).value; const o = await api("vpn_custom", {id, kind: b.dataset.cu, amount: v}); go("order", o.id); }));
 };
 
 /* ------------ پنل نمایندگی ------------ */

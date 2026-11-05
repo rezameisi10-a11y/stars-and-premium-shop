@@ -388,14 +388,40 @@ async def vpn_addons(cb: CallbackQuery, shop: Shop, tr):
         adds = [a for a in adds if a["gb"] > 0]
     elif kind == "days":
         adds = [a for a in adds if a["days"] > 0]
-    if not adds or shop.s.get("vpn_allow_addon", "1") != "1":
+    custom = shop.vpn.custom_cfg(svc)
+    if kind in ("gb", "days"):
+        custom = {k: v for k, v in custom.items() if k == kind}
+    if (not adds and not custom) or shop.s.get("vpn_allow_addon", "1") != "1":
         await cb.answer(tr("بسته‌ی اضافه‌ای موجود نیست."), show_alert=True)
         return
     rows = [[btn(f"{a['title']} | {fmt(shop._personal(a['price'], u))} {tr('ت')}", f"vpn:adp:{svc['id']}:{a['id']}", role="action")] for a in adds[:30]]
+    rows += [[btn(tr("✏️ حجم اضافه دلخواه") if k == "gb" else tr("✏️ زمان اضافه دلخواه"), f"vpn:adc:{svc['id']}:{k}", role="action")] for k in custom]
     rows.append([btn(tr("🔙 بازگشت"), f"vpn:adb:{svc['id']}", role="back")])
     if not await _swap_kb(cb, ikb(rows)):
         await cb.message.answer(tr("➕ بسته‌ی اضافه برای {n}", n=f"<code>{esc(svc['name'])}</code>") + "\n" + tr("یکی را انتخاب کنید:"), reply_markup=ikb(rows))
     await cb.answer(tr("یکی از بسته‌ها را انتخاب کنید."))
+
+
+@router.callback_query(F.data.startswith("vpn:adc:"))
+async def vpn_custom_ask(cb: CallbackQuery, shop: Shop, tr, state: FSMContext):
+    _, _, sid, kind = cb.data.split(":")
+    svc = await _own(cb, shop, tr, sid)
+    if not svc:
+        return
+    cfg = shop.vpn.custom_cfg(svc).get(kind)
+    if not cfg:
+        await cb.answer(tr("این امکان دیگر در دسترس نیست."), show_alert=True)
+        return
+    u = await shop.db.get_user(cb.from_user.id)
+    unit = shop._personal(cfg["price"], u)
+    await state.set_state(VpnSt.custom_amount)
+    await state.update_data(sid=svc["id"], kind=kind)
+    if kind == "gb":
+        txt = tr("📦 <b>خرید حجم اضافه</b>\nحداقل حجم خرید: {a} گیگابایت\nحداکثر حجم خرید: {b} گیگابایت\nقیمت هر گیگابایت: {p} تومان\n\nمقدار دلخواه را (فقط عدد، به گیگابایت) بفرستید. برای انصراف /start:", a=f"{cfg['min']:g}", b=f"{cfg['max']:g}", p=fmt(unit))
+    else:
+        txt = tr("⏳ <b>خرید زمان اضافه</b>\nحداقل زمان خرید: {a} روز\nحداکثر زمان خرید: {b} روز\nقیمت هر روز: {p} تومان\n\nمقدار دلخواه را (فقط عدد، به روز) بفرستید. برای انصراف /start:", a=f"{cfg['min']:g}", b=f"{cfg['max']:g}", p=fmt(unit))
+    await cb.message.answer(txt)
+    await cb.answer()
 
 
 @router.callback_query(F.data.startswith("vpn:sl:"))
@@ -839,13 +865,20 @@ async def agent_custom_amount(m: Message, shop: Shop, state: FSMContext, tr):
     except ValueError:
         await m.answer(tr("فقط یک عدد معتبر بفرستید."))
         return
-    ag = await shop.db.get_agent(d["agent_id"])
-    cfg = (await shop.vpn.agents.custom_for(ag)).get(d["kind"]) if ag else None
+    if d.get("sid"):
+        svc = await shop.db.get_vpn_service(d["sid"])
+        cfg = shop.vpn.custom_cfg(svc).get(d["kind"]) if svc else None
+    else:
+        ag = await shop.db.get_agent(d["agent_id"])
+        cfg = (await shop.vpn.agents.custom_for(ag)).get(d["kind"]) if ag else None
     if cfg and not cfg["min"] <= v <= cfg["max"]:
         await m.answer(tr("مقدار خارج از بازه است؛ حداقل {a} و حداکثر {b} مجاز است.", a=f"{cfg['min']:g}", b=f"{cfg['max']:g}"))
         return
     try:
-        oid = await shop.vpn.agents.custom_order(m.from_user.id, d["agent_id"], d["kind"], v)
+        if d.get("sid"):
+            oid = await shop.vpn.custom_order(m.from_user.id, d["sid"], d["kind"], v)
+        else:
+            oid = await shop.vpn.agents.custom_order(m.from_user.id, d["agent_id"], d["kind"], v)
     except VpnError as e:
         await m.answer(tr(str(e)))
         return

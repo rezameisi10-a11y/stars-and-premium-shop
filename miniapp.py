@@ -527,7 +527,8 @@ async def a_vpn_addons(ctx: Ctx, d: dict) -> dict:
     if shop.s.get("vpn_allow_addon", "1") != "1":
         raise ApiError(ctx.tr("خرید بسته‌ی اضافه فعال نیست."))
     u = await shop.db.get_user(ctx.uid)
-    return {"service": _svc_dict(ctx, sv), "addons": [{"id": a["id"], "title": a["title"], "gb": a["gb"], "days": a["days"], "price": _money(ctx, shop._personal(a["price"], u))}
+    custom = {k: {"price": _money(ctx, shop._personal(c["price"], u)), "min": c["min"], "max": c["max"]} for k, c in shop.vpn.custom_cfg(sv).items()}
+    return {"service": _svc_dict(ctx, sv), "custom": custom, "addons": [{"id": a["id"], "title": a["title"], "gb": a["gb"], "days": a["days"], "price": _money(ctx, shop._personal(a["price"], u))}
                                                      for a in await shop.db.list_vpn_addons(active_only=True)]}
 
 
@@ -536,6 +537,14 @@ async def a_vpn_addon(ctx: Ctx, d: dict) -> dict:
         oid = await ctx.shop.vpn.addon_order(ctx.uid, int(d.get("id") or 0), int(d.get("addon_id") or 0))
     except VpnError as e:
         raise _vpn_err(ctx, e)
+    return await a_order_get(ctx, {"order_id": oid})
+
+
+async def a_vpn_custom(ctx: Ctx, d: dict) -> dict:
+    try:
+        oid = await ctx.shop.vpn.custom_order(ctx.uid, int(d.get("id") or 0), str(d.get("kind") or ""), float(d.get("amount") or 0))
+    except (VpnError, ValueError) as e:
+        raise _vpn_err(ctx, e) if isinstance(e, VpnError) else ApiError(ctx.tr("فقط یک عدد معتبر بفرستید."))
     return await a_order_get(ctx, {"order_id": oid})
 
 
@@ -714,7 +723,7 @@ ACTIONS = {"vpn_plans": a_vpn_plans, "vpn_order": a_vpn_order, "vpn_test": a_vpn
            "vpn_renew_plans": a_vpn_renew_plans, "vpn_renew": a_vpn_renew, "vpn_addons": a_vpn_addons, "vpn_addon": a_vpn_addon,
            "vpn_revoke": a_vpn_revoke, "vpn_send": a_vpn_send, "vpn_toggle": a_vpn_toggle, "vpn_note": a_vpn_note, "vpn_delete": a_vpn_delete, "vpn_report": a_vpn_report,
            "agent_plans": a_agent_plans, "agent_order": a_agent_order, "agent_list": a_agent_list, "agent_get": a_agent_get,
-           "agent_addon": a_agent_addon, "agent_custom": a_agent_custom, "agent_renew_plans": a_agent_renew_plans, "agent_renew": a_agent_renew, "agent_pw": a_agent_pw, "agent_send": a_agent_send,
+           "agent_addon": a_agent_addon, "agent_custom": a_agent_custom, "vpn_custom": a_vpn_custom, "agent_renew_plans": a_agent_renew_plans, "agent_renew": a_agent_renew, "agent_pw": a_agent_pw, "agent_send": a_agent_send,
            "init": a_init, "catalog": a_catalog, "order_create": a_order_create, "order_get": a_order_get, "discount": a_discount,
            "pay": a_pay, "receipt": a_receipt, "check": a_check, "wallet": a_wallet, "orders": a_orders,
            "referral": a_referral, "set_lang": a_set_lang}

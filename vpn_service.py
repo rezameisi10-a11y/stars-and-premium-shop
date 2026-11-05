@@ -7,6 +7,7 @@
 import asyncio
 import io
 import json
+import math
 import os
 import logging
 import re
@@ -635,6 +636,56 @@ class VPN:
         return await self.db.create_vpn_order(user_id, f"{svc['name']} — {ad['title']}", ad["days"],
                                               f"vpn:addon:{service_id}:{addon_id}", price, ad["cost"])
 
+    def custom_cfg(self, svc) -> dict:
+        """حجم/زمان اضافه‌ی دلخواهِ فعال برای این سرویس: {"gb": {price,min,max}, "days": {...}} (کلید غایب = خاموش)."""
+        if svc["is_test"] or svc["status"] in ("deleted", "pending_manual"):
+            return {}
+        if not self._flag("vpn_allow_addon", "1") or not pflag(svc, "addon") or self.limit_error(svc, "addon"):
+            return {}
+        sv, out = self.shop.s, {}
+        for k, g in (("gb", "cgb"), ("days", "cd")):
+            if (k == "gb" and not svc["total_bytes"]) or (k == "days" and not svc["expires_at"]):
+                continue
+            if sv.get(f"vpn_user_{g}_on", "0") != "1":
+                continue
+            try:
+                cfg = {"price": int(float(sv.get(f"vpn_user_{g}_price") or 0)), "min": float(sv.get(f"vpn_user_{g}_min") or 1),
+                       "max": float(sv.get(f"vpn_user_{g}_max") or 0)}
+            except ValueError:
+                continue
+            if cfg["price"] <= 0:
+                continue
+            cfg["min"] = cfg["min"] or 1
+            cfg["max"] = cfg["max"] or 10 ** 6
+            out[k] = cfg
+        return out
+
+    async def custom_order(self, user_id: int, service_id: int, kind: str, amount) -> int:
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError):
+            raise VpnError(N_("مقدار خارج از بازه‌ی مجاز است.")) from None
+        if not math.isfinite(amount) or amount <= 0:
+            raise VpnError(N_("مقدار خارج از بازه‌ی مجاز است."))
+        svc = await self.db.get_vpn_service(service_id)
+        if not svc or svc["user_id"] != user_id or svc["status"] in ("deleted", "pending_manual"):
+            raise VpnError(N_("سرویس پیدا نشد."))
+        cfg = self.custom_cfg(svc).get(kind)
+        if not cfg:
+            raise VpnError(N_("این امکان دیگر در دسترس نیست."))
+        await self.guard_pending(user_id)
+        amount = round(amount, 2) if kind == "gb" else int(amount)
+        if amount < cfg["min"] or amount > cfg["max"]:
+            raise VpnError(N_("مقدار خارج از بازه‌ی مجاز است."))
+        user = await self.db.get_user(user_id)
+        price = self.shop._personal(int(round(cfg["price"] * amount)), user)
+        if price <= 0:
+            raise VpnError(N_("مقدار خارج از بازه‌ی مجاز است."))
+        txt = f"{amount:g}"
+        title = f"➕ {txt} {N_('گیگابایت حجم')}" if kind == "gb" else f"➕ {txt} {N_('روز زمان')}"
+        return await self.db.create_vpn_order(user_id, f"{svc['name']} — {title}", int(amount) if kind == "days" else 0,
+                                              f"vpn:addon:{service_id}:c:{kind}:{txt}", price, 0)
+
     # ------------------------------------------------------------------ تحویل سفارش پرداخت‌شده
     async def fulfil(self, o: dict):
         """از Shop.fulfil صدا زده می‌شود (وضعیت سفارش delivering). هر خطا ← failed + اعلان ادمین توسط Shop."""
@@ -646,7 +697,10 @@ class VPN:
         elif kind[1] == "renew":
             await self._fulfil_renew(o, int(kind[2]), int(kind[3]))
         elif kind[1] == "addon":
-            await self._fulfil_addon(o, int(kind[2]), int(kind[3]))
+            if kind[3] == "c":
+                await self._fulfil_addon(o, int(kind[2]), 0, custom=(kind[4], float(kind[5])))
+            else:
+                await self._fulfil_addon(o, int(kind[2]), int(kind[3]))
         elif kind[1] in ("agent", "arenew", "aaddon"):
             await self.agents.fulfil(o)
         else:
@@ -759,9 +813,13 @@ class VPN:
         await self._notify_admin(f"🔄 تمدید VPN\nسفارش #{o['id']} | سرویس {esc(svc['name'])} | {esc(plan['title'])}\nکاربر: <code>{o['user_id']}</code> | مبلغ: {fmt(o['amount'])} تومان")
         await self.shop.finish_order(o["id"], f"renew #{sid}")
 
-    async def _fulfil_addon(self, o, sid, addon_id):
+    async def _fulfil_addon(self, o, sid, addon_id, custom=None):
         svc = await self.db.get_vpn_service(sid)
-        ad = await self.db.get_vpn_addon(addon_id)
+        if custom:
+            ad = {"title": f"{custom[1]:g} {'GB' if custom[0] == 'gb' else 'روز'}", "gb": custom[1] if custom[0] == "gb" else 0,
+                  "days": int(custom[1]) if custom[0] == "days" else 0}
+        else:
+            ad = await self.db.get_vpn_addon(addon_id)
         if not svc or not ad or svc["status"] == "deleted":
             raise VpnError("service/addon missing")
         if (await self.driver(svc["panel_id"])).manual:

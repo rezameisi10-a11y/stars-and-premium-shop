@@ -82,6 +82,10 @@ FEATURES = [("vpn_enabled", "فروش VPN", "bool", ["vpn_name_mode", "vpn_prefi
             ("vpn_help_text", "راهنمای اتصال", "val", ["vpn_help_text"])]
 FEATURE_BY_KEY = {f[0]: f for f in FEATURES}
 VPN_KEYS = [k for k, *_ in __import__("settings_schema").GROUP_IDS["vpn"][3]]
+# حجم/زمان اضافه‌ی دلخواه: دو بخش جدا (کاربران خرید VPN | پنل نمایندگی) با صفحه‌ی مخصوص خودشان
+ADDON_SECS = {"u": ("👤 کاربران (خرید VPN)", "vpn_user"), "a": ("🧑‍💼 پنل نمایندگی", "vpn_agent")}
+ADDON_KEYS = {f"{pre}_{g}_{f}" for _, pre in ADDON_SECS.values() for g in ("cgb", "cd") for f in ("on", "price", "min", "max")}
+VPN_FLAT_KEYS = [k for k in VPN_KEYS if k not in ADDON_KEYS]
 
 
 async def hub(shop: Shop):
@@ -163,9 +167,9 @@ def _val_text(shop: Shop, key) -> str:
     return v if v != "" else "—"
 
 
-async def _settings_list(cb: CallbackQuery, shop: Shop, keys, origin, title, back):
+async def _settings_list(cb: CallbackQuery, shop: Shop, keys, origin, title, back, top=None):
     from settings_schema import FIELDS
-    rows = [[btn(f"{FIELDS[k][0]}: {_val_text(shop, k)}"[:64], f"adm:vpn:se:{k}:{origin}", role="admin")] for k in keys]
+    rows = list(top or []) + [[btn(f"{FIELDS[k][0]}: {_val_text(shop, k)}"[:64], f"adm:vpn:se:{k}:{origin}", role="admin")] for k in keys]
     rows.append(back_row(back))
     await view(cb, title, ikb(rows))
 
@@ -177,6 +181,10 @@ async def cb_feature_settings(cb: CallbackQuery, shop: Shop):
     if not f:
         await cb.answer("نامعتبر", show_alert=True)
         return
+    if key == "vpn_allow_addon":
+        await _addon_screen(cb, shop, "u")
+        await cb.answer()
+        return
     if not f[3]:
         await cb.answer("این مورد تنظیم دیگری ندارد.", show_alert=True)
         return
@@ -186,13 +194,67 @@ async def cb_feature_settings(cb: CallbackQuery, shop: Shop):
 
 @router.callback_query(F.data == "adm:vpn:st")
 async def cb_settings(cb: CallbackQuery, shop: Shop):
-    await _settings_list(cb, shop, VPN_KEYS, "s", "⚙️ <b>تنظیمات فروش VPN</b>\nروی هر مورد بزنید تا تغییرش بدهید.", "adm:vpn")
+    await _settings_list(cb, shop, VPN_FLAT_KEYS, "s", "⚙️ <b>تنظیمات فروش VPN</b>\nروی هر مورد بزنید تا تغییرش بدهید.", "adm:vpn",
+                         top=[[btn("➕ حجم و زمان اضافه — کاربران", "adm:vpn:xs:u", role="admin")],
+                              [btn("➕ حجم و زمان اضافه — نمایندگی", "adm:vpn:xs:a", role="admin")]])
+    await cb.answer()
+
+
+# ---- حجم و زمان اضافه (هر بخش یک صفحه: اول روشن/خاموش، بعد قیمت‌ها، بعد حداقل و حداکثر)
+def _sv(shop: Shop, key, default="0"):
+    return shop.s.get(key, default) or default
+
+
+def _fnum(v) -> str:
+    try:
+        return f"{float(v):g}"
+    except (TypeError, ValueError):
+        return "—"
+
+
+async def _addon_screen(cb: CallbackQuery, shop: Shop, sec: str):
+    title, pre = ADDON_SECS[sec]
+    o = f"x:{sec}"
+    g, d = f"{pre}_cgb", f"{pre}_cd"
+    on_g, on_d = _sv(shop, f"{g}_on") == "1", _sv(shop, f"{d}_on") == "1"
+    warn = ""
+    for on, k, nm in ((on_g, g, "حجم"), (on_d, d, "زمان")):
+        if on and float(_sv(shop, f"{k}_price") or 0) <= 0:
+            warn += f"\n⚠️ قیمت {nm} صفر است؛ تا قیمت نگذارید به کاربر نشان داده نمی‌شود."
+    text = (f"➕ <b>حجم و زمان اضافه — {title}</b>\n\n"
+            f"📦 حجم دلخواه: {onoff(on_g)}\n   قیمت هر گیگ: {fmt(int(float(_sv(shop, g + '_price') or 0)))} تومان | بازه: {_fnum(_sv(shop, g + '_min', '1'))} تا {_fnum(_sv(shop, g + '_max', '1000'))} گیگ\n"
+            f"⏳ زمان دلخواه: {onoff(on_d)}\n   قیمت هر روز: {fmt(int(float(_sv(shop, d + '_price') or 0)))} تومان | بازه: {_fnum(_sv(shop, d + '_min', '1'))} تا {_fnum(_sv(shop, d + '_max', '365'))} روز"
+            + warn + "\n\nبرای تغییر هر مورد روی آن بزنید.")
+    rows = []
+    if sec == "u":
+        rows.append([btn(f"خرید حجم/زمان اضافه (کل): {onoff(shop.s.get('vpn_allow_addon', '1') == '1')}", f"adm:vpn:se:vpn_allow_addon:{o}", role="action")])
+        rows.append([btn("📦 بسته‌های افزودنی ثابت", "adm:vpn:ad", role="admin")])
+    rows += [[btn(f"📦 حجم: {onoff(on_g)}", f"adm:vpn:se:{g}_on:{o}", role="action"), btn(f"⏳ زمان: {onoff(on_d)}", f"adm:vpn:se:{d}_on:{o}", role="action")],
+             [btn(f"💰 قیمت هر گیگ: {_fnum(_sv(shop, g + '_price'))}", f"adm:vpn:se:{g}_price:{o}", role="admin"),
+              btn(f"💰 قیمت هر روز: {_fnum(_sv(shop, d + '_price'))}", f"adm:vpn:se:{d}_price:{o}", role="admin")],
+             [btn(f"⬇️ حداقل حجم: {_fnum(_sv(shop, g + '_min', '1'))}", f"adm:vpn:se:{g}_min:{o}", role="admin"),
+              btn(f"⬇️ حداقل زمان: {_fnum(_sv(shop, d + '_min', '1'))}", f"adm:vpn:se:{d}_min:{o}", role="admin")],
+             [btn(f"⬆️ حداکثر حجم: {_fnum(_sv(shop, g + '_max', '1000'))}", f"adm:vpn:se:{g}_max:{o}", role="admin"),
+              btn(f"⬆️ حداکثر زمان: {_fnum(_sv(shop, d + '_max', '365'))}", f"adm:vpn:se:{d}_max:{o}", role="admin")],
+             back_row("adm:vpn:st")]
+    await view(cb, text, ikb(rows))
+
+
+@router.callback_query(F.data.startswith("adm:vpn:xs:"))
+async def cb_addon_screen(cb: CallbackQuery, shop: Shop):
+    sec = cb.data.split(":")[3]
+    if sec not in ADDON_SECS:
+        await cb.answer("نامعتبر", show_alert=True)
+        return
+    await _addon_screen(cb, shop, sec)
     await cb.answer()
 
 
 async def _back_of(origin: str) -> tuple[str, str]:
     if origin.startswith("f:"):
         return "adm:vpn:fs:" + origin[2:], "adm:vpn:fs:" + origin[2:]
+    if origin.startswith("x:"):
+        return "adm:vpn:xs:" + origin[2:], "adm:vpn:xs:" + origin[2:]
     if origin == "f":
         return "adm:vpn:ft", "adm:vpn:ft"
     return "adm:vpn:st", "adm:vpn:st"
@@ -214,6 +276,8 @@ async def cb_setting_edit(cb: CallbackQuery, shop: Shop, state: FSMContext):
         await cb.answer("انجام شد")
         if origin == "f":
             await _features(cb, shop)
+        elif origin.startswith("x:"):
+            await _addon_screen(cb, shop, origin[2:])
         elif origin.startswith("f:"):
             await _settings_list(cb, shop, FEATURE_BY_KEY[origin[2:]][3], origin, f"⚙️ <b>تنظیمات «{FEATURE_BY_KEY[origin[2:]][1]}»</b>", "adm:vpn:ft")
         else:
