@@ -609,5 +609,6 @@
  "حذف سرویس منقضی": "Delete expired service",
  "مشکل را کوتاه توضیح دهید (اختیاری):": "Briefly describe the problem (optional):",
  "گزارش اختلال سرویس": "Report service issue",
- "یادداشت جدید را بنویسید (حداکثر ۶۰ حرف):": "Write the new note (max 60 characters):"
+ "یادداشت جدید را بنویسید (حداکثر ۶۰ حرف):": "Write the new note (max 60 characters):",
+ "🎁 به ازای {n} دعوت موفق، یک سرویس هدیه برایتان ساخته شد!": "🎁 For {n} successful invites, a gift service has been created for you!"
 }

@@ -145,6 +145,17 @@ async def _give_test(cb: CallbackQuery, shop: Shop, tr, panel_id=None):
     await cb.answer()
 
 
+class MsgAsCb:
+    """آداپتور: هندلرهای callback را برای پیام عادی (مثل لینک start=usertest) هم قابل‌استفاده می‌کند."""
+
+    def __init__(self, m: Message):
+        self.message, self.from_user = m, m.from_user
+
+    async def answer(self, text=None, show_alert=False, **_kw):
+        if text:
+            await self.message.answer(text)
+
+
 @router.callback_query(F.data.in_({"vpn:test", "vpn:tests"}))
 async def vpn_tests(cb: CallbackQuery, shop: Shop, tr):
     """دکمه‌ی جدای «اکانت تست رایگان»: همیشه دیده می‌شود. اگر چند پنل تست روشن است ابتدا انتخاب پنل؛ اگر کاربر سهمش را گرفته باشد پیام «استفاده کردید»."""

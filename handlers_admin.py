@@ -340,6 +340,7 @@ async def user_card(shop: Shop, uid) -> tuple[str, object] | None:
              f"📅 تاریخ عضویت: {jdate(u.get('created_at'))}",
              f"👛 موجودی: <b>{fmt(u['balance'])}</b> تومان",
              f"🧾 سفارش‌ها: {st['orders']} (تحویل‌شده {st['done']}) · مجموع خرید: {fmt(st['spent'])} ت · سود از او: {fmt(st['profit'])} ت",
+             f"💳 پرداخت‌های موفق: {st['pays_ok']} مورد · {fmt(st['pays_sum'])} ت",
              f"🤝 زیرمجموعه: {ref['count']} (تأییدشده {ref['active']}، در انتظار {ref['pending']})",
              f"وضعیت: {'⛔ مسدود' + (' — ' + esc(u['ban_reason']) if u.get('ban_reason') else '') if u['banned'] else '✅ فعال'}"]
     if me:

@@ -1344,7 +1344,7 @@ class VPN:
         await self.db.log(actor, "vpn_deliver", f"#{sid}")
         return True, N_("برای کاربر ارسال شد.")
 
-    async def admin_create(self, user_id: int, plan_id: int, name: str | None = None, actor="admin"):
+    async def admin_create(self, user_id: int, plan_id: int, name: str | None = None, actor="admin", days=None, gb=None):
         """ساخت مستقیم سرویس برای کاربر توسط ادمین (بدون پرداخت). خروجی (ok, پیام, service_id)."""
         plan = await self.db.get_vpn_plan(plan_id)
         panel = await self.db.get_vpn_panel(plan["panel_id"]) if plan else None
@@ -1362,11 +1362,12 @@ class VPN:
                                                 title=plan["title"], total_bytes=int(plan["gb"] * GB))
             return True, N_("سرویس ساخته شد؛ کانفیگ را ثبت کنید."), sid
         try:
-            u, meta = await drv.create(nm, plan["days"], plan["gb"], note=f"tg:{user_id} admin", tg_id=user_id, limit_ip=plan["ip_limit"])
+            u, meta = await drv.create(nm, plan["days"] if days is None else int(days), plan["gb"] if gb is None else float(gb),
+                                       note=f"tg:{user_id} admin", tg_id=user_id, limit_ip=plan["ip_limit"])
         except PanelError as e:
             return False, f"{N_('خطای پنل')}: {str(e)[:200]}", None
         sid = await self.db.add_vpn_service(user_id=user_id, panel_id=panel["id"], plan_id=plan_id, name=nm, status=u.status, expires_at=u.expire,
-                                            total_bytes=u.total or int(plan["gb"] * GB), used_bytes=u.used, sub_url=u.sub_url, links=u.links or [],
+                                            total_bytes=u.total or int((plan["gb"] if gb is None else float(gb)) * GB), used_bytes=u.used, sub_url=u.sub_url, links=u.links or [],
                                             meta=meta or {}, title=plan["title"], last_sync=int(time.time()))
         await self.db.log(actor, "vpn_create", f"#{sid} user {user_id}")
         svc = await self.db.get_vpn_service(sid)

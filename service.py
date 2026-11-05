@@ -847,6 +847,32 @@ class Shop:
         bonus = int(D(self.s.get("referral_join_bonus"), 0))
         if bonus > 0:
             await self._create_reward(referrer, uid, 0, "bonus", bonus)
+        await self._config_reward(referrer, uid)
+
+    async def _config_reward(self, referrer, uid):
+        """جایزه‌ی کانفیگ: به ازای هر N زیرمجموعه‌ی تأییدشده یک سرویس با حجم/زمان تعیین‌شده برای معرف ساخته می‌شود (هر مرحله فقط یک‌بار)."""
+        s = self.s or {}
+        every = int(D(s.get("ref_cfg_every"), 0))
+        plan_id = int(D(s.get("ref_cfg_plan"), 0))
+        if every <= 0 or plan_id <= 0:
+            return
+        active = (await self.db.referral_stats(referrer))["active"]
+        if active <= 0 or active % every:
+            return
+        milestone = active // every
+        if not await self.db.add_reward(referrer, uid, milestone, "config", 0, "paid", 0, f"config x{milestone}"):
+            return                                                    # این مرحله قبلاً داده شده
+        gb, days = float(D(s.get("ref_cfg_gb"), 0)), int(D(s.get("ref_cfg_days"), 0))
+        try:
+            ok, msg, sid = await self.vpn.admin_create(referrer, plan_id, None, actor="referral", days=days, gb=gb)
+        except Exception:  # noqa: BLE001
+            log.exception("referral config reward failed")
+            ok, msg = False, "error"
+        if ok:
+            await self.say(referrer, "🎁 به ازای {n} دعوت موفق، یک سرویس هدیه برایتان ساخته شد!", n=every * milestone)
+        else:
+            await self.db.run("UPDATE referral_rewards SET status='void', note=? WHERE kind='config' AND referred_id=? AND order_id=?", (str(msg)[:200], uid, milestone))
+            await self.notify_admins(f"⚠️ ساخت جایزه‌ی کانفیگ برای معرف <code>{referrer}</code> ناموفق بود: {esc(str(msg))}", perm="settings", topic="alerts")
 
     def _hold_until(self) -> int:
         h = D(self.s.get("referral_hold_hours"), 0)

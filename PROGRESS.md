@@ -329,3 +329,11 @@ TODO (in this order):
 - ترجمه: bot همه ۱۰ زبان کامل؛ web فقط fa/en/ar/ru.
 - تست: test_user_tools، test_wizard_bcast.
 
+
+## 2026-11-05 — start=usertest، آمار پرداخت کاربر، محافظت پیام کارت، جایزه‌ی کانفیگ زیرمجموعه‌گیری
+- t.me/<bot>?start=usertest → اکانت تست فوری (MsgAsCb).
+- کارت کاربر: تعداد و مبلغ پرداخت‌های موفق.
+- تنظیم card_protect: پیام شماره کارت با protect_content.
+- جایزه‌ی کانفیگ: ref_cfg_every/plan/gb/days؛ هر مرحله یک‌بار (kind=config در referral_rewards).
+- تست: test_ref_config.
+

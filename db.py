@@ -148,7 +148,7 @@ DEFAULT_SETTINGS = {
     "min_topup": "50000",
     "max_topup": "500000000",
     "star_alert_threshold": "500",
-    "pm_wallet": "1", "pm_card": "1", "pm_zarinpal": "1", "pm_ton": "1", "pm_usdt": "1", "pm_stars": "0", "audit_notify": "1",
+    "pm_wallet": "1", "pm_card": "1", "pm_zarinpal": "1", "pm_ton": "1", "pm_usdt": "1", "pm_stars": "0", "ref_cfg_every": "0", "ref_cfg_plan": "0", "ref_cfg_gb": "0", "ref_cfg_days": "0", "card_protect": "0", "audit_notify": "1",
     "card_number": "", "card_owner": "", "card_note": "",
     "pay_timeout_min": "30",
     "welcome_text": N_("به فروشگاه خدمات مجازی تلگرام خوش آمدید 🌟\nیکی از گزینه‌های زیر را انتخاب کنید."),
@@ -493,9 +493,11 @@ class DB(VpnDB):
         o = await self.one("SELECT COUNT(*) c, COALESCE(SUM(amount),0) s, MAX(created_at) last FROM orders WHERE user_id=? AND status='done'", (uid,))
         tot = (await self.one("SELECT COUNT(*) c FROM orders WHERE user_id=?", (uid,)))["c"]
         pays = (await self.one("SELECT COUNT(*) c FROM payments WHERE user_id=?", (uid,)))["c"]
+        pok = await self.one("SELECT COUNT(*) c, COALESCE(SUM(amount),0) s FROM payments WHERE user_id=? AND status='confirmed'", (uid,))
         txs = (await self.one("SELECT COUNT(*) c FROM wallet_tx WHERE user_id=?", (uid,)))["c"]
         profit = (await self.one("SELECT COALESCE(SUM(amount-cost),0) s FROM orders WHERE user_id=? AND status='done' AND cost>0", (uid,)))["s"]
-        return {"done": o["c"], "spent": o["s"], "last_order": o["last"], "orders": tot, "payments": pays, "wallet_tx": txs, "profit": profit}
+        return {"done": o["c"], "spent": o["s"], "last_order": o["last"], "orders": tot, "payments": pays, "wallet_tx": txs, "profit": profit,
+                "pays_ok": pok["c"], "pays_sum": pok["s"]}
 
     async def wallet_history(self, uid=None, limit=30, offset=0):
         if uid:

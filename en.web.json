@@ -1407,5 +1407,14 @@
  "حداکثر تعداد کل استفاده (۰ = نامحدود)": "Max total uses (0 = unlimited)",
  "هر کاربر چندبار (۰ = نامحدود)": "Uses per user (0 = unlimited)",
  "درصدی": "Percentage",
- "محدود به کاربران خاص (آیدی یا یوزرنیم؛ جداشده با فاصله یا کاما — خالی = همه)": "Restrict to specific users (ID or username, separated by space or comma — empty = everyone)"
+ "محدود به کاربران خاص (آیدی یا یوزرنیم؛ جداشده با فاصله یا کاما — خالی = همه)": "Restrict to specific users (ID or username, separated by space or comma — empty = everyone)",
+ "جایزه‌ی کانفیگ: به ازای هر چند زیرمجموعه‌ی تأییدشده؟": "Config reward: per how many confirmed referrals?",
+ "۰ = غیرفعال. مثلاً ۵ یعنی با هر ۵ دعوت یک کانفیگ هدیه": "0 = disabled. E.g. 5 means a gift config for every 5 invites",
+ "جایزه‌ی کانفیگ: شماره‌ی پلن (فقط برای تعیین پنل ساخت)": "Config reward: plan number (only to choose the panel)",
+ "شماره‌ی پلن را از بخش محصولات VPN ببینید؛ سرویس روی پنل همین پلن ساخته می‌شود": "See the plan number in VPN products; the service is created on that plan's panel",
+ "جایزه‌ی کانفیگ: حجم (گیگابایت)": "Config reward: data (GB)",
+ "جایزه‌ی کانفیگ: مدت (روز)": "Config reward: duration (days)",
+ "۰ = بدون انقضا": "0 = no expiry",
+ "جلوگیری از اسکرین‌شات و فوروارد پیام شماره کارت": "Prevent screenshots and forwarding of the card-number message",
+ "پیام شماره کارت با «محتوای محافظت‌شده» ارسال می‌شود": "The card-number message is sent as protected content"
 }

@@ -75,6 +75,9 @@ async def start(m: Message, command: CommandObject, shop: Shop, state: FSMContex
         await m.answer("🌐 Please choose your language / زبان خود را انتخاب کنید", reply_markup=lang_kb(shop, lang))
         return
     await show_menu(m, shop, lang)
+    if (command.args or "").strip() == "usertest" and shop.vpn.enabled():       # لینک تست فوری: t.me/<bot>?start=usertest
+        from handlers_vpn import MsgAsCb, vpn_tests
+        await vpn_tests(MsgAsCb(m), shop, tr)
 
 
 @router.message(F.text == "/language")
@@ -384,7 +387,8 @@ async def pay(cb: CallbackQuery, shop: Shop, state: FSMContext, tr):
     if method == "card":
         await state.set_state(Buy.receipt)
         await state.update_data(payment_id=pid)
-    await cb.message.answer(text, reply_markup=kb)
+    protect = method == "card" and (await shop.settings()).get("card_protect", "0") == "1"   # جلوگیری از اسکرین‌شات/فوروارد شماره کارت
+    await cb.message.answer(text, reply_markup=kb, protect_content=protect or None)
     await cb.answer()
 
 
