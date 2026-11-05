@@ -155,11 +155,12 @@ def valid_name(n: str) -> bool:
 
 # تنظیمات هر پنل (داخل ستون extra؛ مثل «قابلیت‌های پنل» در میرزا). مقدار 1 = روشن
 PANEL_FLAGS = {"show": 1, "test": 1, "renew": 1, "addon": 1, "sub": 1, "config": 1, "qr": 1, "copy_sub": 1, "copy_cfg": 1,
-               "revoke": 1, "toggle": 1, "transfer": 1, "unote": 1, "refund": 0}
+               "revoke": 1, "toggle": 1, "transfer": 1, "unote": 1, "refund": 0, "udelete": 1, "report": 1}
 PANEL_FLAG_TITLES = {"show": N_("نمایش پنل به کاربران"), "test": N_("اکانت تست"), "renew": N_("تمدید"), "addon": N_("حجم/زمان اضافه"),
                      "sub": N_("ارسال لینک اشتراک"), "config": N_("ارسال کانفیگ مستقیم"), "qr": N_("دکمه‌ی QR کد"),
                      "revoke": N_("دکمه‌ی تغییر لینک"), "toggle": N_("دکمه‌ی خاموش/روشن کردن اکانت"), "transfer": N_("دکمه‌ی انتقال سرویس به کاربر دیگر"),
                      "unote": N_("دکمه‌ی تغییر یادداشت"), "refund": N_("دکمه‌ی بازگشت وجه (با محدودیت‌های تنظیمات)"),
+                     "udelete": N_("دکمه‌ی حذف سرویس منقضی توسط کاربر"), "report": N_("دکمه‌ی گزارش اختلال سرویس"),
                      "copy_sub": N_("کپی لینک اشتراک با یک کلیک (خاموش = نگه‌داشتن انگشت)"), "copy_cfg": N_("کپی کانفیگ‌ها با یک کلیک (خاموش = نگه‌داشتن انگشت)")}
 
 
@@ -488,6 +489,37 @@ class VPN:
         m["unote"] = (text or "").strip()[:60]
         await self.db.update_vpn_service(sid, meta=m)
         return True
+
+    async def user_delete_expired(self, uid, sid):
+        """حذف سرویس منقضی توسط خود کاربر (از پنل هم حذف می‌شود). فقط سرویس منقضی‌شده؛ بدون بازگشت وجه."""
+        svc = await self.db.get_vpn_service(sid)
+        if not svc or svc["user_id"] != uid or svc["status"] == "deleted":
+            return False, N_("سرویس پیدا نشد.")
+        if not pflag(svc, "udelete"):
+            return False, N_("حذف سرویس برای شما فعال نیست.")
+        gone = svc["status"] == "expired" or (svc["expires_at"] and svc["expires_at"] < time.time() and svc["status"] != "pending_manual")
+        if not gone:
+            return False, N_("فقط سرویس منقضی‌شده را می‌توان حذف کرد.")
+        return await self.admin_delete(sid, refund=False, actor=f"user:{uid}")
+
+    async def user_report(self, uid, sid, text=""):
+        """گزارش اختلال سرویس به ادمین‌ها (هر سرویس حداکثر یک گزارش در ۱۰ دقیقه)."""
+        svc = await self.db.get_vpn_service(sid)
+        if not svc or svc["user_id"] != uid or svc["status"] == "deleted":
+            return False, N_("سرویس پیدا نشد.")
+        if not pflag(svc, "report"):
+            return False, N_("گزارش اختلال برای این سرویس فعال نیست.")
+        m = json.loads(svc["meta"] or "{}")
+        if time.time() - m.get("report_at", 0) < 600:
+            return False, N_("گزارش شما به‌تازگی ثبت شده است؛ کمی صبر کنید.")
+        m["report_at"] = int(time.time())
+        await self.db.update_vpn_service(sid, meta=m)
+        u = await self.db.get_user(uid)
+        await self.shop.notify_admins(
+            f"⚠️ <b>گزارش اختلال سرویس</b>\nکاربر: <code>{uid}</code>" + (f" @{esc(u['username'])}" if u and u.get("username") else "") +
+            f"\nسرویس: <code>{esc(svc['name'])}</code> (#{sid}) — پنل: {esc(svc.get('panel_name') or '-')}\nوضعیت: {STATUS_FA.get(svc['status'], svc['status'])}"
+            + (f"\n📝 {esc(text[:300])}" if text else ""), perm="vpn", topic="alerts")
+        return True, N_("گزارش شما برای پشتیبانی ارسال شد.")
 
     async def user_transfer(self, uid, sid, target):
         svc = await self.db.get_vpn_service(sid)
@@ -1431,6 +1463,13 @@ class VPN:
                 row.append(btn(tr("🚚 انتقال به کاربر دیگر"), f"vpn:tf:{sid}", role="action"))
             if pflag(svc, "refund") and self.refund_info(svc)[0]:
                 row.append(btn(tr("💸 بازگشت وجه"), f"vpn:rfd:{sid}", role="reject"))
+            if row:
+                rows.append(row)
+            row = []
+            if pflag(svc, "report"):
+                row.append(btn(tr("⚠️ گزارش اختلال"), f"vpn:rp:{sid}", role="action"))
+            if pflag(svc, "udelete") and (svc["status"] == "expired" or (svc["expires_at"] and svc["expires_at"] < time.time())):
+                row.append(btn(tr("🗑 حذف سرویس منقضی"), f"vpn:dl:{sid}", role="reject"))
             if row:
                 rows.append(row)
         rows.append([btn(tr("🔙 سرویس‌های من"), back, role="back")])

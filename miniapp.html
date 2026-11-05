@@ -1017,7 +1017,10 @@ VIEWS.vpn_service = async (id, refresh) => {
     if (s.help) h += `<div class="card hint" style="color:var(--fg)">${safeHtml(s.help)}</div>`;
     h += `<div class="grid">${s.can_renew ? `<button class="b" id="rn">🔄 ${esc(t("تمدید"))}</button>` : ""}${s.can_addon ? `<button class="b sec" id="ad">➕ ${esc(t("حجم/زمان اضافه"))}</button>` : ""}</div>
       <div class="grid"><button class="b sec" id="rf">♻️ ${esc(t("بروزرسانی"))}</button><button class="b sec" id="sd">📨 ${esc(t("ارسال در چت ربات"))}</button></div>
-      ${s.can_revoke ? `<button class="b sec" id="rv">🔑 ${esc(t("لینک جدید"))}</button>` : ""}`;
+      ${s.can_revoke ? `<button class="b sec" id="rv">🔑 ${esc(t("لینک جدید"))}</button>` : ""}
+      <div class="grid">${s.can_toggle ? `<button class="b sec" id="tg">⏻ ${esc(s.on ? t("⏻ خاموش کردن اکانت") : t("⏻ روشن کردن اکانت")).replace("⏻ ", "")}</button>` : ""}${s.can_note ? `<button class="b sec" id="nt">📝 ${esc(t("📝 تغییر یادداشت")).replace("📝 ", "")}</button>` : ""}</div>
+      <div class="grid">${s.can_report ? `<button class="b sec" id="rp">⚠️ ${esc(t("گزارش اختلال سرویس"))}</button>` : ""}${s.can_delete ? `<button class="b sec" id="dl">🗑 ${esc(t("حذف سرویس منقضی"))}</button>` : ""}</div>
+      ${s.note ? `<div class="card hint">📝 ${esc(s.note)}</div>` : ""}`;
     if (s.is_test) h += `<button class="b" id="by">🛒 ${esc(t("خرید سرویس"))}</button>`;
     if (s.addons && s.addons.length) h += `<h2>➕ ${esc(t("حجم/زمان اضافه"))}</h2>` + s.addons.map(a => `<button class="row prod k-vpn" data-ad="${a.id}"><i class="ri">➕</i><span>${esc(a.title)}</span><b>${esc(a.price.short)}</b></button>`).join("");
   }
@@ -1031,6 +1034,10 @@ VIEWS.vpn_service = async (id, refresh) => {
   on("#rf", async () => { await api("vpn_service", {id, refresh: 1}); toast(t("بروزرسانی شد.")); render(); });
   on("#sd", async () => { const x = await api("vpn_send", {id}); toast(x.message); });
   on("#rv", async () => { if (!confirm(t("⚠️ با ساخت لینک جدید، لینک فعلی دیگر کار نمی‌کند. ادامه می‌دهید؟"))) return; await api("vpn_revoke", {id}); render(); });
+  on("#tg", async () => { await api("vpn_toggle", {id}); render(); });
+  on("#nt", async () => { const v = prompt(t("یادداشت جدید را بنویسید (حداکثر ۶۰ حرف):"), s.note || ""); if (v === null) return; await api("vpn_note", {id, text: v}); render(); });
+  on("#rp", async () => { const v = prompt(t("مشکل را کوتاه توضیح دهید (اختیاری):"), ""); if (v === null) return; const x = await api("vpn_report", {id, text: v}); toast(x.message); });
+  on("#dl", async () => { if (!confirm(t("این سرویس منقضی برای همیشه حذف شود؟"))) return; const x = await api("vpn_delete", {id}); toast(x.message); go("vpn_services"); });
 };
 VIEWS.vpn_renew = async (id) => {
   const r = await api("vpn_renew_plans", {id});

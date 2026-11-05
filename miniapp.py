@@ -24,7 +24,7 @@ from service import KIND_FA, METHOD_FA, PAY_STATUS_FA, STATUS_FA, Shop, normaliz
 from ui import fmt
 from vpn_service import STATUS_FA as VPN_STATUS_FA
 from vpn_agent import AGENT_STATUS_FA
-from vpn_service import VpnError, bar, days_left, fmt_gb
+from vpn_service import VpnError, bar, days_left, fmt_gb, pflag, plimit
 from webkit import set_session
 
 log = logging.getLogger("miniapp")
@@ -428,8 +428,12 @@ def _svc_dict(ctx: Ctx, sv: dict, full=False) -> dict:
            "expires_at": sv["expires_at"], "is_test": bool(sv["is_test"]), "panel_id": sv["panel_id"], "pending": sv["status"] == "pending_manual"}
     if full:
         out.update(sub_url=sv["sub_url"], links=json.loads(sv["links"] or "[]")[:6], help=(ctx.shop.s.get("vpn_help_text") or "").strip(),
-                   can_addon=ctx.shop.s.get("vpn_allow_addon", "1") == "1" and not sv["is_test"], can_revoke=ctx.shop.s.get("vpn_allow_revoke", "1") == "1" and bool(sv["sub_url"]),
-                   can_renew=not sv["is_test"] and sv["status"] != "pending_manual")
+                   can_addon=ctx.shop.s.get("vpn_allow_addon", "1") == "1" and not sv["is_test"], can_revoke=ctx.shop.s.get("vpn_allow_revoke", "1") == "1" and bool(sv["sub_url"]) and pflag(sv, "revoke"),
+                   can_renew=not sv["is_test"] and sv["status"] != "pending_manual",
+                   can_toggle=pflag(sv, "toggle") and sv["status"] in ("active", "disabled"), on=sv["status"] != "disabled",
+                   can_note=pflag(sv, "unote"), note=(json.loads(sv["meta"] or "{}").get("unote") or ""),
+                   can_delete=pflag(sv, "udelete") and (sv["status"] == "expired" or bool(sv["expires_at"] and sv["expires_at"] < time.time() and sv["status"] != "pending_manual")),
+                   can_report=pflag(sv, "report"))
     return out
 
 
@@ -539,13 +543,49 @@ async def a_vpn_revoke(ctx: Ctx, d: dict) -> dict:
     sv = await _own_svc(ctx, d.get("id"))
     if ctx.shop.s.get("vpn_allow_revoke", "1") != "1":
         raise ApiError(ctx.tr("این قابلیت غیرفعال است."), 403)
-    wait = ctx.shop.vpn.revoke_wait(sv["id"])
+    if not pflag(sv, "revoke"):
+        raise ApiError(ctx.tr("این قابلیت غیرفعال است."), 403)
+    if err := ctx.shop.vpn.limit_error(sv, "revoke"):
+        raise ApiError(ctx.tr(err), 403)
+    wait = ctx.shop.vpn.revoke_wait(sv["id"], (plimit(sv, "revoke_gap") or 2) * 60)
     if wait:
         raise ApiError(ctx.tr("لطفاً {s} ثانیه‌ی دیگر دوباره تلاش کنید.", s=wait), 429)
     ok, _m = await ctx.shop.vpn.admin_action(sv["id"], "revoke", actor=f"user:{ctx.uid}")
     if not ok:
         raise ApiError(ctx.tr("انجام نشد؛ بعداً دوباره تلاش کنید."))
+    await ctx.shop.vpn.count_use(sv["id"], "revoke")
     return await a_vpn_service(ctx, {"id": sv["id"]})
+
+
+async def a_vpn_toggle(ctx: Ctx, d: dict) -> dict:
+    sv = await _own_svc(ctx, d.get("id"))
+    ok, msg = await ctx.shop.vpn.user_toggle(ctx.uid, sv["id"])
+    if not ok:
+        raise ApiError(ctx.tr(msg))
+    return await a_vpn_service(ctx, {"id": sv["id"]})
+
+
+async def a_vpn_note(ctx: Ctx, d: dict) -> dict:
+    sv = await _own_svc(ctx, d.get("id"))
+    if not await ctx.shop.vpn.user_set_note(ctx.uid, sv["id"], str(d.get("text") or "")):
+        raise ApiError(ctx.tr("تغییر یادداشت برای این سرویس فعال نیست."), 403)
+    return await a_vpn_service(ctx, {"id": sv["id"]})
+
+
+async def a_vpn_delete(ctx: Ctx, d: dict) -> dict:
+    sv = await _own_svc(ctx, d.get("id"))
+    ok, msg = await ctx.shop.vpn.user_delete_expired(ctx.uid, sv["id"])
+    if not ok:
+        raise ApiError(ctx.tr(msg))
+    return {"ok": True, "message": ctx.tr("سرویس حذف شد.")}
+
+
+async def a_vpn_report(ctx: Ctx, d: dict) -> dict:
+    sv = await _own_svc(ctx, d.get("id"))
+    ok, msg = await ctx.shop.vpn.user_report(ctx.uid, sv["id"], str(d.get("text") or ""))
+    if not ok:
+        raise ApiError(ctx.tr(msg), 429 if "به‌تازگی" in msg else 400)
+    return {"ok": True, "message": ctx.tr(msg)}
 
 
 async def a_vpn_send(ctx: Ctx, d: dict) -> dict:
@@ -672,7 +712,7 @@ async def a_agent_send(ctx: Ctx, d: dict) -> dict:
 
 ACTIONS = {"vpn_plans": a_vpn_plans, "vpn_order": a_vpn_order, "vpn_test": a_vpn_test, "vpn_test_options": a_vpn_test_options, "vpn_services": a_vpn_services, "vpn_service": a_vpn_service,
            "vpn_renew_plans": a_vpn_renew_plans, "vpn_renew": a_vpn_renew, "vpn_addons": a_vpn_addons, "vpn_addon": a_vpn_addon,
-           "vpn_revoke": a_vpn_revoke, "vpn_send": a_vpn_send,
+           "vpn_revoke": a_vpn_revoke, "vpn_send": a_vpn_send, "vpn_toggle": a_vpn_toggle, "vpn_note": a_vpn_note, "vpn_delete": a_vpn_delete, "vpn_report": a_vpn_report,
            "agent_plans": a_agent_plans, "agent_order": a_agent_order, "agent_list": a_agent_list, "agent_get": a_agent_get,
            "agent_addon": a_agent_addon, "agent_custom": a_agent_custom, "agent_renew_plans": a_agent_renew_plans, "agent_renew": a_agent_renew, "agent_pw": a_agent_pw, "agent_send": a_agent_send,
            "init": a_init, "catalog": a_catalog, "order_create": a_order_create, "order_get": a_order_get, "discount": a_discount,

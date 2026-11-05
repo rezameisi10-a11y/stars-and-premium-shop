@@ -3,7 +3,8 @@ import time
 
 from aiogram import F
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import (CallbackQuery, KeyboardButton, KeyboardButtonRequestChat, Message, ReplyKeyboardMarkup,
+                           ReplyKeyboardRemove)
 
 from admin_common import ans, C2S, TXT, Adm, back_row, make_router, short, view
 from apiutil import D
@@ -302,10 +303,37 @@ async def cb_fj_edit(cb: CallbackQuery, shop: Shop, state: FSMContext):
 async def cb_fj_add(cb: CallbackQuery, state: FSMContext):
     await state.set_state(Adm.fj_val)
     await state.update_data(i=-1, field="c", new={})
-    await cb.message.answer("➕ ۱/۲ — آیدی یا لینک کانال را بفرستید (مثال: <code>@mychannel</code> یا <code>t.me/mychannel</code>).\n"
-                            "برای کانال خصوصی: شناسه‌ی <code>-100…</code>؛ بعدش لینک دعوت را هم می‌پرسم.",
-                            reply_markup=ikb([back_row("adm:fj")]))
+    await cb.message.answer("➕ ۱/۲ — دکمه‌ی «📢 انتخاب کانال» پایین صفحه را بزنید و کانال را از لیست انتخاب کنید (ربات باید در آن کانال ادمین باشد؛ لینک عضویت خودکار ساخته می‌شود).\n"
+                            "یا آیدی/لینک کانال را تایپ کنید (مثال: <code>@mychannel</code> یا <code>t.me/mychannel</code>؛ کانال خصوصی: <code>-100…</code> و بعدش لینک دعوت).",
+                            reply_markup=ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True, keyboard=[[KeyboardButton(
+                                text="📢 انتخاب کانال", request_chat=KeyboardButtonRequestChat(request_id=21, chat_is_channel=True, bot_is_member=True))]]))
+    await cb.message.answer("برای بازگشت:", reply_markup=ikb([back_row("adm:fj")]))
     await cb.answer()
+
+
+@router.message(Adm.fj_val, F.chat_shared)
+async def got_fj_shared(m: Message, shop: Shop, state: FSMContext):
+    d = await state.get_data()
+    if d.get("i") != -1 or d.get("field") != "c":
+        return
+    cid = m.chat_shared.chat_id
+    try:
+        chat = await shop.bot.get_chat(cid)
+    except Exception:  # noqa: BLE001
+        await m.answer("❌ ربات به این کانال دسترسی ندارد؛ ربات را ادمین کانال کنید و دوباره انتخاب کنید.", reply_markup=ReplyKeyboardRemove())
+        return
+    new = {}
+    if chat.username:
+        new["c"] = "@" + chat.username
+    else:
+        new["c"] = str(cid)
+        try:
+            new["l"] = (await shop.bot.create_chat_invite_link(cid, name="force-join")).invite_link
+        except Exception:  # noqa: BLE001
+            await m.answer("❌ ساخت لینک عضویت ممکن نشد؛ ربات باید در کانال ادمین با دسترسی «دعوت کاربران» باشد.", reply_markup=ReplyKeyboardRemove())
+            return
+    await state.update_data(new=new, field="t")
+    await m.answer(f"✅ کانال «{esc(chat.title or new['c'])}» انتخاب شد.\n۲/۲ — متن دکمه را بفرستید (مثلاً <code>اطلاع‌رسانی</code>). برای متن پیش‌فرض «-» بفرستید.", reply_markup=ReplyKeyboardRemove())
 
 
 @router.message(Adm.fj_val, TXT)
@@ -327,7 +355,7 @@ async def got_fj(m: Message, shop: Shop, state: FSMContext):
             return
         if field == "t":
             new["t"] = "" if text == "-" else text[:40]
-            if new["c"].startswith("-100"):
+            if new["c"].startswith("-100") and not new.get("l"):
                 await state.update_data(new=new, field="l")
                 await m.answer("این کانال خصوصی است؛ لینک دعوت را بفرستید (https://t.me/+...):")
                 return

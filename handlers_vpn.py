@@ -21,6 +21,9 @@ PER_PAGE = 8
 
 
 class VpnSt(StatesGroup):
+    note = State()
+    transfer = State()
+    report = State()
     name = State()
     agent_name = State()
     custom_amount = State()
@@ -439,6 +442,152 @@ async def vpn_addon_pick(cb: CallbackQuery, shop: Shop, tr):
         return
     await _offer(cb, shop, tr, oid, cb.from_user.id)
     await cb.answer()
+
+
+# ---------- ابزارهای کاربر روی سرویس: خاموش/روشن، یادداشت، انتقال، بازگشت وجه، حذف منقضی، گزارش ----------
+async def _refresh_card(cb: CallbackQuery, shop: Shop, tr, sid):
+    svc = await shop.db.get_vpn_service(int(sid))
+    if svc and svc["status"] != "deleted":
+        await shop.vpn.send_service(cb.from_user.id, svc, tr=tr)
+
+
+@router.callback_query(F.data.startswith("vpn:tg:"))
+async def vpn_toggle(cb: CallbackQuery, shop: Shop, tr):
+    svc = await _own(cb, shop, tr, cb.data.split(":")[2])
+    if not svc:
+        return
+    ok, msg = await shop.vpn.user_toggle(cb.from_user.id, svc["id"])
+    if not ok:
+        await cb.answer(tr(msg), show_alert=True)
+        return
+    await cb.answer(tr("انجام شد."))
+    await _refresh_card(cb, shop, tr, svc["id"])
+
+
+@router.callback_query(F.data.startswith("vpn:nt:"))
+async def vpn_note_ask(cb: CallbackQuery, shop: Shop, state: FSMContext, tr):
+    svc = await _own(cb, shop, tr, cb.data.split(":")[2])
+    if not svc:
+        return
+    await state.set_state(VpnSt.note)
+    await state.update_data(sid=svc["id"])
+    await cb.message.answer(tr("📝 یادداشت جدید را بفرستید (حداکثر ۶۰ حرف). برای پاک کردن «-» بفرستید. برای انصراف /start"))
+    await cb.answer()
+
+
+@router.message(VpnSt.note, F.text)
+async def vpn_note_set(m: Message, shop: Shop, state: FSMContext, tr):
+    d = await state.get_data()
+    await state.clear()
+    text = "" if m.text.strip() == "-" else m.text.strip()
+    if not await shop.vpn.user_set_note(m.from_user.id, d["sid"], text):
+        await m.answer(tr("تغییر یادداشت برای این سرویس فعال نیست."))
+        return
+    svc = await shop.db.get_vpn_service(d["sid"])
+    await m.answer(tr("✅ یادداشت ذخیره شد."))
+    if svc:
+        await shop.vpn.send_service(m.from_user.id, svc, tr=tr)
+
+
+@router.callback_query(F.data.startswith("vpn:tf:"))
+async def vpn_transfer_ask(cb: CallbackQuery, shop: Shop, state: FSMContext, tr):
+    svc = await _own(cb, shop, tr, cb.data.split(":")[2])
+    if not svc:
+        return
+    await state.set_state(VpnSt.transfer)
+    await state.update_data(sid=svc["id"])
+    await cb.message.answer(tr("🚚 آیدی عددی تلگرام کاربر مقصد را بفرستید (او باید قبلاً ربات را استارت کرده باشد). برای انصراف /start"))
+    await cb.answer()
+
+
+@router.message(VpnSt.transfer, F.text)
+async def vpn_transfer_target(m: Message, shop: Shop, state: FSMContext, tr):
+    t = m.text.strip().translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789"))
+    d = await state.get_data()
+    if not t.isdigit():
+        await m.answer(tr("فقط آیدی عددی بفرستید."))
+        return
+    await state.clear()
+    svc = await shop.db.get_vpn_service(d["sid"])
+    if not svc or svc["user_id"] != m.from_user.id or int(t) == m.from_user.id or not await shop.db.get_user(int(t)):
+        await m.answer(tr("کاربر مقصد پیدا نشد (او باید قبلاً ربات را استارت کرده باشد)."))
+        return
+    await m.answer(tr("⚠️ سرویس {n} به کاربر {u} منتقل شود؟ پس از انتقال دیگر مال شما نیست.", n=f"<code>{esc(svc['name'])}</code>", u=f"<code>{t}</code>"),
+                   reply_markup=ikb([[btn(tr("✅ بله، منتقل کن"), f"vpn:tf2:{svc['id']}:{t}", role="confirm"), btn(tr("❌ انصراف"), f"vpn:s:{svc['id']}", role="reject")]]))
+
+
+@router.callback_query(F.data.startswith("vpn:tf2:"))
+async def vpn_transfer_do(cb: CallbackQuery, shop: Shop, tr):
+    _, _, sid, target = cb.data.split(":")
+    svc = await _own(cb, shop, tr, sid)
+    if not svc:
+        return
+    ok, msg = await shop.vpn.user_transfer(cb.from_user.id, svc["id"], int(target))
+    await cb.answer(tr(msg), show_alert=True)
+    if ok:
+        await shop.say(int(target), "🚚 یک سرویس VPN به حساب شما منتقل شد: <code>{n}</code>. از «سرویس‌های من» ببینید.", n=esc(svc["name"]))
+        await cb.message.answer(tr("✅ سرویس منتقل شد."))
+
+
+@router.callback_query(F.data.startswith("vpn:rfd:"))
+async def vpn_refund_ask(cb: CallbackQuery, shop: Shop, tr):
+    svc = await _own(cb, shop, tr, cb.data.split(":")[2])
+    if not svc:
+        return
+    ok, _a, why = shop.vpn.refund_info(svc)
+    if not ok:
+        await cb.answer(tr(why), show_alert=True)
+        return
+    await cb.message.answer(tr("💸 با بازگشت وجه، سرویس حذف و مبلغ سفارش به کیف پول شما برمی‌گردد. ادامه می‌دهید؟"),
+                            reply_markup=ikb([[btn(tr("✅ بله، بازگشت وجه"), f"vpn:rfd2:{svc['id']}", role="confirm"), btn(tr("❌ انصراف"), f"vpn:s:{svc['id']}", role="reject")]]))
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("vpn:rfd2:"))
+async def vpn_refund_do(cb: CallbackQuery, shop: Shop, tr):
+    svc = await _own(cb, shop, tr, cb.data.split(":")[2])
+    if not svc:
+        return
+    ok, msg = await shop.vpn.user_refund(cb.from_user.id, svc["id"])
+    await cb.answer(tr(msg), show_alert=True)
+
+
+@router.callback_query(F.data.startswith("vpn:dl:"))
+async def vpn_delete_ask(cb: CallbackQuery, shop: Shop, tr):
+    svc = await _own(cb, shop, tr, cb.data.split(":")[2])
+    if not svc:
+        return
+    await cb.message.answer(tr("🗑 این سرویس منقضی برای همیشه حذف شود؟"),
+                            reply_markup=ikb([[btn(tr("✅ بله، حذف"), f"vpn:dl2:{svc['id']}", role="reject"), btn(tr("❌ انصراف"), f"vpn:s:{svc['id']}", role="back")]]))
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("vpn:dl2:"))
+async def vpn_delete_do(cb: CallbackQuery, shop: Shop, tr):
+    svc = await _own(cb, shop, tr, cb.data.split(":")[2])
+    if not svc:
+        return
+    ok, msg = await shop.vpn.user_delete_expired(cb.from_user.id, svc["id"])
+    await cb.answer(tr(msg if not ok else "سرویس حذف شد."), show_alert=True)
+
+
+@router.callback_query(F.data.startswith("vpn:rp:"))
+async def vpn_report_ask(cb: CallbackQuery, shop: Shop, state: FSMContext, tr):
+    svc = await _own(cb, shop, tr, cb.data.split(":")[2])
+    if not svc:
+        return
+    await state.set_state(VpnSt.report)
+    await state.update_data(sid=svc["id"])
+    await cb.message.answer(tr("⚠️ مشکل سرویس را کوتاه بنویسید (یا «-» برای ارسال بدون توضیح). برای انصراف /start"))
+    await cb.answer()
+
+
+@router.message(VpnSt.report, F.text)
+async def vpn_report_send(m: Message, shop: Shop, state: FSMContext, tr):
+    d = await state.get_data()
+    await state.clear()
+    ok, msg = await shop.vpn.user_report(m.from_user.id, d["sid"], "" if m.text.strip() == "-" else m.text.strip())
+    await m.answer(("✅ " if ok else "❌ ") + tr(msg))
 
 
 # ======================================================================= پنل نمایندگی

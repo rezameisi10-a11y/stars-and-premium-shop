@@ -8,7 +8,8 @@ import time
 from aiogram import F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
-from aiogram.types import BufferedInputFile, CallbackQuery, Message
+from aiogram.types import (BufferedInputFile, CallbackQuery, KeyboardButton, KeyboardButtonRequestUsers, Message, ReplyKeyboardMarkup,
+                           ReplyKeyboardRemove)
 
 from admin_common import ans, TXT, Adm, back_row, make_router, num, short, view
 from i18n import CATALOG, SRC_LANG, valid_lang_code
@@ -250,10 +251,28 @@ WIZ = [
 ]
 
 
-def wiz_kb(required):
+WIZ_PRESETS = {
+    "code": [("🎲 کد تصادفی", "-")],
+    "duration": [("۱ روز", "1d"), ("۷ روز", "7d"), ("۳۰ روز", "30d"), ("♾ بدون انقضا", "0")],
+    "start": [("▶️ همین الان", "0"), ("۱ ساعت بعد", "1h"), ("۱ روز بعد", "1d")],
+    "max_uses": [("۱۰ نفر", "10"), ("۵۰ نفر", "50"), ("۱۰۰ نفر", "100"), ("♾ نامحدود", "0")],
+    "per_user": [("۱ بار", "1"), ("۲ بار", "2"), ("♾ نامحدود", "0")],
+    "min_amount": [("بدون حداقل", "0")],
+    "cap": [("بدون سقف", "0")],
+    "first_only": [("✅ بله", "yes"), ("❌ خیر", "no")],
+    "note": [("🚫 بدون یادداشت", "-")],
+}
+
+
+def wiz_kb(required, key=None):
+    rows = []
+    pre = WIZ_PRESETS.get(key or "", [])
+    if pre:
+        rows.append([btn(lab, f"adm:dw:v:{val}", role="action") for lab, val in pre])
     row = [] if required else [btn("⏭ پیش‌فرض", "adm:dw:skip", role="action")]
     row.append(btn("❌ لغو", "adm:dw:cancel", role="reject"))
-    return ikb([row])
+    rows.append(row)
+    return ikb(rows)
 
 
 async def wiz_ask(target: Message, state: FSMContext, idx: int):
@@ -510,15 +529,35 @@ async def got_wiz(m: Message, state: FSMContext):
     if idx >= len(WIZ):
         await m.answer("از دکمه‌های بالا برای تأیید یا لغو استفاده کنید.")
         return
+    await wiz_apply(m, state, d, idx, m.text)
+
+
+async def wiz_apply(target: Message, state: FSMContext, d: dict, idx: int, text: str):
     key, _q, parser, _default, _r = WIZ[idx]
-    ok, res = parser(m.text)
+    ok, res = parser(text)
     if not ok:
-        await m.answer(f"❌ {res}")
+        await target.answer(f"❌ {res}")
         return
     vals = d["vals"]
     vals[key] = res
     await state.update_data(vals=vals)
-    await wiz_ask(m, state, idx + 1)
+    await wiz_ask(target, state, idx + 1)
+
+
+@router.callback_query(F.data.startswith("adm:dw:v:"))
+async def cb_dw_preset(cb: CallbackQuery, state: FSMContext):
+    d = await state.get_data()
+    idx = d.get("step", 0)
+    if d.get("mode") == "s" or idx >= len(WIZ):
+        await cb.answer("این مرحله فعال نیست.", show_alert=True)
+        return
+    key = WIZ[idx][0]
+    val = cb.data.split(":", 3)[3]
+    if val not in {v for _l, v in WIZ_PRESETS.get(key, [])}:
+        await cb.answer("گزینه نامعتبر.", show_alert=True)
+        return
+    await cb.answer()
+    await wiz_apply(cb.message, state, d, idx, val)
 
 
 @router.callback_query(F.data == "adm:dw:ok")
@@ -812,8 +851,20 @@ async def cb_admins(cb: CallbackQuery, shop: Shop, state: FSMContext | None = No
 @router.callback_query(F.data == "adm:aadd")
 async def cb_aadd(cb: CallbackQuery, state: FSMContext):
     await state.set_state(Adm.admin_id)
-    await cb.message.answer("آیدی عددی یا یوزرنیم کاربر را بفرستید (او باید قبلاً ربات را استارت کرده باشد). برای لغو /admin")
+    await cb.message.answer("دکمه‌ی «👤 انتخاب از مخاطبین» پایین صفحه را بزنید و کاربر را انتخاب کنید، یا آیدی عددی/یوزرنیم را تایپ کنید (او باید قبلاً ربات را استارت کرده باشد). برای لغو /admin",
+                            reply_markup=ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True, keyboard=[[KeyboardButton(
+                                text="👤 انتخاب از مخاطبین", request_users=KeyboardButtonRequestUsers(request_id=11, user_is_bot=False, max_quantity=1))]]))
     await cb.answer()
+
+
+@router.message(Adm.admin_id, F.users_shared)
+async def got_admin_shared(m: Message, shop: Shop, state: FSMContext):
+    uid = m.users_shared.users[0].user_id
+    u = await shop.db.get_user(uid)
+    if not u:
+        await m.answer("این کاربر هنوز ربات را استارت نکرده؛ از او بخواهید /start بزند و دوباره انتخاب کنید.", reply_markup=ReplyKeyboardRemove())
+        return
+    await _admin_pick(m, shop, state, u)
 
 
 @router.message(Adm.admin_id, TXT)
@@ -823,6 +874,10 @@ async def got_admin_id(m: Message, shop: Shop, state: FSMContext):
     if not u:
         await m.answer("کاربری پیدا نشد؛ باید ربات را استارت کرده باشد.")
         return
+    await _admin_pick(m, shop, state, u)
+
+
+async def _admin_pick(m: Message, shop: Shop, state: FSMContext, u: dict):
     await state.clear()
     if u["id"] in shop.cfg.admin_ids:
         await m.answer("این کاربر مالک است و همیشه دسترسی کامل دارد.")
@@ -1005,6 +1060,18 @@ async def audience_ids(shop: Shop, aud: str):
     return await shop.audience_ids(aud)
 
 
+BC_VARS = ("{name}", "{username}", "{id}", "{balance}")
+
+
+def render_vars(html: str, u: dict, cid) -> str:
+    """جایگزینی متغیرهای پیام همگانی؛ مقدارها escape می‌شوند (جایگزینی ساده، بدون format)."""
+    vals = {"{name}": esc(u.get("first_name") or "") or "دوست عزیز", "{username}": ("@" + esc(u["username"])) if u.get("username") else "",
+            "{id}": str(cid), "{balance}": fmt(u.get("balance") or 0)}
+    for k, v in vals.items():
+        html = html.replace(k, v)
+    return html
+
+
 @router.callback_query(F.data == "adm:bcast")
 async def cb_bcast(cb: CallbackQuery, shop: Shop, state: FSMContext):
     await state.clear()
@@ -1033,7 +1100,10 @@ async def cb_bcast_aud(cb: CallbackQuery, shop: Shop, state: FSMContext):
     ids = await audience_ids(shop, aud)
     await state.set_state(Adm.bcast)
     await state.update_data(aud=aud)
-    await cb.message.answer(f"👥 مخاطبان: <b>{fmt(len(ids))}</b> نفر.\nحالا پیام را بفرستید (متن، عکس، ویدیو، فایل ... با فرمت و ایموجی پریمیوم؛ همان‌طور که هست کپی می‌شود). برای لغو /admin")
+    await cb.message.answer(f"👥 مخاطبان: <b>{fmt(len(ids))}</b> نفر.\nحالا پیام را بفرستید (متن، عکس، ویدیو، فایل ... با فرمت و ایموجی پریمیوم؛ همان‌طور که هست کپی می‌شود).\n\n"
+                                "🔤 در متن یا کپشن می‌توانید از این متغیرها استفاده کنید تا برای هر کاربر جایگزین شود:\n"
+                                "<code>{name}</code> نام · <code>{username}</code> یوزرنیم · <code>{id}</code> آیدی · <code>{balance}</code> موجودی (تومان)\n"
+                                "برای لغو /admin")
     await cb.answer()
 
 
@@ -1043,7 +1113,7 @@ async def got_bcast(m: Message, shop: Shop, state: FSMContext):
         return
     d = await state.get_data()
     ids = await audience_ids(shop, d["aud"])
-    await state.update_data(chat=m.chat.id, mid=m.message_id, n=len(ids))
+    await state.update_data(chat=m.chat.id, mid=m.message_id, n=len(ids), html=(m.html_text or "") if (m.text or m.caption) else "", cap=bool(m.caption and not m.text))
     await m.reply(f"این پیام برای <b>{fmt(len(ids))}</b> نفر ارسال شود؟",
                   reply_markup=ikb([[btn("✅ ارسال", "adm:bgo", role="confirm"), btn("❌ لغو", "adm:home", role="reject")]]))
 
@@ -1058,8 +1128,19 @@ async def cb_bgo(cb: CallbackQuery, shop: Shop, state: FSMContext):
     ids = await audience_ids(shop, d["aud"])
     chat, mid = d["chat"], d["mid"]
 
+    html, is_cap = d.get("html") or "", bool(d.get("cap"))
+    uses_vars = any(v in html for v in BC_VARS)
+
     async def sender(cid):
-        await shop.bot.copy_message(cid, chat, mid)
+        if not uses_vars:
+            await shop.bot.copy_message(cid, chat, mid)
+            return
+        u = await shop.db.get_user(cid) or {}
+        text = render_vars(html, u, cid)
+        if is_cap:
+            await shop.bot.copy_message(cid, chat, mid, caption=text[:1024], parse_mode="HTML")
+        else:
+            await shop.bot.send_message(cid, text[:4096], parse_mode="HTML")
 
     if not await shop.start_broadcast(sender, ids):
         await cb.answer("یک ارسال دیگر در حال انجام است.", show_alert=True)
