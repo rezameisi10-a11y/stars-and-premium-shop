@@ -646,8 +646,6 @@ async def cb_ulang_set(cb: CallbackQuery, shop: Shop):
 @router.callback_query(F.data == "adm:prod")
 async def cb_prod(cb: CallbackQuery, shop: Shop):
     kb = [[btn(t, f"adm:pk:{k}", role="admin")] for k, t in (("stars", "⭐ استارز"), ("premium", "👑 پریمیوم"), ("gift", "🎁 گیفت‌ها"))]
-    if shop.can(cb.from_user.id, "pricing"):
-        kb.append([btn("💹 نرخ‌ها و سود", "adm:rates", role="admin")])
     kb.append(back_row())
     await view(cb, "📦 <b>محصولات و قیمت</b>", ikb(kb))
     await cb.answer()

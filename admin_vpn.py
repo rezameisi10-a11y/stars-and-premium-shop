@@ -83,9 +83,20 @@ FEATURES = [("vpn_enabled", "فروش VPN", "bool", ["vpn_name_mode", "vpn_prefi
 FEATURE_BY_KEY = {f[0]: f for f in FEATURES}
 VPN_KEYS = [k for k, *_ in __import__("settings_schema").GROUP_IDS["vpn"][3]]
 # حجم/زمان اضافه‌ی دلخواه: دو بخش جدا (کاربران خرید VPN | پنل نمایندگی) با صفحه‌ی مخصوص خودشان
-ADDON_SECS = {"u": ("👤 کاربران (خرید VPN)", "vpn_user"), "a": ("🧑‍💼 پنل نمایندگی", "vpn_agent")}
+ADDON_SECS = {"u": ("👤 کاربران (خرید VPN)", "vpn_user")}
 ADDON_KEYS = {f"{pre}_{g}_{f}" for _, pre in ADDON_SECS.values() for g in ("cgb", "cd") for f in ("on", "price", "min", "max")}
 VPN_FLAT_KEYS = [k for k in VPN_KEYS if k not in ADDON_KEYS]
+# زیرمنوهای تنظیمات VPN (کلید حجم/زمان اضافه‌ی کل داخل صفحه‌ی «حجم و زمان اضافه» است)
+VPN_SECTIONS = [
+    ("g", "🧩 عمومی", ["vpn_enabled", "vpn_name_mode", "vpn_prefix", "vpn_stack", "vpn_allow_revoke", "vpn_notify_admin", "vpn_sync_min", "vpn_autodelete_days", "vpn_help_text"]),
+    ("r", "🔔 یادآوری و تمدید", ["vpn_remind_days", "vpn_remind_usage", "vpn_autorenew_on", "vpn_autorenew_days"]),
+    ("w", "🎁 بازگشت مشتری", ["vpn_winback_on", "vpn_winback_percent", "vpn_winback_after", "vpn_winback_valid"]),
+    ("h", "🩺 پایش سلامت پنل‌ها", ["vpn_health_on", "vpn_health_min", "vpn_health_fails", "vpn_health_autoclose", "vpn_health_cpu", "vpn_health_mem", "vpn_health_disk", "vpn_health_cap"]),
+    ("a", "🧑‍💼 پنل نمایندگی", ["vpn_agent_enabled", "vpn_agent_name_mode", "vpn_agent_prefix", "vpn_agent_remind_days", "vpn_agent_autodelete_days", "vpn_agent_help_text"]),
+]
+_SEC_BY_ID = {x[0]: x for x in VPN_SECTIONS}
+_placed = {k for _, _, ks in VPN_SECTIONS for k in ks} | {"vpn_allow_addon"}
+_SEC_BY_ID["g"][2].extend(k for k in VPN_FLAT_KEYS if k not in _placed)   # هر تنظیم جدیدِ جاماندن به «عمومی» می‌رود
 
 
 async def hub(shop: Shop):
@@ -98,12 +109,11 @@ async def hub(shop: Shop):
             f"💰 فروش: {fmt(st['revenue'])} تومان | سود: {fmt(st['profit'])} تومان ({st['orders']} سفارش)"
             + (f"\n\n🕓 منتظر تحویل دستی: <b>{pend}</b>" if pend else ""))
     rows = [[btn("🖧 پنل‌ها", "adm:vpn:pl", role="admin"), btn("📦 محصولات (پلن‌ها)", "adm:vpn:pn", role="admin")],
-            [btn("➕ بسته‌های افزودنی", "adm:vpn:ad", role="admin"), btn("📡 سرویس‌ها", "adm:vpn:sv:all:0", role="admin")],
-            [btn("👤 مدیریت کاربران", "adm:vpn:us:0", role="admin"), btn("🔎 جستجو", "adm:vpn:find", role="admin")],
-            [btn("🆕 ساخت سرویس دستی", "adm:vpn:new", role="admin")],
+            [btn("📡 سرویس‌ها", "adm:vpn:sv:all:0", role="admin"), btn("👤 مدیریت کاربران", "adm:vpn:us:0", role="admin")],
+            [btn("🔎 جستجو", "adm:vpn:find", role="admin"), btn("🆕 ساخت سرویس دستی", "adm:vpn:new", role="admin")],
             [btn("🧑‍💼 پلن‌های نمایندگی", "adm:vpn:agp", role="admin"), btn("🗂 نماینده‌ها", "adm:vpn:agl:all:0", role="admin")],
-            [btn("📊 وضعیت قابلیت‌ها", "adm:vpn:ft", role="admin"), btn("⚙️ تنظیمات", "adm:vpn:st", role="admin")],
-            [btn("🖼 پس‌زمینه QR", "adm:vpn:qb", role="admin"), btn("🩺 سلامت پنل‌ها", "adm:vpn:hl", role="admin")]]
+            [btn("📊 وضعیت قابلیت‌ها", "adm:vpn:ft", role="admin"), btn("🩺 سلامت پنل‌ها", "adm:vpn:hl", role="admin")],
+            [btn("⚙️ تنظیمات", "adm:vpn:st", role="admin")]]
     if pend:
         rows.insert(0, [btn(f"🕓 منتظر تحویل ({pend})", "adm:vpn:sv:pending_manual:0", role="action")])
     rows.append(back_row())
@@ -194,9 +204,27 @@ async def cb_feature_settings(cb: CallbackQuery, shop: Shop):
 
 @router.callback_query(F.data == "adm:vpn:st")
 async def cb_settings(cb: CallbackQuery, shop: Shop):
-    await _settings_list(cb, shop, VPN_FLAT_KEYS, "s", "⚙️ <b>تنظیمات فروش VPN</b>\nروی هر مورد بزنید تا تغییرش بدهید.", "adm:vpn",
-                         top=[[btn("➕ حجم و زمان اضافه — کاربران", "adm:vpn:xs:u", role="admin")],
-                              [btn("➕ حجم و زمان اضافه — نمایندگی", "adm:vpn:xs:a", role="admin")]])
+    rows = [[btn(t, f"adm:vpn:ss:{sid}", role="admin")] for sid, t, _ in VPN_SECTIONS[:1]]
+    rows.append([btn("➕ حجم و زمان اضافه — کاربران", "adm:vpn:xs:u", role="admin")])
+    rows += [[btn(t, f"adm:vpn:ss:{sid}", role="admin")] for sid, t, _ in VPN_SECTIONS[1:]]
+    rows.append([btn("🖼 پس‌زمینه QR", "adm:vpn:qb", role="admin")])
+    rows.append(back_row("adm:vpn"))
+    await view(cb, "⚙️ <b>تنظیمات فروش VPN</b>\nیک بخش را انتخاب کنید:", ikb(rows))
+    await cb.answer()
+
+
+async def _section(cb: CallbackQuery, shop: Shop, sid: str):
+    _, title, keys = _SEC_BY_ID[sid]
+    await _settings_list(cb, shop, keys, f"s:{sid}", f"⚙️ <b>{title}</b>\nروی هر مورد بزنید تا تغییرش بدهید.", "adm:vpn:st")
+
+
+@router.callback_query(F.data.startswith("adm:vpn:ss:"))
+async def cb_section(cb: CallbackQuery, shop: Shop):
+    sid = cb.data.split(":")[3]
+    if sid not in _SEC_BY_ID:
+        await cb.answer("نامعتبر", show_alert=True)
+        return
+    await _section(cb, shop, sid)
     await cb.answer()
 
 
@@ -255,6 +283,8 @@ async def _back_of(origin: str) -> tuple[str, str]:
         return "adm:vpn:fs:" + origin[2:], "adm:vpn:fs:" + origin[2:]
     if origin.startswith("x:"):
         return "adm:vpn:xs:" + origin[2:], "adm:vpn:xs:" + origin[2:]
+    if origin.startswith("s:"):
+        return "adm:vpn:ss:" + origin[2:], "adm:vpn:ss:" + origin[2:]
     if origin == "f":
         return "adm:vpn:ft", "adm:vpn:ft"
     return "adm:vpn:st", "adm:vpn:st"
@@ -278,6 +308,8 @@ async def cb_setting_edit(cb: CallbackQuery, shop: Shop, state: FSMContext):
             await _features(cb, shop)
         elif origin.startswith("x:"):
             await _addon_screen(cb, shop, origin[2:])
+        elif origin.startswith("s:"):
+            await _section(cb, shop, origin[2:])
         elif origin.startswith("f:"):
             await _settings_list(cb, shop, FEATURE_BY_KEY[origin[2:]][3], origin, f"⚙️ <b>تنظیمات «{FEATURE_BY_KEY[origin[2:]][1]}»</b>", "adm:vpn:ft")
         else:
@@ -308,6 +340,8 @@ async def cb_setting_select(cb: CallbackQuery, shop: Shop):
     back, _ = await _back_of(origin)
     if origin.startswith("f:"):
         await _settings_list(cb, shop, FEATURE_BY_KEY[origin[2:]][3], origin, f"⚙️ <b>تنظیمات «{FEATURE_BY_KEY[origin[2:]][1]}»</b>", "adm:vpn:ft")
+    elif origin.startswith("s:"):
+        await _section(cb, shop, origin[2:])
     else:
         await cb_settings(cb, shop)
 
@@ -1007,7 +1041,7 @@ async def _wiz_money(m: Message, shop: Shop, state: FSMContext, d):
 async def cb_addons(cb: CallbackQuery, shop: Shop):
     rows = [[btn(f"{'🟢' if a['active'] else '⚫️'} {a['title']} · {fmt(a['price'])}", f"adm:vpn:ae:{a['id']}", role="admin")] for a in await shop.db.list_vpn_addons()]
     rows.append([btn("➕ بسته‌ی جدید", "adm:vpn:ada", role="confirm")])
-    rows.append(back_row("adm:vpn"))
+    rows.append(back_row("adm:vpn:xs:u"))
     await view(cb, "➕ <b>بسته‌های افزودنی</b>\nکاربر با این بسته‌ها به سرویسش حجم یا زمان اضافه می‌کند.", ikb(rows))
     await cb.answer()
 

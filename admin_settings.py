@@ -65,12 +65,20 @@ def allowed_groups(shop: Shop, uid: int):
 async def cb_settings(cb: CallbackQuery, shop: Shop, state: FSMContext):
     await state.clear()
     FROM_RATES.discard(cb.from_user.id)
-    groups = allowed_groups(shop, cb.from_user.id)
+    uid = cb.from_user.id
+    # گروه‌های نرخ/قیمت/تحویل/Marketapp از «نرخ‌ها و قیمت‌گذاری» باز می‌شوند و تنظیمات VPN از «فروش VPN»؛ اینجا تکرار نمی‌شوند
+    groups = [g for g in allowed_groups(shop, uid) if g[0] not in HIDDEN_HERE]
     kb = [[btn(g[1], f"adm:sg:{g[0]}:0", role="admin")] for g in groups]
+    if shop.can(uid, "pricing"):
+        kb.append([btn("💹 نرخ‌ها، قیمت‌گذاری و تحویل", "adm:rates", role="admin")])
+    if shop.can(uid, "vpn"):
+        kb.append([btn("🛡 تنظیمات فروش VPN", "adm:vpn:st", role="admin")])
     kb.append(back_row())
     await view(cb, "⚙️ <b>تنظیمات</b>\nیک بخش را انتخاب کنید:", ikb(kb))
     await cb.answer()
 
+
+HIDDEN_HERE = {"rates", "pricing", "delivery", "marketapp", "vpn"}
 
 EXTRA_BUTTONS = {
     "ai": [("🧪 تست اتصال هوش مصنوعی", "adm:ai:test")],
