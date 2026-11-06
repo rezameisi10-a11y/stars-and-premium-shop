@@ -222,6 +222,7 @@
  "کیف پول": "Wallet",
  "دعوت": "Invite",
  "بیشتر": "More",
+ "❌ رسید پرداخت شما (کد P{pid}) پس از بررسی تأیید نشد و خدمات مربوط به آن قطع شد. در صورت اشتباه با پشتیبانی تماس بگیرید.": "❌ Your payment receipt (code P{pid}) was not approved after review and the related service was cut off. If this is a mistake, contact support.",
  "⏳ در انتظار پرداخت": "⏳ Awaiting payment",
  "💳 پرداخت شده": "💳 Paid",
  "🚚 در حال تحویل": "🚚 Being delivered",

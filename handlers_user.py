@@ -401,7 +401,7 @@ async def receipt(m: Message, shop: Shop, state: FSMContext, tr):
         await state.clear()
         await m.answer(tr("این پرداخت دیگر فعال نیست. دوباره از منو اقدام کنید."))
         return
-    await shop.submit_receipt(p["id"], m.photo[-1].file_id)
+    await shop.submit_receipt(p["id"], m.photo[-1].file_id, m.photo[-1].file_unique_id)
     await state.clear()
     await m.answer(tr("🧾 رسید دریافت شد. پس از بررسی ادمین، نتیجه همین‌جا اعلام می‌شود."))
 

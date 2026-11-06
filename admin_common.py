@@ -61,7 +61,7 @@ PERM_MAP = [
     ("adm:home", None), ("adm:noop", None), ("adm:web", None), ("menu", None),
     ("adm:stats", "stats"),
     ("adm:queue", "orders"), ("adm:retryall", "orders"), ("adm:ord:", "orders"), ("oadm:", "orders"),
-    ("adm:pays", "receipts"), ("padm:", "receipts"),
+    ("adm:pays", "receipts"), ("adm:rv", "receipts"), ("padm:", "receipts"),
     ("adm:users", "users_view"), ("adm:ul:", "users_view"), ("adm:u:", "users_view"), ("adm:uo:", "users_view"),
     ("adm:up:", "users_view"), ("adm:ur:", "users_view"), ("adm:uw:", "users_view"),
     ("adm:ub:", "users_edit"), ("adm:ubr:", "users_edit"), ("adm:ubn:", "users_edit"), ("adm:um:", "users_edit"), ("adm:unb:", "users_edit"),

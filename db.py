@@ -113,6 +113,8 @@ MIGRATIONS = [
     ("vpn_agent_plans", "custom_days_min", "INTEGER NOT NULL DEFAULT 0"),
     ("vpn_agent_plans", "custom_days_max", "INTEGER NOT NULL DEFAULT 365"),
     ("payments", "reject_reason", "TEXT"),
+    ("payments", "rc_state", "TEXT"),
+    ("payments", "receipt_uid", "TEXT"),
     ("orders", "orig_amount", "INTEGER"),
     ("orders", "discount_code", "TEXT"),
     ("orders", "cost", "INTEGER NOT NULL DEFAULT 0"),
@@ -753,6 +755,23 @@ class DB(VpnDB, TicketDB):
         o = await self.one("SELECT COUNT(*) n, COALESCE(SUM(amount),0) s FROM orders WHERE user_id=? AND status='done'", (uid,))
         r = await self.one("SELECT SUM(status='rejected') rej, SUM(status='paid') ok FROM payments WHERE user_id=? AND method='card'", (uid,))
         return {"orders": o["n"], "spent": o["s"], "rejected": (r or {}).get("rej") or 0, "approved": (r or {}).get("ok") or 0}
+
+    # ---------- تأیید خودکار رسید (بازبینی بعدی ادمین) ----------
+    async def rc_open_count(self, uid) -> int:
+        return (await self.one("SELECT COUNT(*) c FROM payments WHERE user_id=? AND rc_state='review'", (uid,)))["c"]
+
+    async def rc_uid_used(self, uid_str, exclude_pid=0) -> bool:
+        return bool(uid_str) and bool(await self.one("SELECT 1 FROM payments WHERE receipt_uid=? AND id<>?", (uid_str, exclude_pid)))
+
+    async def rc_move(self, pid, frm, to) -> bool:
+        cur = await self.run("UPDATE payments SET rc_state=? WHERE id=? AND rc_state=?", (to, pid, frm))
+        return cur.rowcount == 1
+
+    async def rc_review_list(self, limit=50):
+        return await self.all("SELECT * FROM payments WHERE rc_state='review' ORDER BY id LIMIT ?", (limit,))
+
+    async def rc_review_count(self) -> int:
+        return (await self.one("SELECT COUNT(*) c FROM payments WHERE rc_state='review'"))["c"]
 
     async def pending_payments(self, method=None, status="pending"):
         if method:

@@ -222,6 +222,7 @@
  "کیف پول": "Billetera",
  "دعوت": "Invitar",
  "بیشتر": "Más",
+ "❌ رسید پرداخت شما (کد P{pid}) پس از بررسی تأیید نشد و خدمات مربوط به آن قطع شد. در صورت اشتباه با پشتیبانی تماس بگیرید.": "❌ Tu comprobante de pago (código P{pid}) no fue aprobado tras la revisión y el servicio asociado fue cortado. Si es un error, contacta con soporte.",
  "⏳ در انتظار پرداخت": "⏳ Pendiente de pago",
  "💳 پرداخت شده": "💳 Pagado",
  "🚚 در حال تحویل": "🚚 En entrega",

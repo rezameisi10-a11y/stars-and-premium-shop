@@ -69,8 +69,9 @@ def home_kb(shop: Shop, uid: int):
 async def home_text(shop: Shop) -> str:
     st = await shop.db.stats()
     tk = (await shop.db.tk_counts())["open"] if shop.s.get("tickets_on", "1") == "1" else 0
+    rv = await shop.db.rc_review_count()
     return (f"⚙️ <b>پنل مدیریت</b>\n\n👥 کاربران: {fmt(st['users'])} | 🧾 در صف تحویل: {st['todo']} | "
-            f"💳 رسید منتظر تأیید: {st['waiting']}" + (f" | 🎫 تیکت باز: {tk}" if tk else "") + f"\n💰 فروش امروز: {fmt(st['today_revenue'])} تومان")
+            f"💳 رسید منتظر تأیید: {st['waiting']}" + (f" | 🎫 تیکت باز: {tk}" if tk else "") + (f" | 🕵️ بازبینی خودکار: {rv}" if rv else "") + f"\n💰 فروش امروز: {fmt(st['today_revenue'])} تومان")
 
 
 @router.message(Command("admin"))
@@ -241,15 +242,32 @@ async def cb_order_action(cb: CallbackQuery, shop: Shop):
 @router.callback_query(F.data == "adm:pays")
 async def cb_pays(cb: CallbackQuery, shop: Shop):
     rows = await shop.db.pending_payments(status="waiting_admin")
+    nrv = await shop.db.rc_review_count()
+    rv_btn = [btn(f"🕵️ بازبینی رسیدهای خودکار ({nrv})", "adm:rv", role="admin")] if (nrv or (await shop.settings()).get("rc_auto_on") == "1") else None
     if not rows:
-        await view(cb, "💳 رسیدی منتظر تأیید نیست ✅", ikb([back_row()]))
+        await view(cb, "💳 رسیدی منتظر تأیید نیست ✅", ikb(([rv_btn] if rv_btn else []) + [back_row()]))
         await cb.answer()
         return
     await cb.answer()
     await cb.message.answer(f"💳 {len(rows)} رسید منتظر تأیید (۱۰ مورد آخر در ادامه):")
     for p in rows[-10:]:
         await shop.send_receipt_to(cb.from_user.id, p)
-    await cb.message.answer("—", reply_markup=ikb([back_row()]))
+    await cb.message.answer("—", reply_markup=ikb(([rv_btn] if rv_btn else []) + [back_row()]))
+
+
+@router.callback_query(F.data == "adm:rv")
+async def cb_review_list(cb: CallbackQuery, shop: Shop):
+    rows = await shop.db.rc_review_list(10)
+    total = await shop.db.rc_review_count()
+    if not rows:
+        await view(cb, "🕵️ رسید تأییدشده‌ی خودکار که منتظر بازبینی باشد نیست ✅\n(تنظیمات: ⚙️ تنظیمات ← درگاه‌ها و روش‌های پرداخت)", ikb([[btn("💳 رسیدها", "adm:pays", role="back")], back_row()]))
+        await cb.answer()
+        return
+    await cb.answer()
+    await cb.message.answer(f"🕵️ {total} رسید خودکار منتظر بازبینی (قدیمی‌ترین ۱۰ مورد در ادامه). «واقعی» = نگه‌داشتن سرویس، «جعلی» = قطع سرویس از ربات و پنل:")
+    for p in rows:
+        await shop.rc.send_review(cb.from_user.id, p)
+    await cb.message.answer("—", reply_markup=ikb([[btn("🔄 ادامه / بروزرسانی", "adm:rv", role="action")], back_row()]))
 
 
 async def _finish_pay(shop: Shop, bot, chat_id, msg_id, base_caption, act, pid, who, reason=""):
@@ -265,6 +283,15 @@ async def _finish_pay(shop: Shop, bot, chat_id, msg_id, base_caption, act, pid, 
 async def cb_pay_action(cb: CallbackQuery, shop: Shop, state: FSMContext):
     parts = cb.data.split(":")
     act, pid = parts[1], int(parts[2])
+    if act == "rv":                                   # بازبینی رسیدِ خودکار-تأییدشده
+        res = await shop.rc.review(pid, parts[3], actor=f"tg:{cb.from_user.id}")
+        try:
+            await cb.bot.edit_message_caption(chat_id=cb.message.chat.id, message_id=cb.message.message_id,
+                                              caption=((cb.message.caption or "")[:800] + f"\n\n{res} — توسط {esc(cb.from_user.full_name)}")[:1020], reply_markup=None)
+        except TelegramBadRequest:
+            pass
+        await cb.answer(res, show_alert=True)
+        return
     if act == "no":                                   # دلیل رد را بپرس (دکمه‌ها در همان پیام)
         from service import REJECT_REASONS
         icon = {"fake": "🚫", "amount": "💰", "unclear": "🔍", "notfound": "🏦", "dup": "♻️"}

@@ -222,6 +222,7 @@
  "کیف پول": "Saldo",
  "دعوت": "Undang",
  "بیشتر": "Lainnya",
+ "❌ رسید پرداخت شما (کد P{pid}) پس از بررسی تأیید نشد و خدمات مربوط به آن قطع شد. در صورت اشتباه با پشتیبانی تماس بگیرید.": "❌ Bukti pembayaran Anda (kode P{pid}) tidak disetujui setelah ditinjau dan layanan terkait diputus. Jika ini keliru, hubungi dukungan.",
  "⏳ در انتظار پرداخت": "⏳ Menunggu pembayaran",
  "💳 پرداخت شده": "💳 Dibayar",
  "🚚 در حال تحویل": "🚚 Sedang dikirim",

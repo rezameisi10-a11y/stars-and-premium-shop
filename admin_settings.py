@@ -86,6 +86,7 @@ EXTRA_BUTTONS = {
     "rates": [("🧪 تست API دلار", "adm:rates:t:usd"), ("🧪 تست API تون", "adm:rates:t:ton"), ("🔄 بروزرسانی نرخ", "adm:ratesnow")],
     "pricing": [("🧪 تست API استارز", "adm:rates:t:fs"), ("🧪 تست API پریمیوم", "adm:rates:t:fp"), ("💹 نمونه قیمت‌ها", "adm:rates")],
     "delivery": [("🧪 تست API موجودی", "adm:rates:t:pb"), ("⭐ موجودی ربات", "adm:stars")],
+    "gateways": [("🕵️ بازبینی رسیدهای تأییدشده‌ی خودکار", "adm:rv")],
     "group": [("🗂 ساخت تاپیک‌ها", "adm:grp:topics"), ("📊 گزارش همین حالا", "adm:grp:report"), ("💾 بکاپ همین حالا", "adm:grp:backup"),
               ("🧪 پیام تست", "adm:grp:test"), ("ℹ️ راهنمای اتصال", "adm:grp:help"), ("🔌 قطع اتصال", "adm:grp:off")],
 }

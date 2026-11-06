@@ -364,7 +364,8 @@ async def a_receipt(ctx: Ctx, d: dict) -> dict:
     except Exception as e:  # noqa: BLE001
         log.warning("receipt upload failed: %s", e)
         raise ApiError(ctx.tr("لطفاً فقط عکس رسید را ارسال کنید. برای خروج /start را بزنید."))
-    await shop.submit_receipt(p["id"], msg.photo[-1].file_id)
+    import hashlib
+    await shop.submit_receipt(p["id"], msg.photo[-1].file_id, "h:" + hashlib.sha256(blob).hexdigest())
     return {"ok": True, "message": ctx.tr("🧾 رسید دریافت شد. پس از بررسی ادمین، نتیجه همین‌جا اعلام می‌شود.")}
 
 

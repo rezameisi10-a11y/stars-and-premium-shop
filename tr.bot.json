@@ -222,6 +222,7 @@
  "کیف پول": "Cüzdan",
  "دعوت": "Davet",
  "بیشتر": "Daha fazla",
+ "❌ رسید پرداخت شما (کد P{pid}) پس از بررسی تأیید نشد و خدمات مربوط به آن قطع شد. در صورت اشتباه با پشتیبانی تماس بگیرید.": "❌ Ödeme dekontunuz (kod P{pid}) inceleme sonrası onaylanmadı ve ilgili hizmet kesildi. Hata varsa destekle iletişime geçin.",
  "⏳ در انتظار پرداخت": "⏳ Ödeme bekleniyor",
  "💳 پرداخت شده": "💳 Ödendi",
  "🚚 در حال تحویل": "🚚 Teslim ediliyor",

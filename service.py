@@ -23,6 +23,7 @@ from pricing import PREMIUM_STARS, Pricing
 from settings_schema import TEXT_KEYS, validate
 from ui import btn, esc, fmt, ikb  # noqa: F401  (re-export برای هندلرها)
 from vpn_service import VPN
+from receipt_auto import ReceiptAuto
 from ai_support import AiSupport
 
 log = logging.getLogger("shop")
@@ -166,6 +167,7 @@ class Shop:
         self.pricing = Pricing(self)
         self.group = GroupFeed(self)
         self.vpn = VPN(self)
+        self.rc = ReceiptAuto(self)
         self.ai = AiSupport(self)
         self._rate_last: dict[str, float] = {}
         self._ref_watch: set[int] = set()
@@ -1098,9 +1100,11 @@ class Shop:
                + ("\n⛔ این کاربر مسدود است." if u.get("banned") else ""))
         return cap[:1020]
 
-    async def submit_receipt(self, pid, file_id):
-        await self.db.update_payment(pid, receipt_file_id=file_id, status="waiting_admin")
+    async def submit_receipt(self, pid, file_id, uid_str=None):
+        await self.db.update_payment(pid, receipt_file_id=file_id, status="waiting_admin", receipt_uid=uid_str)
         p = await self.db.get_payment(pid)
+        if await self.rc.try_auto(p):
+            return
         for aid in self.admins_with("receipts"):
             await self.send_receipt_to(aid, p)
         await self.group_receipt(p)

@@ -222,6 +222,7 @@
  "کیف پول": "Solde",
  "دعوت": "Inviter",
  "بیشتر": "Plus",
+ "❌ رسید پرداخت شما (کد P{pid}) پس از بررسی تأیید نشد و خدمات مربوط به آن قطع شد. در صورت اشتباه با پشتیبانی تماس بگیرید.": "❌ Votre reçu de paiement (code P{pid}) n'a pas été approuvé après vérification et le service associé a été coupé. En cas d'erreur, contactez le support.",
  "⏳ در انتظار پرداخت": "⏳ Paiement en attente",
  "💳 پرداخت شده": "💳 Payée",
  "🚚 در حال تحویل": "🚚 En cours de livraison",
