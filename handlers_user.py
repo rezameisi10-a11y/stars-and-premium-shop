@@ -131,7 +131,8 @@ async def support(cb: CallbackQuery, shop: Shop, lang: str, tr):
     s = await shop.settings()
     u = s["support_username"].lstrip("@")
     text = shop.text("support_text", lang) + (("\n\n" + tr("☎️ پشتیبانی: {u}", u="@" + esc(u))) if u else "")
-    await cb.message.answer(text.strip() or tr("☎️ پشتیبانی هنوز تنظیم نشده است."))
+    from handlers_tickets import support_kb
+    await cb.message.answer(text.strip() or tr("☎️ پشتیبانی هنوز تنظیم نشده است."), reply_markup=support_kb(shop, tr))
     await cb.answer()
 
 

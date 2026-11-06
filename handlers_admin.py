@@ -55,6 +55,7 @@ def home_kb(shop: Shop, uid: int):
 
     add(("📊 آمار", "adm:stats", c("stats")), ("🧾 صف تحویل", "adm:queue", c("orders")))
     add(("💳 رسیدهای منتظر تأیید", "adm:pays", c("receipts")), ("👥 کاربران", "adm:users", c("users_view")))
+    add(("🎫 تیکت‌ها", "adm:tk", c("users_view") and shop.s.get("tickets_on", "1") == "1"))
     add(("📦 محصولات و قیمت", "adm:prod", c("products")), ("💹 نرخ‌ها و قیمت‌گذاری", "adm:rates", c("pricing")))
     add(("⚙️ تنظیمات", "adm:set", c("settings") or c("pricing")), ("🎨 دکمه‌ها و رنگ‌ها", "adm:btn", c("buttons")))
     add(("🏷 کدهای تخفیف", "adm:disc", c("discounts")), ("📢 پیام همگانی", "adm:bcast", c("broadcast")))
@@ -67,8 +68,9 @@ def home_kb(shop: Shop, uid: int):
 
 async def home_text(shop: Shop) -> str:
     st = await shop.db.stats()
+    tk = (await shop.db.tk_counts())["open"] if shop.s.get("tickets_on", "1") == "1" else 0
     return (f"⚙️ <b>پنل مدیریت</b>\n\n👥 کاربران: {fmt(st['users'])} | 🧾 در صف تحویل: {st['todo']} | "
-            f"💳 رسید منتظر تأیید: {st['waiting']}\n💰 فروش امروز: {fmt(st['today_revenue'])} تومان")
+            f"💳 رسید منتظر تأیید: {st['waiting']}" + (f" | 🎫 تیکت باز: {tk}" if tk else "") + f"\n💰 فروش امروز: {fmt(st['today_revenue'])} تومان")
 
 
 @router.message(Command("admin"))
@@ -126,7 +128,67 @@ async def cb_stats(cb: CallbackQuery, shop: Shop):
             f"🧾 در صف تحویل/خطا: <b>{st['todo']}</b>\n💳 رسید منتظر تأیید: <b>{st['waiting']}</b>\n"
             f"⏳ پرداخت در انتظار: {st['pending_pay']}\n👛 مجموع کیف پول کاربران: {fmt(st['wallets'])} تومان\n"
             f"⭐ موجودی ستاره ربات: <b>{bal if bal is not None else 'نامشخص'}</b>")
-    await view(cb, text, ikb([[btn("🔄 بروزرسانی", "adm:stats", role="action")], back_row()]))
+    await view(cb, text, ikb([[btn("📈 گزارش مالی و خروجی CSV", "adm:rep:7", role="admin")], [btn("🔄 بروزرسانی", "adm:stats", role="action")], back_row()]))
+    await cb.answer()
+
+
+# ---- گزارش مالی (داخل «آمار»)
+REP_PERIODS = (("today", "امروز"), ("7", "۷ روز"), ("30", "۳۰ روز"), ("90", "۹۰ روز"), ("all", "همه"))
+REP_KIND = {"stars": "⭐ استارز", "premium": "💎 پریمیوم", "gift": "🎁 گیفت", "vpn": "🛡 VPN", "agent": "🧑‍💼 نمایندگی", "config": "🔧 کانفیگ"}
+
+
+def _rep_since(p: str) -> int:
+    from db import TEHRAN
+    day = int(datetime.now(TEHRAN).replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+    return 0 if p == "all" else day if p == "today" else day - (int(p) - 1) * 86400
+
+
+@router.callback_query(F.data.regexp(r"^adm:rep:(today|7|30|90|all)$"))
+async def cb_report(cb: CallbackQuery, shop: Shop):
+    p = cb.data.split(":")[2]
+    r = await shop.db.report(_rep_since(p))
+    title = dict(REP_PERIODS)[p]
+    L = [f"📈 <b>گزارش مالی — {title}</b>", f"🆕 کاربر جدید: {fmt(r['new_users'])}", "", "<b>فروش سفارش‌های تحویل‌شده</b>"]
+    tot_n = tot_rev = tot_profit = 0
+    for k in r["kinds"]:
+        tot_n += k["n"]; tot_rev += k["rev"]; tot_profit += k["profit"]
+        L.append(f"{REP_KIND.get(k['k'], k['k'])}: {fmt(k['n'])} سفارش | {fmt(k['rev'])} تومان | سود {fmt(k['profit'])}")
+    if not r["kinds"]:
+        L.append("— سفارشی نبوده —")
+    else:
+        L.append(f"<b>جمع: {fmt(tot_n)} سفارش | {fmt(tot_rev)} تومان | سود {fmt(tot_profit)}</b>")
+    L += ["", "<b>پرداخت‌های تأییدشده</b>"]
+    for m in r["pays"]:
+        L.append(f"{METHOD_FA.get(m['method'], m['method'])}: {fmt(m['n'])} بار | {fmt(m['s'])} تومان")
+    if not r["pays"]:
+        L.append("— پرداختی نبوده —")
+    L.append(f"👛 شارژ کیف پول: {fmt(r['topup']['n'])} بار | {fmt(r['topup']['s'])} تومان")
+    L.append("\nسود فقط برای سفارش‌هایی حساب می‌شود که قیمت تمام‌شده‌شان ثبت شده است.")
+    rows = [[btn(("• " if k == p else "") + t, f"adm:rep:{k}", role="admin") for k, t in REP_PERIODS],
+            [btn("📥 CSV سفارش‌ها", f"adm:repx:{p}:o", role="action"), btn("📥 CSV پرداخت‌ها", f"adm:repx:{p}:p", role="action")],
+            back_row("adm:stats")]
+    await view(cb, "\n".join(L), ikb(rows))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^adm:repx:(today|7|30|90|all):[op]$"))
+async def cb_report_csv(cb: CallbackQuery, shop: Shop):
+    import csv
+    _, _, p, what = cb.data.split(":")
+    since = _rep_since(p)
+    rows = await (shop.db.export_orders(since) if what == "o" else shop.db.export_payments(since))
+    if not rows:
+        await cb.answer("داده‌ای در این بازه نیست.", show_alert=True)
+        return
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    cols = list(rows[0].keys())
+    w.writerow(cols + ["jdate"])
+    for r in rows:
+        w.writerow([("" if r[c] is None else str(r[c]).replace("\n", " ")[:200]) for c in cols] + [jdate(r["created_at"])])
+    data = ("\ufeff" + buf.getvalue()).encode("utf-8")                       # BOM تا اکسل فارسی را درست باز کند
+    name = f"{'orders' if what == 'o' else 'payments'}_{p}_{datetime.now().strftime('%Y%m%d')}.csv"
+    await cb.message.answer_document(BufferedInputFile(data, name), caption=f"📥 {len(rows)} ردیف")
     await cb.answer()
 
 

@@ -77,7 +77,7 @@ PERM_MAP = [
     ("adm:fj", "settings"),
     ("adm:disc", "discounts"), ("adm:dc:", "discounts"), ("adm:dt:", "discounts"), ("adm:dx:", "discounts"),
     ("adm:dnew", "discounts"), ("adm:dnewadv", "discounts"), ("adm:ds:", "discounts"), ("adm:dw:", "discounts"), ("adm:dext:", "discounts"), ("adm:dlog:", "discounts"),
-    ("adm:bcast", "broadcast"), ("adm:bgo", "broadcast"),
+    ("adm:bcast", "broadcast"), ("adm:bgo", "broadcast"), ("adm:rep", "stats"), ("adm:tk", "users_view"),
     ("adm:admins", "admins"), ("adm:aadd", "admins"), ("adm:arm:", "admins"), ("adm:ap:", "admins"), ("adm:apre:", "admins"),
     ("adm:an:", "admins"), ("adm:aw:", "admins"), ("adm:ad:", "admins"),
     ("adm:stars", "stars"), ("adm:stopup", "stars"), ("adm:grp:", "settings"),

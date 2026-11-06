@@ -156,12 +156,13 @@ def valid_name(n: str) -> bool:
 
 # تنظیمات هر پنل (داخل ستون extra؛ مثل «قابلیت‌های پنل» در میرزا). مقدار 1 = روشن
 PANEL_FLAGS = {"show": 1, "test": 1, "renew": 1, "addon": 1, "sub": 1, "config": 1, "qr": 1, "copy_sub": 1, "copy_cfg": 1,
-               "revoke": 1, "toggle": 1, "transfer": 1, "unote": 1, "refund": 0, "udelete": 1, "report": 1}
+               "revoke": 1, "toggle": 1, "transfer": 1, "unote": 1, "refund": 0, "udelete": 1, "report": 1, "move": 1, "move_to": 0}
 PANEL_FLAG_TITLES = {"show": N_("نمایش پنل به کاربران"), "test": N_("اکانت تست"), "renew": N_("تمدید"), "addon": N_("حجم/زمان اضافه"),
                      "sub": N_("ارسال لینک اشتراک"), "config": N_("ارسال کانفیگ مستقیم"), "qr": N_("دکمه‌ی QR کد"),
                      "revoke": N_("دکمه‌ی تغییر لینک"), "toggle": N_("دکمه‌ی خاموش/روشن کردن اکانت"), "transfer": N_("دکمه‌ی انتقال سرویس به کاربر دیگر"),
                      "unote": N_("دکمه‌ی تغییر یادداشت"), "refund": N_("دکمه‌ی بازگشت وجه (با محدودیت‌های تنظیمات)"),
                      "udelete": N_("دکمه‌ی حذف سرویس منقضی توسط کاربر"), "report": N_("دکمه‌ی گزارش اختلال سرویس"),
+                     "move": N_("دکمه‌ی تغییر لوکیشن (انتقال از این پنل)"), "move_to": N_("این پنل مقصد تغییر لوکیشن باشد"),
                      "copy_sub": N_("کپی لینک اشتراک با یک کلیک (خاموش = نگه‌داشتن انگشت)"), "copy_cfg": N_("کپی کانفیگ‌ها با یک کلیک (خاموش = نگه‌داشتن انگشت)")}
 
 
@@ -291,6 +292,8 @@ class VPN:
         self._revoke_ts: dict[int, float] = {}
         from vpn_agent import AgentSales          # import تأخیری (جلوگیری از چرخه)
         self.agents = AgentSales(self)
+        from vpn_ops import VpnOps               # انتقال بین پنل‌ها + عملیات گروهی
+        self.ops = VpnOps(self)
 
     # ------------------------------------------------------------------ تنظیمات و درایور
     @property
@@ -1527,6 +1530,8 @@ class VPN:
             row = []
             if pflag(svc, "report"):
                 row.append(btn(tr("⚠️ گزارش اختلال"), f"vpn:rp:{sid}", role="action"))
+            if self.ops.show_button(svc):
+                row.append(btn(tr("📍 تغییر لوکیشن"), f"vpn:mv:{sid}", role="action"))
             if pflag(svc, "udelete") and (svc["status"] == "expired" or (svc["expires_at"] and svc["expires_at"] < time.time())):
                 row.append(btn(tr("🗑 حذف سرویس منقضی"), f"vpn:dl:{sid}", role="reject"))
             if row:
@@ -1586,6 +1591,7 @@ class VPN:
         """مشخصات + لینک اشتراک + کانفیگ‌ها (زیر لینک اشتراک) + QR.
         اگر همه در ۱۰۲۴ حرف جا شود: یک پیام (عکس با کپشن). وگرنه: عکس QR و بعد یک پیام متنی کامل (در صورت طولانی بودن چند پیام پشت‌سرهم)."""
         tr = tr or await self.shop.tr_for(uid)
+        await self.ops.refresh_dest()
         head = (tr("✅ سرویس شما آماده است!") + "\n\n" if new else "")
         svc = await self.refresh_links(svc)
         kb = self.service_kb(svc, tr)

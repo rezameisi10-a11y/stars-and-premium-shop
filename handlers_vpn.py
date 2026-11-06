@@ -11,6 +11,7 @@ from handlers_user import order_text
 from i18n import N_
 from service import Shop
 from ui import btn, esc, fmt, ikb
+from vpn_ops import MoveError
 from vpn_panels import PanelError
 from vpn_service import STATUS_FA, VpnError, ltr, pflag
 
@@ -235,6 +236,7 @@ async def vpn_refresh(cb: CallbackQuery, shop: Shop, tr):
     except (PanelError, Exception):
         await cb.answer(tr("ارتباط با سرور برقرار نشد؛ کمی بعد دوباره تلاش کنید."), show_alert=True)
         return
+    await shop.vpn.ops.refresh_dest()
     try:
         if cb.message.photo:
             _c = await shop.vpn.service_text(svc, tr, all_cfg=True)
@@ -606,6 +608,59 @@ async def vpn_delete_do(cb: CallbackQuery, shop: Shop, tr):
         return
     ok, msg = await shop.vpn.user_delete_expired(cb.from_user.id, svc["id"])
     await cb.answer(tr(msg if not ok else "سرویس حذف شد."), show_alert=True)
+
+
+# ---------- تغییر لوکیشن ----------
+@router.callback_query(F.data.regexp(r"^vpn:mv:\d+$"))
+async def vpn_move_list(cb: CallbackQuery, shop: Shop, tr):
+    svc = await _own(cb, shop, tr, cb.data.split(":")[2])
+    if not svc:
+        return
+    if not await shop.vpn.ops.can_user_move(svc):
+        await cb.answer(tr("تغییر لوکیشن برای این سرویس فعال نیست."), show_alert=True)
+        return
+    rows = [[btn(f"📍 {p['name']}", f"vpn:mvp:{svc['id']}:{p['id']}", role="action")] for p in await shop.vpn.ops.targets(svc)]
+    rows.append([btn(tr("🔙 بازگشت"), f"vpn:rf:{svc['id']}", role="back")])
+    await cb.message.answer(tr("📍 <b>تغییر لوکیشن</b>") + "\n" + tr("لوکیشن جدید را انتخاب کنید. حجم و زمان باقی‌مانده‌ی شما همان‌طور که هست منتقل می‌شود."), reply_markup=ikb(rows))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^vpn:mvp:\d+:\d+$"))
+async def vpn_move_confirm(cb: CallbackQuery, shop: Shop, tr):
+    _, _, sid, pid = cb.data.split(":")
+    svc = await _own(cb, shop, tr, sid)
+    if not svc:
+        return
+    svc = await shop.vpn.sync_safe(svc)
+    svc = await shop.db.get_vpn_service(svc["id"]) or svc
+    dst = next((p for p in await shop.vpn.ops.targets(svc) if p["id"] == int(pid)), None)
+    if not dst or not await shop.vpn.ops.can_user_move(svc):
+        await cb.answer(tr("این لوکیشن در دسترس نیست."), show_alert=True)
+        return
+    try:
+        gb, days = shop.vpn.ops.preview(svc)
+    except MoveError as e:
+        await cb.answer(tr(str(e)), show_alert=True)
+        return
+    vol = tr("نامحدود") if not gb else ltr(f"{gb:g} GB")
+    tm = tr("نامحدود") if not days else tr("{d} روز", d=days)
+    await cb.message.answer(tr("📍 انتقال به «{p}»", p=esc(dst["name"])) + "\n" + tr("حجم باقی‌مانده: {v}", v=vol) + "\n" + tr("زمان باقی‌مانده: {t}", t=tm)
+                            + "\n\n" + tr("لینک اشتراک قبلی بعد از انتقال کار نمی‌کند و لینک جدید برای شما ارسال می‌شود. ادامه می‌دهید؟"),
+                            reply_markup=ikb([[btn(tr("✅ بله، منتقل کن"), f"vpn:mvg:{sid}:{pid}", role="confirm"), btn(tr("❌ انصراف"), f"vpn:rf:{sid}", role="reject")]]))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^vpn:mvg:\d+:\d+$"))
+async def vpn_move_go(cb: CallbackQuery, shop: Shop, tr):
+    _, _, sid, pid = cb.data.split(":")
+    await cb.answer(tr("در حال انتقال ..."))
+    try:
+        row = await shop.vpn.ops.user_move(cb.from_user.id, int(sid), int(pid))
+    except MoveError as e:
+        await cb.message.answer("❌ " + tr(str(e)))
+        return
+    await cb.message.answer(tr("✅ سرویس شما به لوکیشن «{p}» منتقل شد؛ حجم و زمان باقی‌مانده حفظ شد.", p=esc(row.get("panel_name") or "")))
+    await shop.vpn.send_service(cb.from_user.id, row)
 
 
 @router.callback_query(F.data.startswith("vpn:rp:"))

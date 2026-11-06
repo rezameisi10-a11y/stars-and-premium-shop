@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 import aiosqlite
 
+from db_tickets import TICKET_SCHEMA, TicketDB
 from db_vpn import VPN_SCHEMA, VpnDB
 from i18n import BUILTIN_LANGS, N_
 from settings_schema import DEFAULTS as NEW_DEFAULTS
@@ -148,7 +149,7 @@ DEFAULT_SETTINGS = {
     "min_topup": "50000",
     "max_topup": "500000000",
     "star_alert_threshold": "500",
-    "pm_wallet": "1", "pm_card": "1", "pm_zarinpal": "1", "pm_ton": "1", "pm_usdt": "1", "pm_stars": "0", "ref_cfg_every": "0", "ref_cfg_plan": "0", "ref_cfg_gb": "0", "ref_cfg_days": "0", "card_protect": "0", "audit_notify": "1",
+    "pm_wallet": "1", "pm_card": "1", "pm_zarinpal": "1", "pm_ton": "1", "pm_usdt": "1", "pm_stars": "0", "ref_cfg_on": "0", "ref_cfg_on": "0", "ref_cfg_every": "0", "ref_cfg_plan": "0", "ref_cfg_gb": "0", "ref_cfg_days": "0", "card_protect": "0", "audit_notify": "1",
     "card_number": "", "card_owner": "", "card_note": "",
     "pay_timeout_min": "30",
     "welcome_text": N_("به فروشگاه خدمات مجازی تلگرام خوش آمدید 🌟\nیکی از گزینه‌های زیر را انتخاب کنید."),
@@ -195,7 +196,7 @@ USER_SORTS = {"new": "u.created_at DESC", "old": "u.created_at ASC", "seen": "u.
               "balance": "u.balance DESC", "spent": "spent DESC", "orders": "orders_n DESC", "refs": "refs_n DESC, u.created_at DESC"}
 
 
-class DB(VpnDB):
+class DB(VpnDB, TicketDB):
     def __init__(self, path: str):
         self.path = path
         self.conn: aiosqlite.Connection | None = None
@@ -208,6 +209,7 @@ class DB(VpnDB):
         await self.conn.execute("PRAGMA journal_mode=WAL")
         await self.conn.executescript(SCHEMA)
         await self.conn.executescript(VPN_SCHEMA)
+        await self.conn.executescript(TICKET_SCHEMA)
         for table, col, ddl in MIGRATIONS:
             cols = [r["name"] for r in await self.all(f"PRAGMA table_info({table})")]
             if col not in cols:
@@ -1011,6 +1013,26 @@ class DB(VpnDB):
         return list(reversed(rows))
 
     # ---------- آمار ----------
+    # ---------- گزارش مالی ----------
+    async def report(self, since: int) -> dict:
+        """فروش/سود سفارش‌های تحویل‌شده به تفکیک نوع (نمایندگی از VPN جدا) و پرداخت‌های تأییدشده به تفکیک روش، از زمان since."""
+        kinds = await self.all(
+            "SELECT CASE WHEN (kind='vpn' AND ref LIKE 'vpn:agent%') OR ref LIKE 'vpn:arenew%' THEN 'agent' ELSE kind END k, COUNT(*) n, "
+            "COALESCE(SUM(amount),0) rev, COALESCE(SUM(CASE WHEN cost>0 THEN cost ELSE 0 END),0) cost, "
+            "COALESCE(SUM(CASE WHEN cost>0 THEN amount-cost ELSE 0 END),0) profit FROM orders WHERE status='done' AND updated_at>=? GROUP BY k ORDER BY rev DESC", (since,))
+        pays = await self.all(
+            "SELECT method, COUNT(*) n, COALESCE(SUM(amount),0) s FROM payments WHERE status='confirmed' AND created_at>=? GROUP BY method ORDER BY s DESC", (since,))
+        topup = await self.one("SELECT COUNT(*) n, COALESCE(SUM(amount),0) s FROM payments WHERE status='confirmed' AND order_id IS NULL AND created_at>=?", (since,))
+        new_users = (await self.one("SELECT COUNT(*) c FROM users WHERE created_at>=?", (since,)))["c"]
+        return {"kinds": kinds, "pays": pays, "topup": topup, "new_users": new_users}
+
+    async def export_orders(self, since: int) -> list[dict]:
+        return await self.all("SELECT id, created_at, updated_at, user_id, kind, title, qty, amount, cost, "
+                              "CASE WHEN cost>0 THEN amount-cost ELSE 0 END AS profit, status, discount_code FROM orders WHERE created_at>=? ORDER BY id", (since,))
+
+    async def export_payments(self, since: int) -> list[dict]:
+        return await self.all("SELECT id, created_at, user_id, order_id, method, amount, status, ref FROM payments WHERE created_at>=? ORDER BY id", (since,))
+
     async def stats(self):
         now = datetime.now(TEHRAN)
         day_start = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())

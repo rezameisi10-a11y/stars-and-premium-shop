@@ -1084,6 +1084,8 @@ async def cb_bcast(cb: CallbackQuery, shop: Shop, state: FSMContext):
     kb = []
     for i in range(0, len(AUDIENCES), 2):
         kb.append([btn(t, f"adm:bcasta:{k}", role="admin") for k, t in AUDIENCES[i:i + 2]])
+    if shop.can(cb.from_user.id, "vpn"):
+        kb.append([btn("🛡 مخاطبان VPN (سرویس، پنل، نماینده)", "adm:bcastv", role="admin")])
     langs = shop.bot_langs()
     if len(langs) > 1:
         for i in range(0, len(langs), 2):
@@ -1091,6 +1093,23 @@ async def cb_bcast(cb: CallbackQuery, shop: Shop, state: FSMContext):
     kb.append(back_row())
     last = f"\nآخرین ارسال: موفق {st['sent']}، ناموفق {st['failed']} از {st['total']}" if st["total"] else ""
     await view(cb, "📢 <b>پیام همگانی</b>\nمخاطبان را انتخاب کنید:" + last, ikb(kb))
+    await cb.answer()
+
+
+VPN_AUDIENCES = [("v-active", "✅ سرویس فعال دارند"), ("v-soon", "⏳ رو به اتمام زمان"), ("v-low", "📉 کم‌حجم (≤۱۰٪)"),
+                 ("v-expired", "⌛️ فقط منقضی دارند"), ("v-agents", "🧑‍💼 نماینده‌ها"), ("v-none", "🙋 هنوز VPN نخریده‌اند")]
+
+
+@router.callback_query(F.data == "adm:bcastv")
+async def cb_bcast_vpn(cb: CallbackQuery, shop: Shop):
+    kb = []
+    for i in range(0, len(VPN_AUDIENCES), 2):
+        kb.append([btn(t, f"adm:bcasta:{k}", role="admin") for k, t in VPN_AUDIENCES[i:i + 2]])
+    panels = await shop.db.list_vpn_panels()
+    for i in range(0, len(panels), 2):
+        kb.append([btn(f"🖧 {p['name']} ({p['n_services']})", f"adm:bcasta:v-p{p['id']}", role="admin") for p in panels[i:i + 2]])
+    kb.append(back_row("adm:bcast"))
+    await view(cb, "🛡 <b>پیام به مخاطبان VPN</b>\nمخاطب را انتخاب کنید. «🖧 پنل» یعنی همه‌ی کسانی که روی آن پنل سرویس دارند؛ مثلاً وقتی پنلی قطع است.", ikb(kb))
     await cb.answer()
 
 

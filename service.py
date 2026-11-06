@@ -852,9 +852,11 @@ class Shop:
     async def _config_reward(self, referrer, uid):
         """جایزه‌ی کانفیگ: به ازای هر N زیرمجموعه‌ی تأییدشده یک سرویس با حجم/زمان تعیین‌شده برای معرف ساخته می‌شود (هر مرحله فقط یک‌بار)."""
         s = self.s or {}
+        if s.get("ref_cfg_on", "0") != "1":
+            return
         every = int(D(s.get("ref_cfg_every"), 0))
         plan_id = int(D(s.get("ref_cfg_plan"), 0))
-        if every <= 0 or plan_id <= 0:
+        if s.get("ref_cfg_on", "0") != "1" or every <= 0 or plan_id <= 0:
             return
         active = (await self.db.referral_stats(referrer))["active"]
         if active <= 0 or active % every:
@@ -1476,9 +1478,37 @@ class Shop:
             return [r["id"] for r in rows]
         if aud == "all":
             return await self.db.all_user_ids()
+        if aud.startswith("v-"):
+            ids = await self._vpn_audience(aud[2:])
+            banned = {r["id"] for r in await self.db.all("SELECT id FROM users WHERE banned=1")}
+            return [i for i in ids if i not in banned]
         ids = await self.db.user_ids_where("", aud)
         banned = {r["id"] for r in await self.db.all("SELECT id FROM users WHERE banned=1")}
         return [i for i in ids if i not in banned]
+
+    async def _vpn_audience(self, kind: str) -> list[int]:
+        """مخاطبان VPN: active | soon | low | expired | agents | none | p<شناسه‌ی پنل>"""
+        now = int(time.time())
+        live = "s.status NOT IN ('deleted','pending_manual')"
+        if kind == "active":
+            q, a = f"SELECT DISTINCT s.user_id i FROM vpn_services s WHERE s.status='active' AND (s.expires_at=0 OR s.expires_at>?)", (now,)
+        elif kind == "soon":
+            days = int(float(self.s.get("vpn_remind_days", "3") or 3)) or 3
+            q, a = "SELECT DISTINCT s.user_id i FROM vpn_services s WHERE s.status='active' AND s.expires_at>? AND s.expires_at<=?", (now, now + days * 86400)
+        elif kind == "low":
+            q, a = "SELECT DISTINCT s.user_id i FROM vpn_services s WHERE s.status='active' AND s.total_bytes>0 AND (s.total_bytes-s.used_bytes)*100<=10*s.total_bytes", ()
+        elif kind == "expired":
+            q, a = (f"SELECT DISTINCT s.user_id i FROM vpn_services s WHERE {live} AND (s.status='expired' OR (s.expires_at>0 AND s.expires_at<=?)) "
+                    "AND s.user_id NOT IN (SELECT user_id FROM vpn_services WHERE status='active' AND (expires_at=0 OR expires_at>?))"), (now, now)
+        elif kind == "agents":
+            q, a = "SELECT DISTINCT user_id i FROM vpn_agents WHERE status!='deleted'", ()
+        elif kind == "none":
+            q, a = "SELECT id i FROM users WHERE id NOT IN (SELECT user_id FROM vpn_services WHERE status!='deleted')", ()
+        elif kind.startswith("p") and kind[1:].isdigit():
+            q, a = f"SELECT DISTINCT s.user_id i FROM vpn_services s WHERE {live} AND s.panel_id=?", (int(kind[1:]),)
+        else:
+            return []
+        return [r["i"] for r in await self.db.all(q, a)]
 
     # ---------- پیام همگانی ----------
     async def start_broadcast(self, sender, ids=None, lang=None) -> bool:

@@ -16,6 +16,7 @@ import handlers_admin
 import handlers_ai
 import handlers_group
 import handlers_user
+import handlers_tickets
 import handlers_vpn
 import ui
 from config import load_config
@@ -50,6 +51,8 @@ async def main() -> int:
     dp.include_router(admin_vpn_agent.router)
     dp.include_router(handlers_user.router)
     dp.include_router(handlers_vpn.router)
+    dp.include_router(handlers_tickets.user_router)
+    dp.include_router(handlers_tickets.router)
     dp.include_router(handlers_ai.router)
 
     runner = web.AppRunner(create_web_app(shop))
