@@ -361,7 +361,7 @@ FA.update({
     "Every how many hours": "هر چند ساعت", "Telegram bot token": "توکن ربات تلگرام", "empty = keep the saved one": "خالی = همان قبلی بماند",
     "Numeric chat ID (send /start to the bot first)": "آیدی عددی چت (اول به ربات /start بزنید)",
     "Also send expiry reminders and stop notices here": "یادآوری سررسید و اعلان قطع ربات هم همین‌جا بیاید",
-    "Last run": "آخرین اجرا", "Test / run now": "تست / اجرای همین حالا", "Send a test message": "ارسال پیام تست", "Back up everything and send now": "بکاپ کامل بگیر و همین حالا بفرست",
+    "Last run": "آخرین اجرا", "Also send one combined file of all customers": "یک فایل یکپارچه از همه‌ی مشتری‌ها هم فرستاده شود", "Test / run now": "تست / اجرای همین حالا", "Send a test message": "ارسال پیام تست", "Back up everything and send now": "بکاپ کامل بگیر و همین حالا بفرست",
     "Test message": "پیام تست", "Backup and send": "بکاپ و ارسال", "Telegram bot token / chat id not set.": "توکن ربات تلگرام / آیدی چت تنظیم نشده.",
     "Chat ID must be a number.": "آیدی چت باید عدد باشد.", "Hours must be between 1 and 720.": "ساعت باید بین ۱ تا ۷۲۰ باشد.",
     "Set the bot token and chat ID before turning it on.": "قبل از روشن کردن، توکن ربات و آیدی چت را وارد کنید.",
@@ -607,7 +607,7 @@ def due_badge(due: str) -> str:
 # ----------------------------------------------------------------- hub settings: Telegram auto-backup + subscriptions
 CHAT_RE = re.compile(r"^-?[0-9]{3,20}$")
 TG_DOC_MAX = 49 * 1024 * 1024
-HUB_DEFAULT = {"bk_on": False, "bk_hours": 24, "bk_token": "", "bk_chat": "", "bk_last": 0, "bk_status": "", "bk_alerts": True}
+HUB_DEFAULT = {"bk_on": False, "bk_hours": 24, "bk_token": "", "bk_chat": "", "bk_last": 0, "bk_status": "", "bk_alerts": True, "bk_bundle": True}
 
 
 def load_hub(cfg: Config) -> dict:
@@ -677,6 +677,7 @@ async def backup_to_telegram(app) -> tuple[bool, str]:
     first_err = ""
     names = {r["name"] for r in parse_list((await run_cli(app, ["list"]))[1])}
     seen = set()
+    picked = []
     for b in list_backups(cfg):                                  # newest first: one (the newest) archive per customer
         if b["mtime"] < started - 5 or b["group"] not in names or b["group"] in seen:
             continue
@@ -684,6 +685,7 @@ async def backup_to_telegram(app) -> tuple[bool, str]:
         p = resolve_backup(cfg, b["id"])
         if not p:
             continue
+        picked.append((b["group"], p))
         ok, err = await tg_file(hub, p, f"💾 {b['group']} · {time.strftime('%Y-%m-%d %H:%M')} · {human(b['size'])}")
         sent += ok
         if not ok:
@@ -695,6 +697,29 @@ async def backup_to_telegram(app) -> tuple[bool, str]:
         if not ok:
             fails += 1
             first_err = first_err or err
+    if hub.get("bk_bundle") and picked:                          # one combined archive of ALL customers
+        ensure_dir(cfg.tmpdir)
+        bp = os.path.join(cfg.tmpdir, f"all-customers-{time.strftime('%Y%m%d-%H%M')}.tar.gz")
+        try:
+            import tarfile
+            with tarfile.open(bp, "w:gz") as tf:
+                for g, p in picked:
+                    tf.add(p, arcname=f"{g}/{os.path.basename(p)}")
+                if os.path.isfile(meta_path(cfg)):
+                    tf.add(meta_path(cfg), arcname="meta.json")
+            ok, err = await tg_file(hub, bp, f"📦 ALL customers ({len(picked)}) · {time.strftime('%Y-%m-%d %H:%M')} · {human(os.path.getsize(bp))}")
+            sent += ok
+            if not ok:
+                fails += 1
+                first_err = first_err or err
+        except OSError as ex:
+            fails += 1
+            first_err = first_err or type(ex).__name__
+        finally:
+            try:
+                os.unlink(bp)
+            except OSError:
+                pass
     msg = f"{time.strftime('%Y-%m-%d %H:%M')} · customers {len(seen)} · sent {sent} · failed {fails}" + (f" ({first_err})" if first_err else "") + (f" · cli exit {code}" if code else "")
     hub = load_hub(cfg)
     hub["bk_last"], hub["bk_status"] = int(time.time()), msg
@@ -801,6 +826,7 @@ async def auto_page(request):
             f"<div><label>{esc(t('Telegram bot token'))} {esc(tok)}</label><input type='password' name='token' autocomplete='off' spellcheck='false' placeholder='{esc(t('empty = keep the saved one'))}'></div>"
             f"<div><label>{esc(t('Numeric chat ID (send /start to the bot first)'))}</label><input name='chat' value='{esc(hub['bk_chat'])}' maxlength='21'></div>"
             f"<div><label>{esc(t('Also send expiry reminders and stop notices here'))}</label><select name='alerts'><option value='1'{' selected' if hub['bk_alerts'] else ''}>{esc(t('ON'))}</option><option value='0'{'' if hub['bk_alerts'] else ' selected'}>{esc(t('OFF'))}</option></select></div>"
+            f"<div><label>{esc(t('Also send one combined file of all customers'))}</label><select name='bundle'><option value='1'{' selected' if hub['bk_bundle'] else ''}>{esc(t('ON'))}</option><option value='0'{'' if hub['bk_bundle'] else ' selected'}>{esc(t('OFF'))}</option></select></div>"
             f"</div><button class='btn p'>{esc(t('Save'))}</button> <a class='btn' href='/'>{esc(t('Back'))}</a></form>"
             f"<p class='mut'>{esc(t('Last run'))}: {esc(last)} — {esc(hub['bk_status'] or '-')}</p></div>"
             f"<div class='card'><h2>{esc(t('Test / run now'))}</h2><div class='row'>"
@@ -824,7 +850,7 @@ async def auto_save(request):
         hours = 0
     if not 1 <= hours <= 720:
         return error_page(request, "Hours must be between 1 and 720.")
-    hub.update(bk_on=f.get("on") == "1", bk_hours=hours, bk_chat=chat, bk_alerts=f.get("alerts", "1") == "1")
+    hub.update(bk_bundle=f.get("bundle", "1") == "1", bk_on=f.get("on") == "1", bk_hours=hours, bk_chat=chat, bk_alerts=f.get("alerts", "1") == "1")
     if tok:
         hub["bk_token"] = tok
     if hub["bk_on"] and not (hub["bk_token"] and hub["bk_chat"]):
