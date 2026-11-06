@@ -823,7 +823,39 @@ async def emoji(request: web.Request):
     return web.Response(body=hit[1], content_type=hit[0], headers={"Cache-Control": "public, max-age=86400"})
 
 
+_AVATAR: dict[int, tuple[float, bytes]] = {}
+
+
+async def avatar(request: web.Request):
+    """عکس پروفایل کاربر (از خودِ ربات؛ photo_url در initData برای همه نمی‌آید). فقط برای خود کاربر، با کش ۶ ساعته."""
+    shop: Shop = request.app["shop"]
+    try:
+        uid = _auth(shop, request)["user"]["id"]
+    except ApiError:
+        raise web.HTTPUnauthorized()
+    hit = _AVATAR.get(uid)
+    if hit is None or time.time() - hit[0] > 6 * 3600:
+        data = b""
+        try:
+            ph = await shop.bot.get_user_profile_photos(uid, limit=1)
+            if ph.total_count and ph.photos:
+                size = min(ph.photos[0], key=lambda x: abs((x.width or 0) - 160))      # نزدیک‌ترین به ۱۶۰px
+                f = await shop.bot.get_file(size.file_id)
+                buf = io.BytesIO()
+                await shop.bot.download_file(f.file_path, buf)
+                data = buf.getvalue()
+        except Exception as e:  # noqa: BLE001
+            log.warning("avatar %s failed: %s", uid, e)
+        if len(_AVATAR) > 2000:
+            _AVATAR.clear()
+        hit = _AVATAR[uid] = (time.time(), data)
+    if not hit[1]:
+        raise web.HTTPNotFound()
+    return web.Response(body=hit[1], content_type="image/jpeg", headers={"Cache-Control": "private, max-age=21600"})
+
+
 def register(app: web.Application):
+    app.router.add_get("/app/avatar", avatar)
     app.router.add_get("/app", page)
     app.router.add_get("/app/emoji/{eid}", emoji)
     app.router.add_post("/app/api/{action}", api)

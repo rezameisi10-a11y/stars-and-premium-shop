@@ -284,13 +284,35 @@ async def cb_pay_action(cb: CallbackQuery, shop: Shop, state: FSMContext):
     parts = cb.data.split(":")
     act, pid = parts[1], int(parts[2])
     if act == "rv":                                   # بازبینی رسیدِ خودکار-تأییدشده
+        from receipt_auto import fake_kb
         res = await shop.rc.review(pid, parts[3], actor=f"tg:{cb.from_user.id}")
+        fake = parts[3] == "no" and "جعلی" in res
         try:
             await cb.bot.edit_message_caption(chat_id=cb.message.chat.id, message_id=cb.message.message_id,
-                                              caption=((cb.message.caption or "")[:800] + f"\n\n{res} — توسط {esc(cb.from_user.full_name)}")[:1020], reply_markup=None)
+                                              caption=((cb.message.caption or "")[:800] + f"\n\n{res} — توسط {esc(cb.from_user.full_name)}")[:1020],
+                                              reply_markup=fake_kb(pid) if fake else None)
         except TelegramBadRequest:
             pass
         await cb.answer(res, show_alert=True)
+        return
+    if act in ("ru", "rw", "rb"):                     # بعد از «جعلی»: مشخصات کاربر / هشدار / مسدودسازی
+        p = await shop.db.get_payment(pid)
+        if not p or p.get("rc_state") != "fake":
+            await cb.answer("این رسید جعلی ثبت نشده است.", show_alert=True)
+            return
+        uid = p["user_id"]
+        if act == "ru":
+            card = await user_card(shop, uid)
+            if card:
+                await cb.message.answer(card[0], reply_markup=card[1])
+            await cb.answer()
+        elif act == "rw":
+            await shop.db.log(f"tg:{cb.from_user.id}", "receipt_warn", f"user {uid} P{pid}")
+            await cb.answer(await shop.rc.warn_user(uid), show_alert=True)
+        else:
+            await shop.db.set_banned(uid, True, f"رسید جعلی P{pid}")
+            await shop.audit(f"tg:{cb.from_user.id}", f"⛔ کاربر <code>{uid}</code> را بعد از رسید جعلی P{pid} <b>مسدود</b> کرد")
+            await cb.answer("⛔ کاربر مسدود شد.", show_alert=True)
         return
     if act == "no":                                   # دلیل رد را بپرس (دکمه‌ها در همان پیام)
         from service import REJECT_REASONS

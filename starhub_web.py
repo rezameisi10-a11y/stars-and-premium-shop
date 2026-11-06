@@ -67,6 +67,8 @@ class Config:
     def tmpdir(self): return os.path.join(self.webdir, "tmp")
     @property
     def backups(self): return os.path.join(self.base, "backups")
+    @property
+    def hub_file(self): return os.path.join(self.webdir, "hub.json")
 
 
 def ensure_dir(path):
@@ -352,6 +354,23 @@ FA = {
     "Language": "زبان", "days left": "روز مانده", "days overdue": "روز گذشته",
 }
 
+FA.update({
+    "Automatic backup to Telegram": "بکاپ خودکار به تلگرام", "Auto backup to Telegram": "بکاپ خودکار به تلگرام", "Auto backup": "بکاپ خودکار",
+    "Every N hours a full backup of ALL customers (database, settings, token) is made and sent to the Telegram bot below. Use a private chat; the files contain secrets. Files over 49 MB cannot be sent by Telegram; they stay on the server.":
+        "هر چند ساعت یک‌بار از همه‌ی مشتری‌ها (دیتابیس، تنظیمات، توکن) بکاپ کامل گرفته و به ربات تلگرامِ زیر فرستاده می‌شود. حتماً چت خصوصی بدهید؛ فایل‌ها اطلاعات محرمانه دارند. تلگرام فایل بالای ۴۹ مگابایت را نمی‌پذیرد؛ آن‌ها فقط روی سرور می‌مانند.",
+    "Every how many hours": "هر چند ساعت", "Telegram bot token": "توکن ربات تلگرام", "empty = keep the saved one": "خالی = همان قبلی بماند",
+    "Numeric chat ID (send /start to the bot first)": "آیدی عددی چت (اول به ربات /start بزنید)",
+    "Also send expiry reminders and stop notices here": "یادآوری سررسید و اعلان قطع ربات هم همین‌جا بیاید",
+    "Last run": "آخرین اجرا", "Test / run now": "تست / اجرای همین حالا", "Send a test message": "ارسال پیام تست", "Back up everything and send now": "بکاپ کامل بگیر و همین حالا بفرست",
+    "Test message": "پیام تست", "Backup and send": "بکاپ و ارسال", "Telegram bot token / chat id not set.": "توکن ربات تلگرام / آیدی چت تنظیم نشده.",
+    "Chat ID must be a number.": "آیدی چت باید عدد باشد.", "Hours must be between 1 and 720.": "ساعت باید بین ۱ تا ۷۲۰ باشد.",
+    "Set the bot token and chat ID before turning it on.": "قبل از روشن کردن، توکن ربات و آیدی چت را وارد کنید.",
+    "Renewal period (days)": "مدت هر تمدید (روز)", "When overdue": "وقتی سررسید گذشت", "Stop the bot automatically (not deleted)": "ربات خودکار متوقف شود (حذف نمی‌شود)",
+    "Do nothing": "کاری نکن", "Renewed (payment received)": "تمدید شد (پرداخت دریافت شد)", "Renewed": "تمدید شد",
+    "Adds days to the due date (from today if already overdue) and starts the bot again if it was stopped for non-payment.": "چند روز به سررسید اضافه می‌کند (اگر گذشته باشد از امروز حساب می‌شود) و اگر ربات به‌خاطر عدم پرداخت متوقف شده بود دوباره روشنش می‌کند.",
+    "Subscription days (empty = no expiry)": "روزهای اشتراک (خالی = بدون سررسید)", "Subscription until": "اشتراک تا", "Renewals due": "تمدیدهای نزدیک / عقب‌افتاده", "d": "روز",
+})
+
 
 def t(s: str, **kw) -> str:
     if LANG.get() == "fa":
@@ -585,6 +604,258 @@ def due_badge(due: str) -> str:
     return f"<span class='{cls}'>{esc(due)} ({left} {esc(t('days left'))})</span>"
 
 
+# ----------------------------------------------------------------- hub settings: Telegram auto-backup + subscriptions
+CHAT_RE = re.compile(r"^-?[0-9]{3,20}$")
+TG_DOC_MAX = 49 * 1024 * 1024
+HUB_DEFAULT = {"bk_on": False, "bk_hours": 24, "bk_token": "", "bk_chat": "", "bk_last": 0, "bk_status": "", "bk_alerts": True}
+
+
+def load_hub(cfg: Config) -> dict:
+    d = dict(HUB_DEFAULT)
+    try:
+        with open(cfg.hub_file, encoding="utf-8") as f:
+            x = json.load(f)
+        if isinstance(x, dict):
+            d.update({k: x[k] for k in HUB_DEFAULT if k in x})
+    except (OSError, ValueError):
+        pass
+    return d
+
+
+def save_hub(cfg: Config, hub: dict):
+    ensure_dir(cfg.webdir)
+    write_private(cfg.hub_file, json.dumps({k: hub.get(k, v) for k, v in HUB_DEFAULT.items()}, ensure_ascii=False, indent=1).encode())
+
+
+async def tg_call(token: str, method: str, data: dict, files: dict | None = None, timeout=120) -> tuple[bool, str]:
+    import aiohttp
+    url = f"{os.environ.get('STARHUB_TG_API', 'https://api.telegram.org')}/bot{token}/{method}"
+    try:
+        form = aiohttp.FormData()
+        for k, v in data.items():
+            form.add_field(k, str(v))
+        for k, (fname, blob) in (files or {}).items():
+            form.add_field(k, blob, filename=fname, content_type="application/octet-stream")
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as ses:
+            async with ses.post(url, data=form) as r:
+                j = await r.json(content_type=None)
+        if j.get("ok"):
+            return True, "ok"
+        return False, str(j.get("description", "error"))[:200]
+    except Exception as ex:  # noqa: BLE001  (never leak the URL: it contains the token)
+        return False, type(ex).__name__
+
+
+async def tg_text(hub: dict, text: str) -> tuple[bool, str]:
+    if not (hub.get("bk_token") and hub.get("bk_chat")):
+        return False, "not configured"
+    return await tg_call(hub["bk_token"], "sendMessage", {"chat_id": hub["bk_chat"], "text": text[:3900]})
+
+
+async def tg_file(hub: dict, path: str, caption: str) -> tuple[bool, str]:
+    try:
+        size = os.path.getsize(path)
+        if size > TG_DOC_MAX:
+            return await tg_text(hub, f"{caption}\n⚠️ file too big for Telegram ({human(size)}); take it from the server: {path}")
+        with open(path, "rb") as f:
+            blob = f.read()
+    except OSError as ex:
+        return False, type(ex).__name__
+    return await tg_call(hub["bk_token"], "sendDocument", {"chat_id": hub["bk_chat"], "caption": caption[:900]},
+                         {"document": (os.path.basename(path), blob)}, timeout=300)
+
+
+async def backup_to_telegram(app) -> tuple[bool, str]:
+    """Full backup of every customer (starhub backup all) + sends each archive and the hub notes file to Telegram."""
+    cfg: Config = app["cfg"]
+    hub = load_hub(cfg)
+    if not (hub["bk_token"] and hub["bk_chat"]):
+        return False, "Telegram bot token / chat id not set."
+    started = time.time()
+    code, out = await run_cli(app, ["backup", "all"], mutating=True, timeout=900)
+    sent = fails = 0
+    first_err = ""
+    names = {r["name"] for r in parse_list((await run_cli(app, ["list"]))[1])}
+    seen = set()
+    for b in list_backups(cfg):                                  # newest first: one (the newest) archive per customer
+        if b["mtime"] < started - 5 or b["group"] not in names or b["group"] in seen:
+            continue
+        seen.add(b["group"])
+        p = resolve_backup(cfg, b["id"])
+        if not p:
+            continue
+        ok, err = await tg_file(hub, p, f"💾 {b['group']} · {time.strftime('%Y-%m-%d %H:%M')} · {human(b['size'])}")
+        sent += ok
+        if not ok:
+            fails += 1
+            first_err = first_err or err
+    if os.path.isfile(meta_path(cfg)):                            # notes / due dates of all customers
+        ok, err = await tg_file(hub, meta_path(cfg), f"🗒 meta.json · {time.strftime('%Y-%m-%d %H:%M')}")
+        sent += ok
+        if not ok:
+            fails += 1
+            first_err = first_err or err
+    msg = f"{time.strftime('%Y-%m-%d %H:%M')} · customers {len(seen)} · sent {sent} · failed {fails}" + (f" ({first_err})" if first_err else "") + (f" · cli exit {code}" if code else "")
+    hub = load_hub(cfg)
+    hub["bk_last"], hub["bk_status"] = int(time.time()), msg
+    save_hub(cfg, hub)
+    return fails == 0 and code == 0, msg
+
+
+def sub_info(meta: dict, name: str) -> dict:
+    m = meta.get(name, {})
+    try:
+        period = max(1, min(int(m.get("period") or 30), 3650))
+    except (TypeError, ValueError):
+        period = 30
+    return {"due": m.get("due", ""), "period": period, "auto_stop": m.get("auto_stop", "1") != "0"}
+
+
+async def renew_customer(app, name: str, days: int | None = None) -> tuple[int, str]:
+    """Paid again: due = max(today, due) + days; turns the bot back on if it was stopped for non-payment."""
+    cfg: Config = app["cfg"]
+    async with app["lock"]:
+        meta = load_meta(cfg)
+        info = sub_info(meta, name)
+        n = days if days else info["period"]
+        d0 = parse_due(info["due"])
+        base = max(datetime.date.today(), d0) if d0 else datetime.date.today()
+        new_due = (base + datetime.timedelta(days=n)).isoformat()
+        m = dict(meta.get(name, {}))
+        m.update(due=new_due, stopped_for="", reminded="")
+        meta[name] = m
+        save_meta(cfg, meta)
+    code, out = await run_cli(app, ["list"])
+    row = next((r for r in parse_list(out) if r["name"] == name), None)
+    msg = f"{name}: due {new_due} (+{n}d)"
+    if row and row["state"] != "active":
+        c2, o2 = await run_cli(app, ["start", name], mutating=True, timeout=60)
+        msg += " · started" if c2 == 0 else f" · start failed: {o2[-120:]}"
+    return 0, msg
+
+
+async def subscriptions_check(app):
+    """Stops (never deletes) customers whose due date passed; sends a reminder 3 days before."""
+    cfg: Config = app["cfg"]
+    code, out = await run_cli(app, ["list"])
+    if code != 0:
+        return
+    rows = parse_list(out)
+    hub = load_hub(cfg)
+    today = datetime.date.today()
+    for r in rows:
+        meta = load_meta(cfg)
+        m = meta.get(r["name"], {})
+        d = parse_due(m.get("due", ""))
+        if not d:
+            continue
+        left = (d - today).days
+        changed = False
+        if 0 <= left <= 3 and m.get("reminded") != m.get("due") and hub.get("bk_alerts") and hub.get("bk_token"):
+            await tg_text(hub, f"⏰ {r['name']}: subscription ends {m['due']} ({left} days left). Renew it in StarHub.")
+            m = dict(m, reminded=m["due"]); changed = True
+        if left < 0 and m.get("auto_stop", "1") != "0" and m.get("stopped_for") != m.get("due") and r["state"] == "active":
+            c, o = await run_cli(app, ["stop", r["name"]], mutating=True, timeout=60)
+            if c == 0:
+                m = dict(m, stopped_for=m["due"]); changed = True
+                if hub.get("bk_alerts") and hub.get("bk_token"):
+                    await tg_text(hub, f"⛔ {r['name']}: subscription expired ({m['due']}); the bot was STOPPED (not deleted). After payment press “Renewed” in StarHub.")
+        if changed:
+            async with app["lock"]:
+                meta = load_meta(cfg)
+                meta[r["name"]] = {**meta.get(r["name"], {}), **m}
+                save_meta(cfg, meta)
+
+
+async def hub_loop(app):
+    cfg: Config = app["cfg"]
+    await asyncio.sleep(20)
+    last_sub = 0.0
+    while True:
+        try:
+            if time.time() - last_sub >= 600:
+                last_sub = time.time()
+                await subscriptions_check(app)
+            hub = load_hub(cfg)
+            if hub["bk_on"] and hub["bk_token"] and hub["bk_chat"] and time.time() - hub["bk_last"] >= max(1, int(hub["bk_hours"])) * 3600:
+                hub["bk_last"] = int(time.time())               # even on failure wait a full period (no hammering)
+                save_hub(cfg, hub)
+                await backup_to_telegram(app)
+        except asyncio.CancelledError:
+            raise
+        except Exception as ex:  # noqa: BLE001
+            print(f"hub loop error: {type(ex).__name__}", file=sys.stderr)
+        await asyncio.sleep(60)
+
+
+async def auto_page(request):
+    csrf, cfg = request["csrf"], request.app["cfg"]
+    hub = load_hub(cfg)
+    last = time.strftime("%Y-%m-%d %H:%M", time.localtime(hub["bk_last"])) if hub["bk_last"] else "-"
+    tok = ("••••" + hub["bk_token"][-4:]) if hub["bk_token"] else ""
+    body = (f"<div class='card'><h2>{esc(t('Automatic backup to Telegram'))}</h2>"
+            f"<p class='mut'>{esc(t('Every N hours a full backup of ALL customers (database, settings, token) is made and sent to the Telegram bot below. Use a private chat; the files contain secrets. Files over 49 MB cannot be sent by Telegram; they stay on the server.'))}</p>"
+            f"<form method='post' action='/auto'>{hidden(csrf)}<div class='grid'>"
+            f"<div><label>{esc(t('Status'))}</label><select name='on'><option value='1'{' selected' if hub['bk_on'] else ''}>{esc(t('ON'))}</option><option value='0'{'' if hub['bk_on'] else ' selected'}>{esc(t('OFF'))}</option></select></div>"
+            f"<div><label>{esc(t('Every how many hours'))}</label><input name='hours' value='{int(hub['bk_hours'])}' pattern='[0-9]{{1,4}}' maxlength='4'></div>"
+            f"<div><label>{esc(t('Telegram bot token'))} {esc(tok)}</label><input type='password' name='token' autocomplete='off' spellcheck='false' placeholder='{esc(t('empty = keep the saved one'))}'></div>"
+            f"<div><label>{esc(t('Numeric chat ID (send /start to the bot first)'))}</label><input name='chat' value='{esc(hub['bk_chat'])}' maxlength='21'></div>"
+            f"<div><label>{esc(t('Also send expiry reminders and stop notices here'))}</label><select name='alerts'><option value='1'{' selected' if hub['bk_alerts'] else ''}>{esc(t('ON'))}</option><option value='0'{'' if hub['bk_alerts'] else ' selected'}>{esc(t('OFF'))}</option></select></div>"
+            f"</div><button class='btn p'>{esc(t('Save'))}</button> <a class='btn' href='/'>{esc(t('Back'))}</a></form>"
+            f"<p class='mut'>{esc(t('Last run'))}: {esc(last)} — {esc(hub['bk_status'] or '-')}</p></div>"
+            f"<div class='card'><h2>{esc(t('Test / run now'))}</h2><div class='row'>"
+            f"<form class='i' method='post' action='/auto/now'>{hidden(csrf, what='test')}<button class='btn'>{esc(t('Send a test message'))}</button></form>"
+            f"<form class='i' method='post' action='/auto/now'>{hidden(csrf, what='backup')}<button class='btn p'>{esc(t('Back up everything and send now'))}</button></form></div></div>")
+    return layout("Auto backup", body, csrf)
+
+
+async def auto_save(request):
+    f = await read_form(request)
+    cfg = request.app["cfg"]
+    hub = load_hub(cfg)
+    tok, chat = f.get("token", "").strip(), f.get("chat", "").strip()
+    if tok and not TOKEN_RE.match(tok):
+        return error_page(request, "Invalid bot token format.")
+    if chat and not CHAT_RE.match(chat):
+        return error_page(request, "Chat ID must be a number.")
+    try:
+        hours = int(f.get("hours", "24"))
+    except ValueError:
+        hours = 0
+    if not 1 <= hours <= 720:
+        return error_page(request, "Hours must be between 1 and 720.")
+    hub.update(bk_on=f.get("on") == "1", bk_hours=hours, bk_chat=chat, bk_alerts=f.get("alerts", "1") == "1")
+    if tok:
+        hub["bk_token"] = tok
+    if hub["bk_on"] and not (hub["bk_token"] and hub["bk_chat"]):
+        return error_page(request, "Set the bot token and chat ID before turning it on.")
+    if hub["bk_on"] and not load_hub(cfg)["bk_on"]:
+        hub["bk_last"] = 0                                       # first backup right away
+    save_hub(cfg, hub)
+    raise web.HTTPSeeOther("/auto")
+
+
+async def auto_now(request):
+    f = await read_form(request)
+    hub = load_hub(request.app["cfg"])
+    if f.get("what") == "test":
+        ok, err = await tg_text(hub, "✅ StarHub: Telegram backup channel works.")
+        return result_page(request, t("Test message"), 0 if ok else 1, "sent" if ok else f"Telegram error: {err}")
+    ok, msg = await backup_to_telegram(request.app)
+    return result_page(request, t("Backup and send"), 0 if ok else 1, msg)
+
+
+async def renew(request):
+    f = await read_form(request)
+    name = f.get("name", "")
+    if not NAME_RE.match(name):
+        return error_page(request, "Invalid customer name.")
+    days = f.get("days", "").strip()
+    n = int(days) if days.isdigit() and 1 <= int(days) <= 3650 else None
+    code, out = await renew_customer(request.app, name, n)
+    return result_page(request, f"{t('Renewed')} - {name}", code, out)
+
+
 def server_stats(cfg: Config) -> dict:
     out = {}
     try:
@@ -679,7 +950,8 @@ async def dashboard(request):
               f"<div><label>{esc(t('Name (a-z, 0-9, _ -)'))}</label><input name='name' required maxlength='31' pattern='[a-z][a-z0-9_\\-]{{1,30}}'></div>"
               f"<div><label>{esc(t('Bot token'))}</label><input name='token' required autocomplete='off' spellcheck='false'></div>"
               f"<div><label>{esc(t('Admin Telegram IDs (comma-separated)'))}</label><input name='admins' required pattern='[0-9]+(,[0-9]+)*'></div>"
-              f"<div><label>{esc(t('Domain (optional)'))}</label><input name='domain' placeholder='shop.example.com'></div></div>"
+              f"<div><label>{esc(t('Domain (optional)'))}</label><input name='domain' placeholder='shop.example.com'></div>"
+              f"<div><label>{esc(t('Subscription days (empty = no expiry)'))}</label><input name='subdays' placeholder='30' maxlength='4' pattern='[0-9]{{1,4}}'></div></div>"
               f"<button class='btn p'>{esc(t('Create customer'))}</button></form></div>")
     bks = list_backups(cfg)
     names = [r["name"] for r in all_rows]
@@ -703,9 +975,19 @@ async def dashboard(request):
                f"<tbody>{brows}</tbody></table></div></div>")
     cron = (f"<div class='card'><h2>{esc(t('Automatic daily backup'))}</h2><p>{esc(t('Status'))}: <b class='{'ok' if cron_on else 'warn'}'>{esc(t('ON') if cron_on else t('OFF'))}</b></p>"
             f"<form class='i' method='post' action='/cron'>{hidden(csrf, state='off' if cron_on else 'on')}"
-            f"<button class='btn'>{esc(t('Turn off') if cron_on else t('Turn on'))}</button></form></div>")
+            f"<button class='btn'>{esc(t('Turn off') if cron_on else t('Turn on'))}</button></form> "
+            f"<a class='btn p' href='/auto'>{esc(t('Auto backup to Telegram'))}</a></div>")
+    dueb = ""
+    today = datetime.date.today()
+    for r in sorted(all_rows, key=lambda r: meta.get(r["name"], {}).get("due", "9999")):
+        d = parse_due(meta.get(r["name"], {}).get("due", ""))
+        if d and (d - today).days <= 3:
+            n = r["name"]
+            dueb += (f"<tr><td><b>{esc(n)}</b></td><td>{due_badge(meta[n]['due'])}</td><td class='st {state_class(r['state'])}'>{esc(r['state'])}</td>"
+                     f"<td><form class='i' method='post' action='/renew'>{hidden(csrf, name=n)}<button class='btn p'>{esc(t('Renewed'))} (+{sub_info(meta, n)['period']}{esc(t('d'))})</button></form></td></tr>")
+    dueb = (f"<div class='card'><h2 class='warn'>{esc(t('Renewals due'))}</h2><div class='tw'><table><tbody>{dueb}</tbody></table></div></div>") if dueb else ""
     warn = "" if c1 == 0 else f"<div class='card'><b class='bad'>{esc(t('Could not list customers:'))}</b><pre>{esc(out_list)}</pre></div>"
-    return layout("Dashboard", warn + stats + cust + create + backups + restore + cron, csrf, refresh=refresh)
+    return layout("Dashboard", warn + dueb + stats + cust + create + backups + restore + cron, csrf, refresh=refresh)
 
 
 async def customer(request):
@@ -739,8 +1021,14 @@ async def customer(request):
     metaf = (f"<form method='post' action='/meta' class='card'>{hidden(csrf, name=name)}<h2>{esc(t('Note & billing'))}</h2><div class='grid'>"
              f"<div><label>{esc(t('Contact'))}</label><input name='contact' value='{esc(m.get('contact', ''))}' maxlength='100'></div>"
              f"<div><label>{esc(t('Due date (YYYY-MM-DD)'))}</label><input name='due' value='{esc(m.get('due', ''))}' maxlength='10' placeholder='2026-12-31'></div>"
-             f"<div><label>{esc(t('Note'))}</label><input name='note' value='{esc(m.get('note', ''))}' maxlength='200'></div></div>"
-             f"<p class='mut'>{due_badge(m.get('due', ''))}</p><button class='btn p'>{esc(t('Save'))}</button></form>")
+             f"<div><label>{esc(t('Note'))}</label><input name='note' value='{esc(m.get('note', ''))}' maxlength='200'></div>"
+             f"<div><label>{esc(t('Renewal period (days)'))}</label><input name='period' value='{sub_info({name: m}, name)['period']}' maxlength='4'></div>"
+             f"<div><label>{esc(t('When overdue'))}</label><select name='auto_stop'><option value='1'{'' if m.get('auto_stop', '1') == '0' else ' selected'}>{esc(t('Stop the bot automatically (not deleted)'))}</option>"
+             f"<option value='0'{' selected' if m.get('auto_stop', '1') == '0' else ''}>{esc(t('Do nothing'))}</option></select></div></div>"
+             f"<p class='mut'>{due_badge(m.get('due', ''))}</p><button class='btn p'>{esc(t('Save'))}</button></form>"
+             f"<form method='post' action='/renew' class='card'>{hidden(csrf, name=name)}<h2>{esc(t('Renewed (payment received)'))}</h2>"
+             f"<p class='mut'>{esc(t('Adds days to the due date (from today if already overdue) and starts the bot again if it was stopped for non-payment.'))}</p>"
+             f"<div class='row'><input name='days' placeholder='{sub_info({name: m}, name)['period']}' maxlength='4' style='width:90px'><button class='btn p'>{esc(t('Renewed'))}</button></div></form>")
     bk = [b for b in list_backups(cfg) if b["group"] == name][:30]
     brows = "".join(f"<tr><td><code>{esc(b['file'])}</code></td><td>{human(b['size'])}</td><td>{time.strftime('%Y-%m-%d %H:%M', time.localtime(b['mtime']))}</td>"
                     f"<td><a class='btn' href='/download?f={esc(b['id'])}'>{esc(t('Download'))}</a></td></tr>" for b in bk) or f"<tr><td colspan='4' class='mut'>{esc(t('No backups yet.'))}</td></tr>"
@@ -783,7 +1071,12 @@ async def meta_save(request):
     cfg = request.app["cfg"]
     async with request.app["lock"]:
         meta = load_meta(cfg)
-        meta[name] = {"note": f.get("note", "")[:200], "contact": f.get("contact", "")[:100], "due": due}
+        per = f.get("period", "").strip()
+        old_due = meta.get(name, {}).get("due", "")
+        meta[name] = {**meta.get(name, {}), "note": f.get("note", "")[:200], "contact": f.get("contact", "")[:100], "due": due,
+                      "period": int(per) if per.isdigit() and 1 <= int(per) <= 3650 else 30, "auto_stop": "0" if f.get("auto_stop") == "0" else "1"}
+        if due != old_due:                                       # new date → re-arm reminder / auto-stop
+            meta[name].update(stopped_for="", reminded="")
         save_meta(cfg, meta)
     raise web.HTTPSeeOther(f"/customer?name={name}")
 
@@ -834,6 +1127,14 @@ async def create(request):
     if domain and not DOMAIN_RE.match(domain):
         return error_page(request, "Invalid domain name.")
     code, out = await run_cli(request.app, ["new", name, token, domain, admins], mutating=True, timeout=300, hide=(token,))
+    sd = f.get("subdays", "").strip()
+    if code == 0 and sd.isdigit() and 1 <= int(sd) <= 3650:
+        cfg = request.app["cfg"]
+        async with request.app["lock"]:
+            meta = load_meta(cfg)
+            meta[name] = {**meta.get(name, {}), "due": (datetime.date.today() + datetime.timedelta(days=int(sd))).isoformat(), "period": int(sd), "auto_stop": "1"}
+            save_meta(cfg, meta)
+        out += f"\n{t('Subscription until')} {meta[name]['due']}"
     return result_page(request, f"Create '{name}'", code, out)
 
 
@@ -1011,6 +1312,10 @@ def create_app(cfg: Config | None = None) -> web.Application:
     app.router.add_get("/customer", customer)
     app.router.add_post("/edit", edit)
     app.router.add_post("/meta", meta_save)
+    app.router.add_get("/auto", auto_page)
+    app.router.add_post("/auto", auto_save)
+    app.router.add_post("/auto/now", auto_now)
+    app.router.add_post("/renew", renew)
     app.router.add_route("*", "/password", password_page)
     app.router.add_post("/create", create)
     app.router.add_post("/action", action)
@@ -1022,6 +1327,15 @@ def create_app(cfg: Config | None = None) -> web.Application:
     app.router.add_get("/download", download)
     app.router.add_post("/restore", restore)
     app.on_response_prepare.append(add_headers)
+
+    async def _start(a):
+        a["hub_task"] = asyncio.create_task(hub_loop(a))
+
+    async def _stop(a):
+        a["hub_task"].cancel()
+    if os.environ.get("STARHUB_WEB_NO_LOOP") != "1":
+        app.on_startup.append(_start)
+        app.on_cleanup.append(_stop)
     return app
 
 

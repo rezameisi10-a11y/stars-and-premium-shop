@@ -222,6 +222,7 @@
  "کیف پول": "Solde",
  "دعوت": "Inviter",
  "بیشتر": "Plus",
+ "⚠️ <b>هشدار جدی</b>\nارسال رسید جعلی تخلف است. در صورت تکرار، حساب شما برای همیشه مسدود می‌شود.": "⚠️ <b>Avertissement sérieux</b>\nEnvoyer un faux reçu est une infraction. En cas de récidive, votre compte sera banni définitivement.",
  "❌ رسید پرداخت شما (کد P{pid}) پس از بررسی تأیید نشد و خدمات مربوط به آن قطع شد. در صورت اشتباه با پشتیبانی تماس بگیرید.": "❌ Votre reçu de paiement (code P{pid}) n'a pas été approuvé après vérification et le service associé a été coupé. En cas d'erreur, contactez le support.",
  "⏳ در انتظار پرداخت": "⏳ Paiement en attente",
  "💳 پرداخت شده": "💳 Payée",

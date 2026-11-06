@@ -23,6 +23,14 @@ def _int(v, d=0):
         return d
 
 
+WARN_DEFAULT = N_("⚠️ <b>هشدار جدی</b>\nارسال رسید جعلی تخلف است. در صورت تکرار، حساب شما برای همیشه مسدود می‌شود.")
+
+
+def fake_kb(pid):
+    return ikb([[btn("👤 مشخصات کاربر", f"padm:ru:{pid}", role="admin")],
+                [btn("⚠️ هشدار جدی", f"padm:rw:{pid}", role="action"), btn("⛔ مسدود کردن", f"padm:rb:{pid}", role="reject")]])
+
+
 def review_kb(pid):
     return ikb([[btn("✅ واقعی بود", f"padm:rv:{pid}:ok", role="confirm"), btn("🚫 جعلی بود (قطع سرویس)", f"padm:rv:{pid}:no", role="reject")]])
 
@@ -121,12 +129,25 @@ class ReceiptAuto:
         notes = await self._revoke(p)
         await db.log(actor, "receipt_fake", f"P{pid} {notes}"[:300])
         await shop.audit(actor, f"🚫 رسید خودکار <b>P{pid}</b> را <b>جعلی</b> اعلام کرد\n{notes}")
-        await shop.say(p["user_id"], "❌ رسید پرداخت شما (کد P{pid}) پس از بررسی تأیید نشد و خدمات مربوط به آن قطع شد. در صورت اشتباه با پشتیبانی تماس بگیرید.", pid=pid)
         s = await shop.settings()
+        custom = (s.get("rc_fake_text") or "").strip()
+        if custom:
+            await shop.safe_send(p["user_id"], custom.replace("{pid}", f"P{pid}"))
+        else:
+            await shop.say(p["user_id"], "❌ رسید پرداخت شما (کد P{pid}) پس از بررسی تأیید نشد و خدمات مربوط به آن قطع شد. در صورت اشتباه با پشتیبانی تماس بگیرید.", pid=pid)
         if s.get("rc_auto_ban") == "1":
             await db.set_banned(p["user_id"], True, f"رسید جعلی P{pid}")
             notes += " | کاربر مسدود شد"
         return NW_("🚫 جعلی ثبت شد.") + " " + notes
+
+    async def warn_user(self, uid) -> str:
+        s = await self.shop.settings()
+        custom = (s.get("rc_warn_text") or "").strip()
+        if custom:
+            await self.shop.safe_send(uid, custom)
+        else:
+            await self.shop.say(uid, WARN_DEFAULT)
+        return NW_("⚠️ هشدار برای کاربر ارسال شد.")
 
     async def _revoke(self, p) -> str:
         shop, db = self.shop, self.shop.db

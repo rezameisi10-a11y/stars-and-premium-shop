@@ -222,6 +222,7 @@
  "کیف پول": "Saldo",
  "دعوت": "Undang",
  "بیشتر": "Lainnya",
+ "⚠️ <b>هشدار جدی</b>\nارسال رسید جعلی تخلف است. در صورت تکرار، حساب شما برای همیشه مسدود می‌شود.": "⚠️ <b>Peringatan serius</b>\nMengirim bukti palsu adalah pelanggaran. Jika diulang, akun Anda akan diblokir permanen.",
  "❌ رسید پرداخت شما (کد P{pid}) پس از بررسی تأیید نشد و خدمات مربوط به آن قطع شد. در صورت اشتباه با پشتیبانی تماس بگیرید.": "❌ Bukti pembayaran Anda (kode P{pid}) tidak disetujui setelah ditinjau dan layanan terkait diputus. Jika ini keliru, hubungi dukungan.",
  "⏳ در انتظار پرداخت": "⏳ Menunggu pembayaran",
  "💳 پرداخت شده": "💳 Dibayar",

@@ -222,6 +222,7 @@
  "کیف پول": "Guthaben",
  "دعوت": "Einladen",
  "بیشتر": "Mehr",
+ "⚠️ <b>هشدار جدی</b>\nارسال رسید جعلی تخلف است. در صورت تکرار، حساب شما برای همیشه مسدود می‌شود.": "⚠️ <b>Ernste Warnung</b>\nDas Senden eines gefälschten Belegs ist ein Verstoß. Bei Wiederholung wird dein Konto dauerhaft gesperrt.",
  "❌ رسید پرداخت شما (کد P{pid}) پس از بررسی تأیید نشد و خدمات مربوط به آن قطع شد. در صورت اشتباه با پشتیبانی تماس بگیرید.": "❌ Dein Zahlungsbeleg (Code P{pid}) wurde nach Prüfung nicht genehmigt und der zugehörige Dienst wurde gesperrt. Bei einem Irrtum wende dich an den Support.",
  "⏳ در انتظار پرداخت": "⏳ Zahlung ausstehend",
  "💳 پرداخت شده": "💳 Bezahlt",

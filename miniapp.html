@@ -773,6 +773,7 @@ VIEWS.home = async () => {
   let tiles = (I.tiles || []).map(k => { const x = TL(k); return `<button class="tile k-${k}" data-t="${k}"${CS("kind_" + k)}><span class="ic">${x[0]}</span><span>${esc(x[1])}</span></button>`; }).join("");
   const nT = (I.tiles || []).length;
   const av = I.photo ? `<img class="av" src="${esc(I.photo)}" alt="">` : `<div class="av orb"><span>${esc((u.name || "?").trim().charAt(0).toUpperCase())}</span></div>`;
+  if (!I.photo && !window._avTried) { window._avTried = 1; fetch("/app/avatar", {headers: {"X-Init-Data": TG ? TG.initData : ""}}).then(r => r.ok ? r.blob() : null).then(b => { if (b && b.size) { I.photo = URL.createObjectURL(b); const o = document.querySelector(".hero2 .av"); if (o) { const im = document.createElement("img"); im.className = "av"; im.alt = ""; im.src = I.photo; o.replaceWith(im); } } }).catch(() => {}); }
   let html = `<div class="hero2">${av}<div><small>${esc(L("greet", t("سلام")))} ${IC("greet", "👋")}</small><b>${esc(u.name)}</b></div></div>
   <div class="wcard"><div class="wt"><i>${IC("wallet_title", "👛")}</i><span>${esc(L("wallet_title", t("موجودی کیف پول")))}</span></div>
     <div class="wb">${num(u.balance)} <small>${esc(t("تومان"))}</small></div>

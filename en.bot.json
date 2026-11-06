@@ -222,6 +222,7 @@
  "کیف پول": "Wallet",
  "دعوت": "Invite",
  "بیشتر": "More",
+ "⚠️ <b>هشدار جدی</b>\nارسال رسید جعلی تخلف است. در صورت تکرار، حساب شما برای همیشه مسدود می‌شود.": "⚠️ <b>Serious warning</b>\nSending a fake receipt is a violation. If repeated, your account will be banned permanently.",
  "❌ رسید پرداخت شما (کد P{pid}) پس از بررسی تأیید نشد و خدمات مربوط به آن قطع شد. در صورت اشتباه با پشتیبانی تماس بگیرید.": "❌ Your payment receipt (code P{pid}) was not approved after review and the related service was cut off. If this is a mistake, contact support.",
  "⏳ در انتظار پرداخت": "⏳ Awaiting payment",
  "💳 پرداخت شده": "💳 Paid",
