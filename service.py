@@ -1086,19 +1086,75 @@ class Shop:
 
         raise ValueError(tr("روش پرداخت نامعتبر است."))
 
+    async def _receipt_order_lines(self, o) -> list:
+        """بخش «چی خریده» در پیام رسید برای ادمین؛ سرویس، محصول، حجم، زمان."""
+        if not o:
+            return ["شارژ کیف پول"]
+        ref = (o.get("ref") or "").split(":")
+        db = self.db
+
+        def gbs(x):
+            return "نامحدود" if not x else f"{x:g} گیگ"
+
+        def days(x):
+            return "نامحدود" if not x else f"{x} روز"
+        try:
+            if ref[0] == "vpn" and len(ref) > 1:
+                kind = ref[1]
+                if kind == "new" and len(ref) > 2:
+                    pl = await db.get_vpn_plan(int(ref[2]))
+                    nm = ref[3] if len(ref) > 3 else "پس از تأیید ساخته می‌شود"
+                    L = ["خرید سرویس جدید", f"نام کاربری سرویس : <code>{esc(nm)}</code>", f"نام محصول : {esc(o['title'])}"]
+                    return L + ([f"حجم محصول : {gbs(pl['gb'])}", f"زمان محصول : {days(pl['days'])}"] if pl else [])
+                if kind == "renew" and len(ref) > 3:
+                    sv, pl = await db.get_vpn_service(int(ref[2])), await db.get_vpn_plan(int(ref[3]))
+                    L = ["تمدید سرویس", f"نام کاربری سرویس : <code>{esc(sv['name']) if sv else '-'}</code>", f"نام محصول : {esc(o['title'])}"]
+                    return L + ([f"حجم محصول : {gbs(pl['gb'])}", f"زمان محصول : {days(pl['days'])}"] if pl else [])
+                if kind == "addon" and len(ref) > 3:
+                    sv, ad = await db.get_vpn_service(int(ref[2])), await db.get_vpn_addon(int(ref[3]))
+                    L = ["خرید حجم/زمان اضافه", f"نام کاربری سرویس : <code>{esc(sv['name']) if sv else '-'}</code>", f"نام محصول : {esc(o['title'])}"]
+                    if ad:
+                        L += ([f"حجم اضافه : {gbs(ad['gb'])}"] if ad["gb"] else []) + ([f"زمان اضافه : {days(ad['days'])}"] if ad["days"] else [])
+                    return L
+                if kind == "agent" and len(ref) > 2:
+                    ap = await db.get_agent_plan(int(ref[2]))
+                    L = ["خرید پنل نمایندگی", f"نام محصول : {esc(o['title'])}"]
+                    return L + ([f"حجم پنل : {gbs(ap['traffic_gb'])}", f"زمان پنل : {days(ap['days'])}", f"حداکثر کاربر : {ap['max_users'] or 'نامحدود'}"] if ap else [])
+                if kind == "arenew" and len(ref) > 2:
+                    ag = await db.get_agent(int(ref[2]))
+                    return ["تمدید پنل نمایندگی", f"نام کاربری نماینده : <code>{esc(ag['username']) if ag else '-'}</code>", f"نام محصول : {esc(o['title'])}"]
+        except Exception:  # noqa: BLE001
+            log.exception("receipt order lines")
+        L = [{"stars": "خرید استارز", "premium": "خرید پریمیوم", "gift": "خرید گیفت"}.get(o["kind"], "خرید"), f"نام محصول : {esc(o['title'])}"]
+        if o.get("qty") and o["qty"] > 1:
+            L.append(f"تعداد : {o['qty']}")
+        if o.get("target_username"):
+            L.append(f"گیرنده : @{esc(str(o['target_username']).lstrip('@'))}")
+        return L
+
     async def receipt_caption(self, p) -> str:
-        """متن رسید برای ادمین: مشخصات پرداخت + مشخصات کاربر (زیر رسید)."""
+        """پیام رسید برای ادمین (زیر عکس رسید): نوع خرید، مشخصات محصول، مشخصات کاربر و مبلغ."""
         u = await self.db.get_user(p["user_id"]) or {}
+        o = await self.db.get_order(p["order_id"]) if p["order_id"] else None
         st = await self.db.user_receipt_stats(p["user_id"])
-        name = esc(u.get("first_name") or "-")
-        who = f"{name} | " + (f"@{esc(u['username'])}" if u.get("username") else "—") + f" | <code>{p['user_id']}</code>"
-        joined = time.strftime("%Y-%m-%d", time.localtime(u["created_at"])) if u.get("created_at") else "-"
-        cap = (f"🧾 رسید کارت به کارت\nپرداخت P{p['id']} | مبلغ: {fmt(p['amount'])} تومان\n"
-               + (f"برای سفارش #{p['order_id']}" if p["order_id"] else "شارژ کیف پول")
-               + f"\n\n👤 {who}\n📅 عضویت: {joined} | 👛 موجودی: {fmt(u.get('balance') or 0)} تومان\n"
-               f"🛒 خرید موفق: {st['orders']} (جمع {fmt(st['spent'])} تومان) | رسید تأییدشده: {st['approved']} | ردشده: {st['rejected']}"
-               + ("\n⛔ این کاربر مسدود است." if u.get("banned") else ""))
-        return cap[:1020]
+        L = ["🔴 <b>یک پرداخت جدید انجام شده است.</b>", "", "🔴🔴🔴🔴🔴"]
+        L += await self._receipt_order_lines(o)
+        L += [f"👤 نام اکانت کاربر : {esc(u.get('first_name') or '-')}",
+              f"👤 شناسه کاربر : <code>{p['user_id']}</code>",
+              f"💸 موجودی فعلی کاربر : {fmt(u.get('balance') or 0)} تومان",
+              f"🛒 کد پیگیری پرداخت : <code>P{p['id']}</code>" + (f" (سفارش #{o['id']})" if o else ""),
+              f"⚜️ نام کاربری : " + (f"@{esc(u['username'])}" if u.get("username") else "—"),
+              f"💸 مبلغ پرداختی : <b>{fmt(p['amount'])}</b> تومان",
+              f"📊 خرید موفق: {st['orders']} (جمع {fmt(st['spent'])}) | رسید تأییدشده: {st['approved']} | ردشده: {st['rejected']}"
+              + ("\n⛔ این کاربر مسدود است." if u.get("banned") else ""),
+              "", "✍️ در صورت درست بودن رسید پرداخت را تایید نمایید."]
+        return "\n".join(L)[:1020]
+
+    @staticmethod
+    def receipt_kb(p):
+        pid, uid = p["id"], p["user_id"]
+        return ikb([[btn("✅ تایید پرداخت", f"padm:ok:{pid}", role="confirm"), btn("❌ رد پرداخت", f"padm:no:{pid}", role="reject")],
+                    [btn("💰 اضافه کردن دستی موجودی", f"adm:ub:{uid}:a", role="action"), btn("⛔ بلاک کردن کاربر", f"padm:bn:{pid}", role="reject")]])
 
     async def submit_receipt(self, pid, file_id, uid_str=None):
         await self.db.update_payment(pid, receipt_file_id=file_id, status="waiting_admin", receipt_uid=uid_str)
@@ -1113,12 +1169,12 @@ class Shop:
         if not self.group.allowed("receipts"):
             return
         caption = await self.receipt_caption(p)
-        kb = ikb([[btn("✅ تأیید", f"padm:ok:{p['id']}", role="confirm"), btn("❌ رد", f"padm:no:{p['id']}", role="reject")]])
+        kb = self.receipt_kb(p)
         await self.group.post_photo("receipts", p["receipt_file_id"], caption, kb)
 
     async def send_receipt_to(self, chat_id, p):
         caption = await self.receipt_caption(p)
-        kb = ikb([[btn("✅ تأیید", f"padm:ok:{p['id']}", role="confirm"), btn("❌ رد", f"padm:no:{p['id']}", role="reject")]])
+        kb = self.receipt_kb(p)
         try:
             await self.bot.send_photo(chat_id, p["receipt_file_id"], caption=caption, reply_markup=kb)
         except Exception as e:

@@ -314,6 +314,26 @@ async def cb_pay_action(cb: CallbackQuery, shop: Shop, state: FSMContext):
             await shop.audit(f"tg:{cb.from_user.id}", f"⛔ کاربر <code>{uid}</code> را بعد از رسید جعلی P{pid} <b>مسدود</b> کرد")
             await cb.answer("⛔ کاربر مسدود شد.", show_alert=True)
         return
+    if act in ("bn", "bny"):                          # بلاک کردن کاربرِ این رسید (با تأیید)
+        pp = await shop.db.get_payment(pid)
+        if not pp:
+            await cb.answer("پرداخت پیدا نشد.", show_alert=True)
+            return
+        if act == "bn":
+            try:
+                await cb.message.edit_reply_markup(reply_markup=ikb([[btn("⛔ بله، مسدود کن", f"padm:bny:{pid}", role="reject"), btn("🔙 انصراف", f"padm:nx:{pid}", role="back")]]))
+            except TelegramBadRequest:
+                pass
+            await cb.answer(f"کاربر {pp['user_id']} مسدود شود؟")
+            return
+        await shop.db.set_banned(pp["user_id"], True, f"مسدود از رسید P{pid}")
+        await shop.audit(f"tg:{cb.from_user.id}", f"⛔ کاربر <code>{pp['user_id']}</code> را از روی رسید P{pid} <b>مسدود</b> کرد")
+        try:
+            await cb.message.edit_reply_markup(reply_markup=shop.receipt_kb(pp))
+        except TelegramBadRequest:
+            pass
+        await cb.answer("⛔ کاربر مسدود شد (از کارت کاربر می‌توانید آزاد کنید).", show_alert=True)
+        return
     if act == "no":                                   # دلیل رد را بپرس (دکمه‌ها در همان پیام)
         from service import REJECT_REASONS
         icon = {"fake": "🚫", "amount": "💰", "unclear": "🔍", "notfound": "🏦", "dup": "♻️"}
@@ -328,7 +348,8 @@ async def cb_pay_action(cb: CallbackQuery, shop: Shop, state: FSMContext):
         return
     if act == "nx":
         try:
-            await cb.message.edit_reply_markup(reply_markup=ikb([[btn("✅ تأیید", f"padm:ok:{pid}", role="confirm"), btn("❌ رد", f"padm:no:{pid}", role="reject")]]))
+            pp = await shop.db.get_payment(pid)
+            await cb.message.edit_reply_markup(reply_markup=shop.receipt_kb(pp))
         except TelegramBadRequest:
             pass
         await cb.answer()
