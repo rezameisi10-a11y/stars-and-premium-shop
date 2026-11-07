@@ -200,7 +200,7 @@ async def run(tmp):
     ok(isinstance(last, list) and any(x.get("type") == "image_url" and x["image_url"]["url"].startswith("data:image/jpeg;base64,") for x in last)
        and any(x.get("text") == "این خطا میاد" for x in last if x.get("type") == "text"), "عکس + کپشن در پیام مدل (OpenAI)")
     sysm = body["messages"][0]["content"]
-    ok("screenshot" in sysm and "possible reasons" in sysm.lower() or "reasons" in sysm, "راهنمای عیب‌یابی در پرامپت")
+    ok("VPN PLAYBOOK" in sysm and "ping -1" in sysm and "AUTOMATIC" in sysm and "Hiddify" in sysm and "NEVER start with a generic" in sysm, "راهنمای تخصصی عیب‌یابی VPN در پرامپت")
     ok("JPEG" not in json.dumps(shop.ai._hist.get(5, (0, []))[1], ensure_ascii=False), "خود عکس در حافظه نمی‌ماند")
     ok(any("پاسخ آزمایشی" in t for _c, t, _k in sent_texts(sess)[-1:]), "پاسخ تحلیل برای کاربر فرستاده شد")
     for prov, key in (("anthropic", "image"), ("gemini", "inlineData")):
@@ -220,6 +220,7 @@ async def run(tmp):
     ok("type the exact error" in await shop.ai.system_prompt(await db.get_user(5), "Persian"), "بدون عکس: درخواست متن خطا")
     await shop.set_setting("ai_vision", "1")
 
+    ok(__import__("re").sub(r"<think>.*?</think>", "", "<think>x\ny</think>سلام", flags=__import__("re").S) == "سلام", "حذف بخش think")
     # پایان و خاموش‌کردن
     await feed(dp, bot, callback_query=cbq(6, "ai:end"))
     await shop.set_setting("ai_enabled", "0")
