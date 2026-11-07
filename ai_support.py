@@ -50,7 +50,7 @@ When the user reports a problem (cannot connect, slow, error, payment or deliver
 2. If the cause is clear, give the MOST LIKELY cause first, then up to 3 other possible causes, each with a one-line fix, as a short numbered list. Ask the user to tell you the result of the first step.
 3. If the description is vague ("it does not work", "error") and you cannot tell what the problem is, do NOT guess: ask ONE short question and {vision}
 4. When the user sends a screenshot: NEVER start with a generic description such as "this is a screenshot of a VPN app". Go straight to the diagnosis: name the concrete symptom you can see (e.g. "all configs show ping -1", "connection timed out", "subscription update failed", "service expired", the exact error text) and answer for THAT symptom using the VPN PLAYBOOK below. If you truly see no problem in the picture, ask what exactly happens (cannot connect? slow? disconnects?) instead of giving a generic list. If the picture is unreadable, cropped or unrelated, say so and ask for a clearer one.
-4b. LIVE SERVICE CHECK: the section below (when not empty) holds a fresh check of the user's own service, taken from the panel just now. If the user reports a connection problem and LIVE SERVICE CHECK is empty because the user has several services and did not say which one, FIRST ask for the service name exactly as it appears in the bot under "My services" (for example vpn_ab12cd) and say you will check it; do not give generic steps yet. When the check exists, tell the findings first in one or two sentences (for example: "your traffic is finished: 10.00 of 10.00 GB used" or "your service expired 2 days ago" or "it is disabled") and which bot button fixes it (renew, buy extra traffic/days, enable). If the check shows a limit was reached or the service is disabled/expired, that is the cause: do not list unrelated network steps. If the check is healthy (active, time and traffic left, panel reachable), say so and continue with the VPN PLAYBOOK steps.
+4b. LIVE SERVICE CHECK: the section below (when not empty) holds a fresh check of the user's own service, taken from the panel just now. If the user reports a connection problem and LIVE SERVICE CHECK is empty because the user has several services and did not say which one, FIRST ask which service has the problem: tell the user to choose it with the buttons under your message (or type its name, for example vpn_ab12cd, as shown in "My services"), and say you will check it; do not give generic steps yet. Reseller (agent) panel accounts are also checked this way. When the check exists, tell the findings first in one or two sentences (for example: "your traffic is finished: 10.00 of 10.00 GB used" or "your service expired 2 days ago" or "it is disabled") and which bot button fixes it (renew, buy extra traffic/days, enable). If the check shows a limit was reached or the service is disabled/expired, that is the cause: do not list unrelated network steps. If the check is healthy (active, time and traffic left, panel reachable), say so and continue with the VPN PLAYBOOK steps.
 5. VPN PLAYBOOK. You are an expert on V2Ray/Xray-style VPN subscriptions (VLESS, VMess, Trojan, Shadowsocks, Reality) and their client apps. Match the symptom, then give the steps in this order, most effective first (always keep "update the subscription" first when it applies):
  a) Ping -1 / negative / "failed" / red / test shows timeout for the configs, or "no connection": (1) update the subscription link inside the app (refresh/update button), then run the ping/test again; (2) check that the phone's own internet works without the VPN and try switching between Wi-Fi and mobile data; (3) try the other configs/locations in the list; (4) try another app such as V2Box, Hiddify, Happ or NekoBox (iPhone: V2Box, Streisand, Hiddify, Happ); (5) make sure the service is not expired or out of traffic (check USER ACCOUNT); (6) set date/time to automatic and update the app.
  b) Timeout / "connection timed out" / handshake failed / i/o timeout / context deadline exceeded: (1) update the subscription; (2) set the phone date and time to AUTOMATIC with the correct time zone (a wrong clock is a very common cause, VMess/Reality fail when the time is off); (3) update the app to the latest version; (4) change network (Wi-Fi <-> mobile data) because the provider may block one; (5) try another config/location or another protocol in the list; (6) turn off any other VPN/proxy/private DNS and try again; (7) check service expiry/traffic.
@@ -203,6 +203,9 @@ class AiSupport:
                 if sv["status"] == "disabled":
                     hints.append("DISABLED")
                 out.append(f"VPN service {sv['name']}: status={sv['status']}, time left={left}, usage={use}" + (" [" + ", ".join(hints) + "]" if hints else ""))
+            for ag in await shop.db.list_agents(user_id=user["id"], limit=10):
+                if ag["status"] != "deleted":
+                    out.append(f"RESELLER (agent) panel account {ag['username']}: status={ag['status']}, customers={ag['users_count']}")
             orders = await shop.db.user_orders(user["id"], limit=5)
             for o in orders:
                 out.append(f"recent order #{o['id']}: {str(o.get('title') or '')[:60]} status={o['status']}")
@@ -210,66 +213,86 @@ class AiSupport:
             log.exception("ai account")
         return "\n".join(out)
 
+    async def items(self, uid: int) -> list[dict]:
+        """اشتراک‌های VPN و پنل‌های نمایندگیِ خودِ کاربر: [{kind:'s'|'a', id, name, title, row}]"""
+        out = []
+        try:
+            for sv in await self.shop.db.list_vpn_services(user_id=uid, limit=20):
+                if sv["status"] != "deleted":
+                    out.append({"kind": "s", "id": sv["id"], "name": sv["name"], "title": (sv.get("title") or "").strip(), "row": sv})
+            for ag in await self.shop.db.list_agents(user_id=uid, limit=10):
+                if ag["status"] != "deleted":
+                    out.append({"kind": "a", "id": ag["id"], "name": ag["username"], "title": (ag.get("title") or "").strip(), "row": ag})
+        except Exception:  # noqa: BLE001
+            log.exception("ai items")
+        return out
+
+    def set_focus(self, uid: int, kind: str, iid: int):
+        self._focus[uid] = (time.time(), [(kind, iid)] if iid else [])
+
+    def has_focus(self, uid: int) -> bool:
+        ts, ids = self._focus.get(uid, (0, []))
+        return bool(ids) and time.time() - ts < HIST_TTL
+
+    async def _check_one(self, it: dict) -> str:
+        shop, now, gb = self.shop, time.time(), 2 ** 30
+        row, agent = it["row"], it["kind"] == "a"
+        reach = "yes"
+        try:
+            fn = shop.vpn.agents.sync if agent else shop.vpn.sync
+            await asyncio.wait_for(fn(row, force=False), 8)               # پنلِ کند، گفتگو را معطل نکند
+        except Exception as e:  # noqa: BLE001
+            reach = f"NO (could not read it from the panel: {type(e).__name__}); the numbers below may be a few minutes old"
+        row = (await (shop.db.get_agent(row["id"]) if agent else shop.db.get_vpn_service(row["id"]))) or row
+        total, used = int(row["total_bytes"] or 0), int(row["used_bytes"] or 0)
+        use = (f"{used / gb:.2f} of {total / gb:.2f} GB used ({min(100, int(used * 100 / total))}%), {max(total - used, 0) / gb:.2f} GB left"
+               if total else f"{used / gb:.2f} GB used, traffic unlimited")
+        if row["expires_at"]:
+            d = int((row["expires_at"] - now) // 86400)
+            tl = f"{d} days left" if row["expires_at"] > now else f"EXPIRED {abs(d)} days ago"
+        else:
+            tl = "no expiry date"
+        flags = []
+        if row["expires_at"] and row["expires_at"] < now:
+            flags.append("EXPIRED")
+        if total and used >= total:
+            flags.append("TRAFFIC USED UP")
+        if row["status"] == "disabled":
+            flags.append("DISABLED")
+        if row["status"] == "pending_manual":
+            flags.append("NOT DELIVERED YET (waiting for manual delivery)")
+        if total and not flags and used * 100 / total >= 90:
+            flags.append("TRAFFIC ALMOST FINISHED")
+        if row["expires_at"] and not flags and row["expires_at"] - now < 2 * 86400:
+            flags.append("EXPIRES SOON")
+        extra = ""
+        if agent:
+            extra = f"; customers {row['users_count']}" + (f" of max {row['max_users']}" if row["max_users"] else "")
+        head = ("RESELLER (agent) panel account " if agent else "service ") + row.get("username" if agent else "name", it["name"]) + (f" ({it['title']})" if it["title"] else "")
+        return (head + f": status={row['status']}; time: {tl}; usage: {use}{extra}; panel reachable: {reach}; "
+                + ("PROBLEMS FOUND: " + ", ".join(flags) if flags else "no limit problem found (active, within time and traffic)"))
+
     async def _service_check(self, uid: int, user, text: str) -> str:
-        """بررسی زنده‌ی سرویسِ خودِ کاربر: اگر اسم سرویس در پیام باشد، یا کاربر فقط یک سرویس دارد، یا قبلاً در همین گفتگو اسم داده.
+        """بررسی زنده‌ی اشتراکِ خودِ کاربر (VPN یا پنل نمایندگی): اسمش در پیام باشد، انتخاب‌شده با دکمه باشد، یا فقط یکی داشته باشد.
         فقط داده‌ی خودِ کاربر؛ لینک اشتراک/رمز/آدرس پنل هرگز نمی‌آید."""
         if not user:
             return ""
-        shop = self.shop
-        try:
-            svcs = [sv for sv in await shop.db.list_vpn_services(user_id=user["id"], limit=20) if sv["status"] != "deleted"]
-        except Exception:  # noqa: BLE001
-            return ""
-        if not svcs:
+        items = await self.items(user["id"])
+        if not items:
             return "(the user has no VPN service)"
         low = (text or "").lower()
-        pick = [sv for sv in svcs if sv["name"].lower() in low or (len((sv.get("title") or "").strip()) >= 3 and sv["title"].strip().lower() in low)]
+        pick = [i for i in items if i["name"].lower() in low or (len(i["title"]) >= 3 and i["title"].lower() in low)]
         if pick:
-            self._focus[uid] = (time.time(), [sv["id"] for sv in pick[:2]])
+            self._focus[uid] = (time.time(), [(i["kind"], i["id"]) for i in pick[:2]])
         else:
             ts, ids = self._focus.get(uid, (0, []))
             if time.time() - ts < HIST_TTL:
-                pick = [sv for sv in svcs if sv["id"] in ids]
-            if not pick and len(svcs) == 1:
-                pick = svcs
+                pick = [i for i in items if (i["kind"], i["id"]) in ids]
+            if not pick and len(items) == 1:
+                pick = items
         if not pick:
             return ""
-        out = []
-        now = time.time()
-        for sv in pick[:2]:
-            reach = "yes"
-            try:
-                sv = await asyncio.wait_for(shop.vpn.sync(sv, force=False), 8) or sv        # پنلِ کند، گفتگو را معطل نکند
-            except Exception as e:  # noqa: BLE001
-                reach = f"NO (could not read it from the panel: {type(e).__name__}); the numbers below may be a few minutes old"
-            sv = await shop.db.get_vpn_service(sv["id"]) or sv
-            total, used = int(sv["total_bytes"] or 0), int(sv["used_bytes"] or 0)
-            gb = 2 ** 30
-            if total:
-                use = f"{used / gb:.2f} of {total / gb:.2f} GB used ({min(100, int(used * 100 / total))}%), {max(total - used, 0) / gb:.2f} GB left"
-            else:
-                use = f"{used / gb:.2f} GB used, traffic unlimited"
-            if sv["expires_at"]:
-                d = int((sv["expires_at"] - now) // 86400)
-                tl = f"{d} days left" if sv["expires_at"] > now else f"EXPIRED {abs(d)} days ago"
-            else:
-                tl = "no expiry date"
-            flags = []
-            if sv["expires_at"] and sv["expires_at"] < now:
-                flags.append("EXPIRED")
-            if total and used >= total:
-                flags.append("TRAFFIC USED UP")
-            if sv["status"] == "disabled":
-                flags.append("DISABLED")
-            if sv["status"] == "pending_manual":
-                flags.append("NOT DELIVERED YET (waiting for manual delivery)")
-            if total and not flags and used * 100 / total >= 90:
-                flags.append("TRAFFIC ALMOST FINISHED")
-            if sv["expires_at"] and not flags and sv["expires_at"] - now < 2 * 86400:
-                flags.append("EXPIRES SOON")
-            out.append(f"service {sv['name']}" + (f" ({sv['title']})" if sv.get("title") else "") + f": status={sv['status']}; time: {tl}; usage: {use}; panel reachable: {reach}; "
-                       + ("PROBLEMS FOUND: " + ", ".join(flags) if flags else "no limit problem found (active, within time and traffic)"))
-        return "\n".join(out)
+        return "\n".join([await self._check_one(i) for i in pick[:2]])
 
     async def system_prompt(self, user, lang_name: str, text: str = "") -> str:
         s = self.s
@@ -431,6 +454,11 @@ class AiSupport:
             for k in [k for k, (t, _h) in self._hist.items() if time.time() - t > HIST_TTL][:1000]:
                 self._hist.pop(k, None)
         return out[:3800], human
+
+    def transcript(self, uid: int, n: int = 8) -> str:
+        """آخرین پیام‌های گفتگو برای پشتیبان انسانی."""
+        ts, hist = self._hist.get(uid, (0, []))
+        return "\n".join(("👤 " if m["role"] == "user" else "🤖 ") + str(m["content"]).replace("[the user attached a screenshot]", "📷")[:400] for m in hist[-n:])
 
     def reset(self, uid: int):
         self._hist.pop(uid, None)

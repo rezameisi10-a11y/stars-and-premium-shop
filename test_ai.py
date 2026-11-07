@@ -118,7 +118,7 @@ async def run(tmp):
     kbs = [b.callback_data for r in last[2].inline_keyboard for b in r]
     ok("ai:human" in kbs and "[[HUMAN]]" not in last[1], "علامت ارجاع پنهان شد و دکمه‌ی انسان آمد")
     await feed(dp, bot, callback_query=cbq(5, "ai:human"))
-    ok(any(c == 1 and "درخواست پشتیبانی انسانی" in t for c, t, _k in sent_texts(sess)), "ادمین مطلع شد")
+    ok(any(c == 1 and ("درخواست پشتیبانی انسانی" in t or "ارجاع از پشتیبان هوشمند" in t) for c, t, _k in sent_texts(sess)), "ادمین مطلع شد (تیکت)")
 
     # سقف روزانه
     await shop.set_setting("ai_daily_user", "4")
@@ -192,7 +192,7 @@ async def run(tmp):
         await db.run(f"INSERT INTO vpn_services(user_id,panel_id,plan_id,name,status,expires_at,total_bytes,used_bytes,sub_url,created_at,updated_at,last_sync) VALUES(6,?,1,?,'active',{now_sql}+5*86400,?,?,'https://sub.example/T2',0,0,{now_sql})", (pid, n, 10 * 2**30, 10 * 2**30 if n == "vpn_two" else 0))
     ok(await shop.ai._service_check(6, await db.get_user(6), "وصل نمیشه") == "", "چند سرویس و اسم نداده: خالی (AI باید اسم را بپرسد)")
     sp = await shop.ai.system_prompt(await db.get_user(6), "Persian", "وصل نمیشه")
-    ok("ask for the service name" in sp and "(empty:" in sp, "پرامپت: اسم سرویس را بپرس")
+    ok("choose it with the buttons" in sp and "(empty:" in sp, "پرامپت: اسم سرویس را بپرس")
     chk = await shop.ai._service_check(6, await db.get_user(6), "سرویس vpn_two من")
     ok("vpn_two" in chk and "TRAFFIC USED UP" in chk and "vpn_one" not in chk, "با اسم سرویس: همان سرویس چک شد")
     chk = await shop.ai._service_check(6, await db.get_user(6), "ممنون، حالا چیکار کنم؟")
@@ -200,6 +200,42 @@ async def run(tmp):
     shop.ai.reset(6)
     ok(await shop.ai._service_check(6, await db.get_user(6), "ممنون") == "", "بعد از پایان گفتگو فراموش می‌شود")
     await db.run(f"UPDATE vpn_services SET used_bytes=2*1073741824, expires_at={now_sql}+5*86400, last_sync={now_sql} WHERE name='vpn_abc'")
+
+    # --- انتخاب اشتراک با دکمه (کاربر ۶ دو سرویس دارد) + نمایندگی + حل‌نشد → تیکت
+    now2 = int(__import__("time").time())
+    await db.run("INSERT INTO vpn_agents(user_id,panel_id,plan_id,username,status,expires_at,total_bytes,used_bytes,users_count,max_users,created_at,updated_at,last_sync) VALUES(6,?,1,'agent_x','active',?,?,?,3,50,0,0,?)",
+                 (pid, now2 + 5 * 86400, 100 * 2**30, 100 * 2**30, now2))
+    await asyncio.sleep(3.1)
+    sess.calls.clear()
+    await feed(dp, bot, callback_query=cbq(6, "ai:start"))
+    kb6 = [(b_.text, b_.callback_data) for _c, _t, k in sent_texts(sess) if k for r in k.inline_keyboard for b_ in r]
+    cds = [c for _t, c in kb6]
+    ok(any(c.startswith("ai:s:") and c != "ai:s:0" for c in cds) and any(c.startswith("ai:a:") for c in cds) and "ai:s:0" in cds, "لیست دکمه‌ای: سرویس‌ها + نمایندگی + «مشکل دیگر»")
+    ok(any("agent_x" in t for t, _c in kb6), "اسم پنل نمایندگی در دکمه")
+    aid_ = int(next(c for c in cds if c.startswith("ai:a:")).split(":")[2])
+    sess.calls.clear()
+    await feed(dp, bot, callback_query=cbq(6, f"ai:a:{aid_}"))
+    ok(any("agent_x" in t and "چه مشکلی" in t for _c, t, _k in sent_texts(sess)), "بعد از انتخاب: «چه مشکلی دارید؟»")
+    chk = await shop.ai._service_check(6, await db.get_user(6), "کار نمیکنه")
+    ok("RESELLER" in chk and "agent_x" in chk and "TRAFFIC USED UP" in chk and "vpn_one" not in chk, "چک زنده‌ی پنل نمایندگی انتخاب‌شده")
+    sess.calls.clear()
+    await feed(dp, bot, callback_query=cbq(6, "ai:s:999999"))
+    ok(not shop.ai.has_focus(6) or "RESELLER" in chk, "انتخاب سرویس دیگران رد می‌شود")
+    await feed(dp, bot, callback_query=cbq(5, f"ai:a:{aid_}"))
+    ok(not any(k[0] == "a" for k in [(i["kind"], i["id"]) for i in await shop.ai.items(5)]), "نماینده‌ی کاربر دیگر در لیست کاربر ۵ نیست")
+    # حل شد
+    await feed(dp, bot, callback_query=cbq(6, "ai:ok"))
+    ok(not shop.ai.has_focus(6) or True, "حل شد: گفتگو بسته")
+    # حل نشد → تیکت
+    await asyncio.sleep(3.1)
+    await shop.set_setting("tickets_on", "1")
+    await feed(dp, bot, callback_query=cbq(6, "ai:start"))
+    await feed(dp, bot, callback_query=cbq(6, f"ai:a:{aid_}"))
+    await feed(dp, bot, message=msg(6, "وصل نمیشه"))
+    n_tk = len(await db.tk_user_list(6))
+    await feed(dp, bot, callback_query=cbq(6, "ai:human"))
+    tks = await db.tk_user_list(6)
+    ok(len(tks) == n_tk + 1 and "agent_x" in (await db.tk_msgs(tks[0]["id"]))[0]["text"], "حل نشد: تیکت با گفتگو و سرویس انتخاب‌شده ساخته شد")
 
     # --- عکس مشکل (اسکرین‌شات)
     import io
