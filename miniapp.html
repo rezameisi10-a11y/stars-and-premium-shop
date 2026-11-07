@@ -1020,6 +1020,7 @@ VIEWS.vpn_service = async (id, refresh) => {
       <div class="grid"><button class="b sec" id="rf">♻️ ${esc(t("بروزرسانی"))}</button><button class="b sec" id="sd">📨 ${esc(t("ارسال در چت ربات"))}</button></div>
       ${s.can_revoke ? `<button class="b sec" id="rv">🔑 ${esc(t("لینک جدید"))}</button>` : ""}
       <div class="grid">${s.can_toggle ? `<button class="b sec" id="tg">⏻ ${esc(s.on ? t("⏻ خاموش کردن اکانت") : t("⏻ روشن کردن اکانت")).replace("⏻ ", "")}</button>` : ""}${s.can_note ? `<button class="b sec" id="nt">📝 ${esc(t("📝 تغییر یادداشت")).replace("📝 ", "")}</button>` : ""}</div>
+      ${s.can_move ? `<button class="b sec" id="mv">📍 ${esc(t("📍 تغییر لوکیشن").replace("📍 ", ""))}</button>` : ""}
       <div class="grid">${s.can_report ? `<button class="b sec" id="rp">⚠️ ${esc(t("گزارش اختلال سرویس"))}</button>` : ""}${s.can_delete ? `<button class="b sec" id="dl">🗑 ${esc(t("حذف سرویس منقضی"))}</button>` : ""}</div>
       ${s.note ? `<div class="card hint">📝 ${esc(s.note)}</div>` : ""}`;
     if (s.is_test) h += `<button class="b" id="by">🛒 ${esc(t("خرید سرویس"))}</button>`;
@@ -1035,6 +1036,7 @@ VIEWS.vpn_service = async (id, refresh) => {
   on("#rf", async () => { await api("vpn_service", {id, refresh: 1}); toast(t("بروزرسانی شد.")); render(); });
   on("#sd", async () => { const x = await api("vpn_send", {id}); toast(x.message); });
   on("#rv", async () => { if (!confirm(t("⚠️ با ساخت لینک جدید، لینک فعلی دیگر کار نمی‌کند. ادامه می‌دهید؟"))) return; await api("vpn_revoke", {id}); render(); });
+  on("#mv", async () => go("vpn_move", id));
   on("#tg", async () => { await api("vpn_toggle", {id}); render(); });
   on("#nt", async () => { const v = prompt(t("یادداشت جدید را بنویسید (حداکثر ۶۰ حرف):"), s.note || ""); if (v === null) return; await api("vpn_note", {id, text: v}); render(); });
   on("#rp", async () => { const v = prompt(t("مشکل را کوتاه توضیح دهید (اختیاری):"), ""); if (v === null) return; const x = await api("vpn_report", {id, text: v}); toast(x.message); });
@@ -1170,6 +1172,38 @@ VIEWS.referral = async () => {
   $app.querySelector("#share").onclick = () => openLink("https://t.me/share/url?url=" + encodeURIComponent(r.link));
 };
 
+VIEWS.vpn_move = async (id) => {
+  const r = await api("vpn_move_opts", {id});
+  let h = `<h1>📍 ${esc(t("📍 <b>تغییر لوکیشن</b>").replace(/<[^>]*>/g, "").replace("📍 ", ""))}</h1><p class="hint">${esc(t("لوکیشن جدید را انتخاب کنید. حجم و زمان باقی‌مانده‌ی شما همان‌طور که هست منتقل می‌شود."))}</p>`;
+  h += `<div class="card"><div class="sline"><span>${esc(t("حجم باقی‌مانده: {v}", {v: r.gb ? LTR(r.gb + " GB") : t("نامحدود")}))}</span><span>${esc(t("زمان باقی‌مانده: {t}", {t: r.days ? t("{d} روز", {d: r.days}) : t("نامحدود")}))}</span></div></div>`;
+  h += `<p class="hint">${esc(t("لینک اشتراک قبلی بعد از انتقال کار نمی‌کند و لینک جدید برای شما ارسال می‌شود. ادامه می‌دهید؟"))}</p>`;
+  h += r.targets.map(p => `<button class="row prod k-vpn" data-p="${p.id}"><i class="ri">📍</i><span>${esc(p.name)}</span></button>`).join("");
+  $app.innerHTML = h;
+  $app.querySelectorAll("[data-p]").forEach(b => b.onclick = () => run(b, async () => {
+    if (!confirm(t("📍 انتقال به «{p}»", {p: b.textContent.trim().replace("📍", "").trim()}))) return;
+    const x = await api("vpn_move", {id, panel_id: +b.dataset.p}); toast(x.message); stack.length = 0; go("vpn_service", x.id);
+  }));
+};
+VIEWS.tickets = async () => {
+  const r = await api("tk_list");
+  const ic = {open: "🟢", answered: "💬", closed: "🔒"};
+  let h = `<h1>🎫 ${esc(t("🎫 تیکت‌های من").replace("🎫 ", ""))}</h1><div class="card"><textarea id="tk-t" rows="4" placeholder="${esc(t("✍️ مشکل یا سؤال‌تان را بنویسید (می‌توانید عکس یا فایل هم بفرستید). خط اول، عنوان تیکت می‌شود. برای انصراف /start"))}"></textarea><button class="b" id="tk-n">${esc(t("➕ تیکت جدید").replace("➕ ", ""))}</button></div>`;
+  if (!r.tickets.length) h += `<div class="card hint">${esc(t("هنوز تیکتی نساخته‌اید."))}</div>`;
+  h += r.tickets.map(x => `<button class="row" data-t="${x.id}"><span>${ic[x.status] || ""} #${x.id} ${esc(x.subject)}</span></button>`).join("");
+  $app.innerHTML = h;
+  $app.querySelectorAll("[data-t]").forEach(b => b.onclick = () => go("ticket", +b.dataset.t));
+  const n = $app.querySelector("#tk-n"); n.onclick = () => run(n, async () => { const v = document.getElementById("tk-t").value.trim(); if (!v) return; const x = await api("tk_new", {text: v}); toast(t("✅ تیکت #{n} ثبت شد. پاسخ را همین‌جا برایتان می‌فرستیم.", {n: x.id})); go("ticket", x.id); });
+};
+VIEWS.ticket = async (id) => {
+  const r = await api("tk_get", {id});
+  const st = {open: t("🟢 در انتظار پاسخ"), answered: t("💬 پاسخ داده شد"), closed: t("🔒 بسته")}[r.status] || "";
+  let h = `<h1>🎫 #${r.id} ${esc(r.subject)}</h1><p class="hint">${esc(st)}</p>` + r.msgs.map(m => `<div class="card" style="${m.me ? "" : "border-inline-start:3px solid var(--accent,#3b82f6)"}">${m.me ? "👤" : "🛟"} ${esc(m.text)}</div>`).join("");
+  if (r.status !== "closed") h += `<div class="card"><textarea id="tk-r" rows="3" placeholder="${esc(t("✍️ پاسخ‌تان را بفرستید (برای انصراف /start):"))}"></textarea><div class="grid"><button class="b" id="tk-s">${esc(t("✍️ پاسخ").replace("✍️ ", ""))}</button><button class="b sec" id="tk-c">${esc(t("🔒 بستن تیکت").replace("🔒 ", ""))}</button></div></div>`;
+  $app.innerHTML = h;
+  const s = $app.querySelector("#tk-s"), c = $app.querySelector("#tk-c");
+  if (s) s.onclick = () => run(s, async () => { const v = document.getElementById("tk-r").value.trim(); if (!v) return; await api("tk_reply", {id, text: v}); toast(t("✅ پیام شما ثبت شد.")); render(); });
+  if (c) c.onclick = () => run(c, async () => { await api("tk_close", {id}); toast(t("🔒 تیکت بسته شد.")); render(); });
+};
 VIEWS.lang = async () => {
   $app.innerHTML = `<h1>🌐 ${esc(t("زبان"))}</h1>` + I.langs.map(l => `<button class="row" data-l="${l.code}"><span>${esc(l.flag)} ${esc(l.name)}</span><span>${l.code === I.lang ? "✅" : ""}</span></button>`).join("");
   $app.querySelectorAll("[data-l]").forEach(b => b.onclick = () => run(b, async () => { await api("set_lang", {lang: b.dataset.l}); stack.length = 0; await boot(); }));
@@ -1181,7 +1215,10 @@ VIEWS.support = async () => {
   if (I.support) h += `<button class="b" id="sp">${esc(t("☎️ پشتیبانی: {u}", {u: "@" + I.support}))}</button>`;
   if (!I.texts.support && !I.support) h += `<div class="card hint">${esc(t("☎️ پشتیبانی هنوز تنظیم نشده است."))}</div>`;
   $app.innerHTML = h;
+  if (I.tickets) h += `<button class="b" id="tk">🎫 ${esc(t("🎫 تیکت‌های من").replace("🎫 ", ""))}</button>`;
+  $app.innerHTML = h;
   const sp = $app.querySelector("#sp"); if (sp) sp.onclick = () => openLink("https://t.me/" + I.support);
+  const tk = $app.querySelector("#tk"); if (tk) tk.onclick = () => go("tickets");
 };
 VIEWS.rules = async () => {
   $app.innerHTML = `<h1>📜 ${esc(t("قوانین"))}</h1><div class="card">${I.texts.rules ? safeHtml(I.texts.rules) : `<span class="hint">${esc(t("قوانینی ثبت نشده است."))}</span>`}</div>`;

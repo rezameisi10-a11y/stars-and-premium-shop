@@ -27,6 +27,7 @@ class TkSt(StatesGroup):
     new = State()
     reply = State()
     admin_reply = State()
+    report_reply = State()
 
 
 def _stamp(ts) -> str:
@@ -293,3 +294,42 @@ async def adm_reply_msg(m: Message, shop: Shop, state: FSMContext):
             pass
     text, kb = await _thread(shop, t["id"])
     await m.answer("✅ برای کاربر ارسال شد.\n\n" + text, reply_markup=kb)
+
+
+# ---------------------------------------------------------------- پاسخ ادمین به «گزارش اختلال سرویس»
+@router.callback_query(F.data.startswith("adm:rpr:"))
+async def adm_report_reply(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    sid = int(cb.data.split(":")[2])
+    svc = await shop.db.get_vpn_service(sid)
+    if not svc:
+        await cb.answer("سرویس پیدا نشد", show_alert=True)
+        return
+    await state.set_state(TkSt.report_reply)
+    await state.update_data(sid=sid)
+    await cb.message.answer(f"✍️ پاسخ به کاربر <code>{svc['user_id']}</code> درباره‌ی سرویس <code>{esc(svc['name'])}</code> را بفرستید (متن، عکس یا فایل). برای انصراف /admin")
+    await cb.answer()
+
+
+@router.message(TkSt.report_reply)
+async def adm_report_reply_msg(m: Message, shop: Shop, state: FSMContext):
+    if (m.text or "").startswith("/"):
+        return
+    d = await state.get_data()
+    svc = await shop.db.get_vpn_service(d.get("sid", 0))
+    txt, has = _body(m)
+    if not svc or (not txt and not has):
+        await m.answer("فقط متن، عکس یا فایل.")
+        return
+    await state.clear()
+    uid = svc["user_id"]
+    tr = await shop.tr_for(uid)
+    ok = bool(await shop.safe_send(uid, tr("💬 <b>پاسخ پشتیبانی درباره‌ی سرویس {n}</b>", n=f"<code>{esc(svc['name'])}</code>") + ("\n\n" + esc(txt) if txt else "")))
+    if has:
+        try:
+            await m.copy_to(uid)
+            ok = True
+        except Exception:  # noqa: BLE001
+            pass
+    await shop.db.log(f"tg:{m.from_user.id}", "report_reply", f"#{svc['id']} -> {uid}")
+    await m.answer("✅ برای کاربر ارسال شد." if ok else "⚠️ ارسال نشد (کاربر ربات را بلاک کرده؟)",
+                   reply_markup=ikb([[btn("📡 مدیریت سرویس", f"adm:vpn:s:{svc['id']}", role="admin")]]))

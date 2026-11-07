@@ -777,6 +777,51 @@ async def agent_show(cb: CallbackQuery, shop: Shop, tr):
     await cb.answer()
 
 
+@router.callback_query(F.data.regexp(r"^vpn:agm:\d+$"))
+async def agent_move_list(cb: CallbackQuery, shop: Shop, tr):
+    ag = await _own_agent(cb, shop, tr, cb.data.split(":")[2])
+    if not ag:
+        return
+    ags = shop.vpn.agents
+    tg = await ags.move_targets(ag) if ags.can_user_move(ag) else []
+    if not tg:
+        await cb.answer(tr("تغییر لوکیشن برای این پنل نمایندگی فعال نیست."), show_alert=True)
+        return
+    rows = [[btn(f"📍 {p['name']}", f"vpn:agmp:{ag['id']}:{p['id']}", role="action")] for p in tg]
+    rows.append([btn(tr("🔙 بازگشت"), f"vpn:ag:{ag['id']}", role="back")])
+    await cb.message.answer(tr("📍 <b>تغییر لوکیشن</b>") + "\n" + tr("لوکیشن جدید پنل نمایندگی را انتخاب کنید. حجم و زمان باقی‌مانده‌ی شما همان‌طور که هست منتقل می‌شود."), reply_markup=ikb(rows))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^vpn:agmp:\d+:\d+$"))
+async def agent_move_confirm(cb: CallbackQuery, shop: Shop, tr):
+    _, _, aid, pid = cb.data.split(":")
+    ag = await _own_agent(cb, shop, tr, aid)
+    if not ag:
+        return
+    ags = shop.vpn.agents
+    dst = next((p for p in await ags.move_targets(ag) if p["id"] == int(pid)), None) if ags.can_user_move(ag) else None
+    if not dst:
+        await cb.answer(tr("این لوکیشن در دسترس نیست."), show_alert=True)
+        return
+    await cb.message.answer(tr("📍 انتقال به «{p}»", p=esc(dst["name"])) + "\n\n" + tr("آدرس و رمز پنل نمایندگی شما عوض می‌شود. کاربرانی که قبلاً داخل پنل قبلی ساخته‌اید خودکار منتقل نمی‌شوند و باید برای آن‌ها با پشتیبانی هماهنگ کنید. ادامه می‌دهید؟"),
+                            reply_markup=ikb([[btn(tr("✅ بله، منتقل کن"), f"vpn:agmg:{aid}:{pid}", role="confirm"), btn(tr("❌ انصراف"), f"vpn:ag:{aid}", role="reject")]]))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^vpn:agmg:\d+:\d+$"))
+async def agent_move_go(cb: CallbackQuery, shop: Shop, tr):
+    _, _, aid, pid = cb.data.split(":")
+    await cb.answer(tr("در حال انتقال ..."))
+    try:
+        ag = await shop.vpn.agents.move(int(aid), int(pid), actor=f"user:{cb.from_user.id}", user_id=cb.from_user.id)
+    except MoveError as e:
+        await cb.message.answer("❌ " + tr(str(e)))
+        return
+    await cb.message.answer(tr("✅ سرویس شما به لوکیشن «{p}» منتقل شد؛ حجم و زمان باقی‌مانده حفظ شد.", p=esc(ag.get("panel_name") or "")))
+    await shop.vpn.agents.send_agent(cb.from_user.id, ag)
+
+
 @router.callback_query(F.data.startswith("vpn:agr:"))
 async def agent_refresh(cb: CallbackQuery, shop: Shop, tr):
     ag = await _own_agent(cb, shop, tr, cb.data.split(":")[2])

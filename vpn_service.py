@@ -156,13 +156,13 @@ def valid_name(n: str) -> bool:
 
 # تنظیمات هر پنل (داخل ستون extra؛ مثل «قابلیت‌های پنل» در میرزا). مقدار 1 = روشن
 PANEL_FLAGS = {"show": 1, "test": 1, "renew": 1, "addon": 1, "sub": 1, "config": 1, "qr": 1, "copy_sub": 1, "copy_cfg": 1,
-               "revoke": 1, "toggle": 1, "transfer": 1, "unote": 1, "refund": 0, "udelete": 1, "report": 1, "move": 1, "move_to": 0}
+               "revoke": 1, "toggle": 1, "transfer": 1, "unote": 1, "refund": 0, "udelete": 1, "report": 1, "move": 1, "move_to": 0, "amove_to": 0}
 PANEL_FLAG_TITLES = {"show": N_("نمایش پنل به کاربران"), "test": N_("اکانت تست"), "renew": N_("تمدید"), "addon": N_("حجم/زمان اضافه"),
                      "sub": N_("ارسال لینک اشتراک"), "config": N_("ارسال کانفیگ مستقیم"), "qr": N_("دکمه‌ی QR کد"),
                      "revoke": N_("دکمه‌ی تغییر لینک"), "toggle": N_("دکمه‌ی خاموش/روشن کردن اکانت"), "transfer": N_("دکمه‌ی انتقال سرویس به کاربر دیگر"),
                      "unote": N_("دکمه‌ی تغییر یادداشت"), "refund": N_("دکمه‌ی بازگشت وجه (با محدودیت‌های تنظیمات)"),
                      "udelete": N_("دکمه‌ی حذف سرویس منقضی توسط کاربر"), "report": N_("دکمه‌ی گزارش اختلال سرویس"),
-                     "move": N_("دکمه‌ی تغییر لوکیشن (انتقال از این پنل)"), "move_to": N_("این پنل مقصد تغییر لوکیشن باشد"),
+                     "move": N_("دکمه‌ی تغییر لوکیشن (انتقال از این پنل)"), "move_to": N_("این پنل مقصد تغییر لوکیشن باشد"), "amove_to": N_("این پنل مقصد تغییر لوکیشن نماینده‌ها باشد"),
                      "copy_sub": N_("کپی لینک اشتراک با یک کلیک (خاموش = نگه‌داشتن انگشت)"), "copy_cfg": N_("کپی کانفیگ‌ها با یک کلیک (خاموش = نگه‌داشتن انگشت)")}
 
 
@@ -522,7 +522,10 @@ class VPN:
         await self.shop.notify_admins(
             f"⚠️ <b>گزارش اختلال سرویس</b>\nکاربر: <code>{uid}</code>" + (f" @{esc(u['username'])}" if u and u.get("username") else "") +
             f"\nسرویس: <code>{esc(svc['name'])}</code> (#{sid}) — پنل: {esc(svc.get('panel_name') or '-')}\nوضعیت: {STATUS_FA.get(svc['status'], svc['status'])}"
-            + (f"\n📝 {esc(text[:300])}" if text else ""), perm="vpn", topic="alerts")
+            + (f"\n📝 {esc(text[:300])}" if text else ""),
+            markup=ikb([[btn("✉️ پاسخ به کاربر", f"adm:rpr:{sid}", role="action")],
+                        [btn("📡 مدیریت سرویس", f"adm:vpn:s:{sid}", role="admin"), btn("👤 مشخصات کاربر", f"adm:u:{uid}", role="admin")]]),
+            perm="vpn", topic="alerts")
         return True, N_("گزارش شما برای پشتیبانی ارسال شد.")
 
     async def user_transfer(self, uid, sid, target):

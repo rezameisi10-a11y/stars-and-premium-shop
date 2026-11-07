@@ -208,7 +208,7 @@ async def cb_settings(cb: CallbackQuery, shop: Shop):
     rows = [[btn(t, f"adm:vpn:ss:{sid}", role="admin")] for sid, t, _ in VPN_SECTIONS[:1]]
     rows.append([btn("➕ حجم و زمان اضافه — کاربران", "adm:vpn:xs:u", role="admin")])
     rows += [[btn(t, f"adm:vpn:ss:{sid}", role="admin")] for sid, t, _ in VPN_SECTIONS[1:]]
-    rows.append([btn("📍 تغییر لوکیشن", "adm:vpn:mvs", role="admin")])
+    rows.append([btn("📍 تغییر لوکیشن — کاربران", "adm:vpn:mvs", role="admin"), btn("📍 تغییر لوکیشن — نماینده‌ها", "adm:vpn:amvs", role="admin")])
     rows.append([btn("🖼 پس‌زمینه QR", "adm:vpn:qb", role="admin")])
     rows.append(back_row("adm:vpn"))
     await view(cb, "⚙️ <b>تنظیمات فروش VPN</b>\nیک بخش را انتخاب کنید:", ikb(rows))
@@ -219,15 +219,19 @@ async def _move_screen(cb: CallbackQuery, shop: Shop):
     from vpn_service import pextra
     on = shop.s.get("vpn_allow_move", "0") == "1"
     panels = [p for p in await shop.db.list_vpn_panels() if p["type"] != "manual"]
-    lines = [f"📍 <b>تغییر لوکیشن</b> — {onoff(on)}",
-             "کاربر روی کارت سرویسش «📍 تغییر لوکیشن» را می‌زند و سرویس با <b>حجم و زمانِ باقی‌مانده</b> (نه تازه) روی پنل مقصد ساخته می‌شود؛ نسخه‌ی قبلی از پنل قبلی پاک می‌شود.",
-             "", "پنل‌هایی که کاربر می‌تواند به آن‌ها منتقل شود را تیک بزنید (مقصد). اگر مقصد انتخاب نکنید، دکمه‌ای به کاربر نشان داده نمی‌شود.",
-             "سقف دفعات هر سرویس و اجازه‌ی خروج از هر پنل: «🧩 قابلیت‌های پنل»."]
+    nb = len(await shop.db.vm_batches("svc", 15))
+    lines = ["📍 <b>تغییر لوکیشن</b>", "",
+             f"<b>۱) دستی — توسط خود کاربر</b> ({onoff(on)})",
+             "کاربر در «سرویس‌های من» روی «📍 تغییر لوکیشن» می‌زند و سرویس با <b>حجم و زمانِ باقی‌مانده</b> (نه تازه) روی پنل مقصد ساخته می‌شود؛ نسخه‌ی قبلی از پنل قبلی پاک می‌شود. "
+             "پنل‌هایی را که کاربر می‌تواند به آن‌ها برود تیک بزنید (بدون مقصد، دکمه‌ای نشان داده نمی‌شود). سقف دفعات هر سرویس: «🧩 قابلیت‌های پنل».",
+             "", "<b>۲) خودکار — توسط شما</b>",
+             "برای کاربران انتخابی، همه، یا کسانی که حجم/زمانشان رو به پایان است؛ لینک جدید برای همه فرستاده می‌شود. اشتباه شد؟ «↩️ بازگشت جابه‌جایی‌ها»."]
     rows = [[btn(f"تغییر لوکیشن توسط کاربر: {onoff(on)}", "adm:vpn:mvg", role="action")]]
     for p in panels:
         rows.append([btn(f"{'✅' if pflag(p, 'move_to') else '⬜'} مقصد: {p['name']}", f"adm:vpn:mvt:{p['id']}", role="action")])
     if not panels:
         lines.append("\n⚠️ هنوز پنل غیر دستی ثبت نشده است.")
+    rows.append([btn("🔁 جابه‌جایی خودکار (ادمین)", "adm:vpn:bkm", role="admin"), btn(f"↩️ بازگشت جابه‌جایی‌ها ({nb})" if nb else "↩️ بازگشت جابه‌جایی‌ها", "adm:vpn:mvb", role="admin")])
     rows.append(back_row("adm:vpn:st"))
     await view(cb, "\n".join(lines), ikb(rows))
 
@@ -414,11 +418,24 @@ async def _bk_panels(shop: Shop) -> dict:
 @router.callback_query(F.data == "adm:vpn:bk")
 async def cb_bulk(cb: CallbackQuery, shop: Shop, state: FSMContext):
     await state.clear()
+    await _bk_first(cb, shop)
+
+
+@router.callback_query(F.data == "adm:vpn:bkm")
+async def cb_bulk_move_entry(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    """ورود از «📍 تغییر لوکیشن ← جابه‌جایی خودکار»: همان ویزارد، ولی اقدام از قبل «انتقال» است."""
+    await state.clear()
+    await state.update_data(bkpre="move")
+    await _bk_first(cb, shop, move=True)
+
+
+async def _bk_first(cb, shop: Shop, move: bool = False):
     panels = await shop.db.list_vpn_panels()
     rows = [[btn("🖧 همه‌ی پنل‌ها", "adm:vpn:bkp:0", role="admin")]]
     rows += [[btn(f"{p['name']} ({p['n_services']})", f"adm:vpn:bkp:{p['id']}", role="admin")] for p in panels]
-    rows.append(back_row("adm:vpn"))
-    await view(cb, "🧰 <b>عملیات گروهی روی سرویس‌ها</b>\n۱) پنل موردنظر را انتخاب کنید. بعد فیلتر و اقدام را می‌گویید و قبل از اجرا فهرست را می‌بینید و تأیید می‌کنید.", ikb(rows))
+    rows.append(back_row("adm:vpn:mvs" if move else "adm:vpn"))
+    await view(cb, ("🔁 <b>جابه‌جایی خودکار کاربران به پنل دیگر</b>\n۱) پنلِ <b>مبدأ</b> را انتخاب کنید. بعد می‌گویید کدام کاربرها (همه / فیلتر پایان حجم و زمان / انتخاب دستی با تیک) و مقصد، و لینک جدید برای همه ارسال می‌شود."
+                    if move else "🧰 <b>عملیات گروهی روی کاربران (سرویس‌ها)</b>\n۱) پنل موردنظر را انتخاب کنید. بعد فیلتر یا «انتخاب کاربر» و اقدام را می‌گویید و قبل از اجرا فهرست را می‌بینید و تأیید می‌کنید.\n(برای نماینده‌ها: 🧑‍💼 نماینده‌ها ← عملیات گروهی)"), ikb(rows))
     await cb.answer()
 
 
@@ -427,6 +444,8 @@ async def cb_bulk_panel(cb: CallbackQuery, shop: Shop, state: FSMContext):
     from vpn_ops import BULK_FILTERS
     pid = int(cb.data.split(":")[3])
     d = {"p": pid or None}
+    if (await state.get_data()).get("bkpre") == "move":
+        d["pre"] = "move"
     await state.update_data(bk=d)
     rows = [[btn(t.replace(" N ", " ؟ "), f"adm:vpn:bkf:{k}", role="admin")] for k, t in BULK_FILTERS.items()]
     rows.append(back_row("adm:vpn:bk"))
@@ -443,6 +462,12 @@ async def cb_bulk_filter(cb: CallbackQuery, shop: Shop, state: FSMContext):
         return
     d["f"] = flt
     await state.update_data(bk=d)
+    if flt == "sel":
+        d.setdefault("sel", [])
+        await state.update_data(bk=d)
+        await _bk_picker(cb, shop, state, 0)
+        await cb.answer()
+        return
     if flt in ("soon", "lowvol"):
         opts = (1, 3, 7, 14) if flt == "soon" else (5, 10, 20, 30)
         unit = "روز" if flt == "soon" else "٪"
@@ -465,8 +490,107 @@ async def cb_bulk_n(cb: CallbackQuery, shop: Shop, state: FSMContext):
     await cb.answer()
 
 
+# ---- «انتخاب کاربر»: فهرست سرویس‌ها با تیک (صفحه‌بندی، جستجو، انتخاب همه‌ی صفحه)
+BK_PER = 8
+
+
+async def _bk_picker(cb, shop: Shop, state: FSMContext, page: int):
+    d = (await state.get_data()).get("bk") or {}
+    sel = set(d.get("sel") or [])
+    rows_db, total = await shop.vpn.ops.search_page(d.get("p"), d.get("q", ""), page, BK_PER)
+    rows = [[btn(f"{'☑️' if r['id'] in sel else '⬜️'} {r['name']} · {r['user_id']}" + (f" · {r['panel_name']}" if not d.get("p") and r.get("panel_name") else ""),
+                 f"adm:vpn:bkc:{r['id']}:{page}", role="confirm" if r["id"] in sel else "admin")] for r in rows_db]
+    nav = []
+    if page > 0:
+        nav.append(btn("◀️", f"adm:vpn:bkg:{page - 1}", role="back"))
+    if (page + 1) * BK_PER < total:
+        nav.append(btn("▶️", f"adm:vpn:bkg:{page + 1}", role="action"))
+    if nav:
+        rows.append(nav)
+    rows.append([btn("☑️ همه‌ی این صفحه", f"adm:vpn:bkca:{page}", role="action"), btn("🧹 پاک کردن انتخاب", f"adm:vpn:bkcx:{page}", role="action")])
+    rows.append([btn("🔎 جستجو (نام/آیدی)" + (" ✅" if d.get("q") else ""), "adm:vpn:bkq", role="admin")])
+    if sel:
+        rows.append([btn(f"➡️ ادامه با {fmt(len(sel))} سرویس", "adm:vpn:bkd", role="confirm")])
+    rows.append(back_row("adm:vpn:bk"))
+    text = (_bk_title(d, await _bk_panels(shop)) + f"\n\n۲) سرویس‌های موردنظر را تیک بزنید (انتخاب‌شده: <b>{fmt(len(sel))}</b>)"
+            + (f"\n🔎 جستجو: <code>{esc(d['q'])}</code>" if d.get("q") else "") + f"\nصفحه {page + 1} از {max(1, -(-total // BK_PER))} · کل: {fmt(total)}")
+    if isinstance(cb, Message):
+        await ans(cb, text, ikb(rows))
+    else:
+        await view(cb, text, ikb(rows))
+
+
+@router.callback_query(F.data.startswith("adm:vpn:bkg:"))
+async def cb_bk_page(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    if (await state.get_data()).get("bk") is None:
+        await cb.answer("از اول شروع کنید.", show_alert=True)
+        return
+    await _bk_picker(cb, shop, state, int(cb.data.split(":")[3]))
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("adm:vpn:bkc:"))
+async def cb_bk_toggle(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    _, _, _, sid, page = cb.data.split(":")
+    d = (await state.get_data()).get("bk")
+    if d is None:
+        await cb.answer("از اول شروع کنید.", show_alert=True)
+        return
+    sel = set(d.get("sel") or [])
+    sel.symmetric_difference_update({int(sid)})
+    d["sel"] = sorted(sel)
+    await state.update_data(bk=d)
+    await _bk_picker(cb, shop, state, int(page))
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith(("adm:vpn:bkca:", "adm:vpn:bkcx:")))
+async def cb_bk_bulk_toggle(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    kind, page = cb.data.split(":")[2], int(cb.data.split(":")[3])
+    d = (await state.get_data()).get("bk")
+    if d is None:
+        await cb.answer("از اول شروع کنید.", show_alert=True)
+        return
+    if kind == "bkcx":
+        d["sel"] = []
+    else:
+        rows_db, _ = await shop.vpn.ops.search_page(d.get("p"), d.get("q", ""), page, BK_PER)
+        d["sel"] = sorted(set(d.get("sel") or []) | {r["id"] for r in rows_db})
+    await state.update_data(bk=d)
+    await _bk_picker(cb, shop, state, page)
+    await cb.answer()
+
+
+@router.callback_query(F.data == "adm:vpn:bkq")
+async def cb_bk_search(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(AV.wiz)
+    await state.update_data(flow="bkq")
+    await ans(cb.message, "بخشی از نام سرویس یا آیدی عددی کاربر را بفرستید (برای پاک‌کردن جستجو «-»):", _ask_kb("adm:vpn:bkg:0"))
+    await cb.answer()
+
+
+@router.callback_query(F.data == "adm:vpn:bkd")
+async def cb_bk_done(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    d = (await state.get_data()).get("bk") or {}
+    if not d.get("sel"):
+        await cb.answer("هیچ سرویسی تیک نخورده.", show_alert=True)
+        return
+    await _bk_pick_action(cb, shop, d)
+    await cb.answer()
+
+
+async def _bk_target_picker(cb, shop: Shop, d: dict):
+    panels = await shop.db.list_vpn_panels()
+    rows = [[btn(f"📍 {p['name']}", f"adm:vpn:bkt:{p['id']}", role="admin")] for p in panels if p["enabled"] and p["type"] != "manual" and p["id"] != d.get("p")]
+    rows.append(back_row("adm:vpn:bk"))
+    await view(cb, _bk_title(d, await _bk_panels(shop)) + "\n\nبه کدام پنل منتقل شوند؟ (حجم و زمان باقی‌مانده حفظ می‌شود و لینک جدید برای همه فرستاده می‌شود)", ikb(rows))
+
+
 async def _bk_pick_action(cb, shop: Shop, d: dict):
     from vpn_ops import BULK_ACTIONS
+    if d.get("pre") == "move":                                  # ورود از «جابه‌جایی خودکار»: مستقیم برو سراغ مقصد
+        await _bk_target_picker(cb, shop, d)
+        return
     rows, row = [], []
     for k, t in BULK_ACTIONS.items():
         row.append(btn(t, f"adm:vpn:bka:{k}", role="reject" if k == "delete" else "admin"))
@@ -510,6 +634,8 @@ async def cb_bulk_target(cb: CallbackQuery, shop: Shop, state: FSMContext):
         await cb.answer("از اول شروع کنید.", show_alert=True)
         return
     d["t"] = int(cb.data.split(":")[3])
+    if d.get("pre") == "move":
+        d["a"] = "move"
     await state.update_data(bk=d)
     await _bk_confirm(cb, shop, state)
     await cb.answer()
@@ -539,9 +665,12 @@ async def _bk_value(m: Message, shop: Shop, state: FSMContext, d0):
 
 async def _bk_confirm(src, shop: Shop, state: FSMContext):
     d = (await state.get_data()).get("bk") or {}
-    rows_ = await shop.vpn.ops.select(d.get("p"), d.get("f"), d.get("n", 3))
+    if d.get("f") == "sel":
+        rows_ = [r for r in [await shop.db.get_vpn_service(i) for i in d.get("sel") or []] if r and r["status"] not in ("deleted", "pending_manual")]
+    else:
+        rows_ = await shop.vpn.ops.select(d.get("p"), d.get("f"), d.get("n", 3))
     if d.get("a") == "move" and d.get("t"):
-        rows_ = [r for r in rows_ if r["panel_id"] != d["t"] and r.get("panel_type") != "manual"]
+        rows_ = [r for r in rows_ if r["panel_id"] != d["t"] and (r.get("panel_type") or "") != "manual"]
     if d.get("a") not in ("move",):
         pass
     cap = 2000
@@ -557,6 +686,7 @@ async def _bk_confirm(src, shop: Shop, state: FSMContext):
     danger = d["a"] == "delete"
     text = (_bk_title(d, await _bk_panels(shop)) + f"\n\n📊 <b>{fmt(len(rows_))}</b> سرویس از <b>{fmt(users)}</b> کاربر" + (f" (سقف {cap} در هر بار)" if over else "")
             + f"\nنمونه: {sample}" + ("\n\n⚠️ <b>حذف برگشت‌پذیر نیست و سرویس‌ها از پنل هم پاک می‌شوند.</b>" if danger else "")
+            + ("\n\n📍 لینک قبلی همه‌ی این کاربران از کار می‌افتد و <b>لینک جدید برای هر کدام ارسال می‌شود</b>. اگر اشتباه بود، از «📍 تغییر لوکیشن ← ↩️ بازگشت جابه‌جایی‌ها» می‌توانید برگردانید." if d.get("a") == "move" else "")
             + "\n\nاجرا شود؟")
     kb = ikb([[btn("🗑 بله، حذف شود" if danger else "✅ اجرا", "adm:vpn:bkgo", role="reject" if danger else "confirm"), btn("❌ لغو", "adm:vpn:bk", role="back")]])
     await ans(src if isinstance(src, Message) else src.message, text, kb)
@@ -588,7 +718,8 @@ async def cb_bulk_go(cb: CallbackQuery, shop: Shop, state: FSMContext):
         finally:
             job["running"] = False
         err = ("\n\n" + "\n".join(esc(x) for x in res["errors"])) if res["errors"] else ""
-        await shop.safe_send(chat, f"🏁 <b>پایان عملیات گروهی</b>\n{summary}\n\n✅ موفق: {res['ok']}\n❌ ناموفق: {res['fail']}{err}", reply_markup=ikb([back_row("adm:vpn")]))
+        extra = [[btn("↩️ بازگشت این جابه‌جایی", f"adm:vpn:mvb:{res['batch']}", role="action")]] if res.get("batch") and res["ok"] else []
+        await shop.safe_send(chat, f"🏁 <b>پایان عملیات گروهی</b>\n{summary}\n\n✅ موفق: {res['ok']}\n❌ ناموفق: {res['fail']}{err}", reply_markup=ikb(extra + [back_row("adm:vpn")]))
         await shop.audit(f"tg:{uid}", f"🧰 عملیات گروهی VPN: {d['a']} روی {len(rows)} سرویس (موفق {res['ok']}، ناموفق {res['fail']})")
 
     shop.spawn(run())
@@ -624,8 +755,7 @@ async def cb_svc_move_go(cb: CallbackQuery, shop: Shop):
     except MoveError as e:
         await ans(cb.message, f"❌ {esc(str(e))}", ikb([back_row(f"adm:vpn:s:{sid}")]))
         return
-    await shop.safe_send(row["user_id"], f"📍 سرویس <code>{esc(row['name'])}</code> به لوکیشن «{esc(row.get('panel_name') or '')}» منتقل شد؛ حجم و زمان باقی‌مانده‌ی شما حفظ شده است. لینک اشتراک جدید:")
-    await shop.vpn.send_service(row["user_id"], row)
+    await shop.vpn.ops.notify_moved(row)
     text, kb = await svc_card(shop, row)
     await view(cb, "✅ منتقل شد و برای کاربر ارسال شد.\n\n" + text, kb)
 
@@ -705,7 +835,7 @@ async def _panel_features(cb: CallbackQuery, shop: Shop, pid: int):
         await cb.answer("پیدا نشد", show_alert=True)
         return
     rows = [[btn("عنوان", "adm:vpn:noop", role="back"), btn("وضعیت", "adm:vpn:noop", role="back")]]
-    for key in (k for k in PANEL_FLAGS if k != "move_to"):         # مقصدها در «تنظیمات ← تغییر لوکیشن»
+    for key in (k for k in PANEL_FLAGS if k not in ("move_to", "amove_to")):         # مقصدها در «تنظیمات ← تغییر لوکیشن»
         on = shop.vpn.test_on(p) if key == "test" else pflag(p, key)
         rows.append([btn(PANEL_FLAG_TITLES[key], "adm:vpn:noop", role="back"), btn(onoff(on), f"adm:vpn:pft:{pid}:{key}", role="action")])
     days, gb, mx = shop.vpn.test_params(p)
@@ -1046,6 +1176,14 @@ async def wiz_text(m: Message, shop: Shop, state: FSMContext):
         return
     if flow == "bkval":
         await _bk_value(m, shop, state, d)
+        return
+    if flow == "bkq":
+        bk = d.get("bk") or {}
+        q = (m.text or "").strip()
+        bk["q"] = "" if q == "-" else q[:40]
+        await state.set_state(None)
+        await state.update_data(bk=bk, flow=None)
+        await _bk_picker(m, shop, state, 0)
         return
     if flow == "deliver":
         await _deliver_step(m, shop, state, d)
@@ -1431,10 +1569,101 @@ async def svc_card(shop: Shop, svc):
                 [btn("▶️ فعال" if svc["status"] == "disabled" else "⏸ غیرفعال", f"adm:vpn:sa:{sid}:{'enable' if svc['status'] == 'disabled' else 'disable'}", role="action"),
                  btn("🔑 لینک جدید", f"adm:vpn:sa:{sid}:revoke", role="action")],
                 [btn("📤 ارسال مجدد برای کاربر", f"adm:vpn:sa:{sid}:resend", role="action"), btn("📝 یادداشت", f"adm:vpn:sv2:{sid}:note", role="admin")],
-                [btn("📍 انتقال به پنل دیگر", f"adm:vpn:smv:{sid}", role="admin")],
+                [btn("📍 انتقال به پنل دیگر", f"adm:vpn:smv:{sid}", role="admin")] + (
+                    [btn("↩️ بازگشت به لوکیشن قبلی", f"adm:vpn:srv:{sid}", role="action")] if await _can_revert(shop, svc) else []),
                 [btn("🗑 حذف", f"adm:vpn:sa:{sid}:delete", role="reject"), btn("💸 حذف + بازگشت وجه", f"adm:vpn:sa:{sid}:refund", role="reject")]]
     rows.append(back_row("adm:vpn:sv:all:0"))
     return txt, ikb(rows)
+
+
+def _jd(ts) -> str:
+    from handlers_admin import jdate
+    return jdate(ts)
+
+
+async def _can_revert(shop: Shop, svc) -> bool:
+    last = await shop.db.vm_last("svc", svc["id"])
+    return bool(last and last["to_panel"] == svc["panel_id"])
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:srv:\d+(:y)?$"))
+async def cb_svc_revert(cb: CallbackQuery, shop: Shop):
+    from vpn_ops import MoveError
+    parts = cb.data.split(":")
+    sid = int(parts[3])
+    last = await shop.db.vm_last("svc", sid)
+    if not last:
+        await cb.answer("انتقال ثبت‌شده‌ای برای برگرداندن نیست.", show_alert=True)
+        return
+    if len(parts) == 4:
+        pn = await shop.db.get_vpn_panel(last["from_panel"])
+        await view(cb, f"↩️ سرویس روی «{esc(pn['name']) if pn else last['from_panel']}» با حجم و زمانِ باقی‌مانده‌ی فعلی دوباره ساخته می‌شود، از پنل فعلی پاک می‌شود و لینک جدید برای کاربر ارسال می‌شود. ادامه؟",
+                   ikb([[btn("✅ بله، برگردان", f"adm:vpn:srv:{sid}:y", role="confirm"), btn("❌ خیر", f"adm:vpn:s:{sid}", role="back")]]))
+        await cb.answer()
+        return
+    await cb.answer("در حال برگرداندن ...")
+    try:
+        row = await shop.vpn.ops.revert(last["id"], actor=f"tg:{cb.from_user.id}")
+    except MoveError as e:
+        await ans(cb.message, f"❌ {esc(str(e))}", ikb([back_row(f"adm:vpn:s:{sid}")]))
+        return
+    await shop.vpn.ops.notify_moved(row, back=True)
+    text, kb = await svc_card(shop, row)
+    await view(cb, "✅ برگشت داده شد و لینک برای کاربر ارسال شد.\n\n" + text, kb)
+
+
+# ---- بازگشت جابه‌جایی‌های دسته‌ای
+@router.callback_query(F.data == "adm:vpn:mvb")
+async def cb_batches(cb: CallbackQuery, shop: Shop):
+    bs = await shop.db.vm_batches("svc", 15)
+    pn = await _bk_panels(shop)
+    nm = lambda i: (pn.get(i) or {}).get("name", f"#{i}")  # noqa: E731
+    rows = [[btn(f"{_jd(b['at'])} · {b['n_done']}/{b['n']} · {nm(b['from_panel'])} ➜ {nm(b['to_panel'])}", f"adm:vpn:mvb:{b['batch']}", role="admin")] for b in bs]
+    rows.append(back_row("adm:vpn:mvs"))
+    await view(cb, "↩️ <b>بازگشت جابه‌جایی‌ها</b>\n" + ("هر مورد یک بار «انتقال» (تکی یا گروهی) است؛ بزنید تا همه‌ی سرویس‌های آن دسته به لوکیشن قبلی برگردند." if bs else "هنوز انتقالی ثبت نشده است."), ikb(rows))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:mvb:[A-Za-z0-9_.:-]+$"))
+async def cb_batch(cb: CallbackQuery, shop: Shop):
+    batch = cb.data.split(":", 3)[3]
+    run_it = batch.endswith(":y")
+    batch = batch[:-2] if run_it else batch
+    rows_db = await shop.db.vm_batch_rows(batch)
+    n_done = sum(1 for r in rows_db if r["status"] == "done")
+    if not rows_db:
+        await cb.answer("پیدا نشد", show_alert=True)
+        return
+    if not run_it:
+        pn = await _bk_panels(shop)
+        nm = lambda i: (pn.get(i) or {}).get("name", f"#{i}")  # noqa: E731
+        r0 = rows_db[0]
+        kb = [[btn(f"↩️ برگردان همه ({n_done})", f"adm:vpn:mvb:{batch}:y", role="confirm")]] if n_done else []
+        await view(cb, f"↩️ <b>جابه‌جایی {_jd(r0['at'])}</b>\n{nm(r0['from_panel'])} ➜ {nm(r0['to_panel'])}\nکل: {len(rows_db)} | هنوز روی مقصد: <b>{n_done}</b> | برگردانده‌شده: {len(rows_db) - n_done}\n\n"
+                         "با «برگردان»، هر سرویس روی پنل قبلی با <b>حجم و زمانِ باقی‌مانده‌ی همین لحظه</b> دوباره ساخته، از پنل مقصد پاک و لینک برای کاربرش ارسال می‌شود.",
+                   ikb(kb + [back_row("adm:vpn:mvb")]))
+        await cb.answer()
+        return
+    uid = cb.from_user.id
+    if shop.vpn.ops.jobs.get(uid, {}).get("running"):
+        await cb.answer("یک عملیات گروهی دیگر از شما در حال اجراست.", show_alert=True)
+        return
+    job = shop.vpn.ops.jobs[uid] = {"running": True}
+    chat = cb.message.chat.id
+
+    async def run():
+        try:
+            res = await shop.vpn.ops.revert_batch(batch, actor=f"tg:{uid}")
+        finally:
+            job["running"] = False
+        err = ("\n\n" + "\n".join(esc(x) for x in res["errors"][:20])) if res["errors"] else ""
+        await shop.safe_send(chat, f"🏁 <b>بازگشت جابه‌جایی</b>\n✅ موفق: {res['ok']}\n❌ ناموفق: {res['fail']}{err}", reply_markup=ikb([back_row("adm:vpn:mvb")]))
+        await shop.audit(f"tg:{uid}", f"↩️ بازگشت جابه‌جایی دسته‌ای {batch}: موفق {res['ok']}، ناموفق {res['fail']}")
+
+    shop.spawn(run())
+    await shop.db.log(f"tg:{uid}", "vpn_revert_batch", f"{batch} n={n_done}")
+    await ans(cb.message, f"🚀 بازگشت شروع شد ({fmt(n_done)} سرویس)؛ وقتی تمام شد گزارش می‌دهم.", ikb([back_row("adm:vpn:mvb")]))
+    await cb.answer()
 
 
 @router.callback_query(F.data.regexp(r"^adm:vpn:s:\d+$"))

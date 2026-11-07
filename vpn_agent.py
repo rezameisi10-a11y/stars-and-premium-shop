@@ -18,6 +18,7 @@ import vpn_panels
 from i18n import N_
 from ui import btn, esc, fmt, ikb
 from vpn_panels import GB, PanelError, gen_password
+from vpn_ops import MoveError
 from vpn_service import NAME_RE, STATUS_FA, VpnError, bar, days_left, fmt_gb, ltr
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -532,6 +533,196 @@ class AgentSales:
             return False, f"{N_('خطای پنل')}: {str(e)[:200]}"
         return True, N_("انجام شد.")
 
+    # ------------------------------------------------------------------ تغییر لوکیشن نماینده (انتقال اکانت ادمین به پنل دیگر)
+    def move_enabled(self) -> bool:
+        return self._flag("vpn_agent_move")
+
+    async def move_targets(self, ag, admin=False) -> list[dict]:
+        """پنل‌های مقصد: فقط پنل‌های فعالِ پشتیبان‌ِ ساخت ادمین. نماینده: فقط پنل‌هایی که «مقصد نماینده‌ها» تیک خورده؛ ادمین: همه."""
+        from vpn_service import pflag
+        out = []
+        for p in await self.db.list_vpn_panels():
+            if p["id"] == ag["panel_id"] or not p["enabled"] or p["type"] == "manual" or self.vpn.is_down(p["id"]):
+                continue
+            if not admin and not pflag(p, "amove_to"):
+                continue
+            try:
+                if not getattr(await self.vpn.driver(p["id"]), "ADMIN", False):
+                    continue
+            except Exception:  # noqa: BLE001
+                continue
+            out.append(p)
+        return out
+
+    def can_user_move(self, ag) -> bool:
+        if not self.move_enabled() or ag["status"] not in ("active", "limited"):
+            return False
+        mx = self._int("vpn_agent_move_max", 1)
+        return not (mx > 0 and json.loads(ag["meta"] or "{}").get("n_move", 0) >= mx)
+
+    async def move(self, aid: int, target_pid: int, actor: str = "admin", user_id: int | None = None, batch: str = "") -> dict:
+        """اکانت نماینده را با حجم/زمان/سقف کاربرِ باقی‌مانده روی پنل مقصد می‌سازد و اکانت قبلی را غیرفعال (نه حذف) می‌کند.
+        کاربرانِ داخل پنل قبلیِ نماینده خودکار منتقل نمی‌شوند."""
+        ag = await self.db.get_agent(aid)
+        if not ag or ag["status"] == "deleted" or (user_id is not None and ag["user_id"] != user_id):
+            raise MoveError(N_("نماینده پیدا نشد."))
+        if user_id is not None and not self.can_user_move(ag):
+            raise MoveError(N_("تغییر لوکیشن برای این پنل نمایندگی فعال نیست."))
+        dst = next((p for p in await self.move_targets(ag, admin=user_id is None) if p["id"] == int(target_pid)), None)
+        if not dst:
+            raise MoveError(N_("این لوکیشن در دسترس نیست."))
+        try:
+            ag = await self.sync(ag, force=True)
+        except Exception as e:  # noqa: BLE001
+            raise MoveError(N_("ارتباط با پنل فعلی ممکن نشد؛ کمی بعد دوباره تلاش کنید.")) from e
+        rest = (ag["total_bytes"] - ag["used_bytes"]) if ag["total_bytes"] else 0
+        if ag["total_bytes"] and rest <= 0:
+            raise MoveError(N_("حجم این پنل نمایندگی تمام شده است؛ ابتدا حجم اضافه بخرید یا تمدید کنید."))
+        if ag["expires_at"] and ag["expires_at"] <= time.time():
+            raise MoveError(N_("زمان این پنل نمایندگی تمام شده است؛ ابتدا تمدید کنید."))
+        plan = await self.db.get_agent_plan(ag["plan_id"]) if ag.get("plan_id") else None
+        if plan and plan["panel_id"] == dst["id"]:
+            spec = agent_spec(plan)
+        else:                                               # شناسه‌ی نقش/سرویس مخصوص هر پنل است؛ برای پنل دیگر پیش‌فرض (همه‌ی سرویس‌ها)
+            spec = {"role_id": "", "service_ids": [], "all_services": True, "modify_users": True, "data_min_gb": 0, "data_max_gb": 0,
+                    "expire_min_days": 0, "expire_max_days": 0, "note": ag["title"] or ""}
+        spec["traffic_gb"] = math.ceil(rest / GB * 100) / 100 if rest else 0
+        spec["max_users"] = ag["max_users"] or 0
+        spec["telegram_id"] = 0
+        drv = await self.vpn.driver(dst["id"])
+        name, pw = await self.make_name(dst["id"], ag["user_id"], ag["username"] if not await self.db.one(
+            "SELECT 1 x FROM vpn_agents WHERE panel_id=? AND username=? AND status!='deleted'", (dst["id"], ag["username"])) else None), gen_password()
+        try:
+            await drv.admin_create(name, pw, spec)
+        except PanelError as e:
+            raise MoveError(f"{N_('ساخت روی پنل جدید ناموفق بود')}: {str(e)[:160]}") from e
+        meta = json.loads(ag["meta"] or "{}")
+        meta["prev"] = {"panel_id": ag["panel_id"], "username": ag["username"], "password": ag["password"], "total": ag["total_bytes"], "used": ag["used_bytes"]}
+        meta["n_move"] = int(meta.get("n_move", 0)) + 1
+        old_panel, old_name, old_pw = ag["panel_id"], ag["username"], ag["password"]
+        try:
+            await self.db.update_agent(aid, panel_id=dst["id"], username=name, password=pw, total_bytes=int(rest) if ag["total_bytes"] else 0, used_bytes=0,
+                                       users_count=0, status="active", notified="", meta=meta, last_sync=int(time.time()))
+        except Exception:
+            try:
+                await drv.admin_delete(name)
+            except Exception:  # noqa: BLE001
+                log.exception("agent move rollback failed")
+            raise MoveError(N_("ثبت انتقال ناموفق بود؛ سرویس قبلی دست‌نخورده ماند.")) from None
+        try:                                                 # اکانت قبلی غیرفعال می‌شود، حذف نمی‌شود (کاربرانش سالم می‌مانند)
+            await (await self.vpn.driver(old_panel)).admin_set_enabled(old_name, False, old_pw)
+        except Exception as e:  # noqa: BLE001
+            await self.shop.notify_admins(f"⚠️ نماینده #{aid} منتقل شد ولی غیرفعال‌کردن ادمین قبلی <code>{esc(old_name)}</code> روی پنل #{old_panel} ناموفق بود؛ دستی غیرفعالش کنید.\n{esc(str(e)[:150])}",
+                                          perm="vpn", topic="alerts")
+        await self.db.log(actor, "agent_move", f"#{aid} {old_panel}->{dst['id']}")
+        await self.db.vm_add(batch, "agent", aid, ag["user_id"], old_panel, dst["id"], old_name, name, actor)
+        return await self.db.get_agent(aid)
+
+    async def revert_move(self, mid: int, actor: str = "admin") -> dict:
+        """بازگرداندن نماینده به اکانت و پنل قبلی (اکانت قبلی دوباره فعال؛ اکانت جدید غیرفعال می‌شود، حذف نمی‌شود)."""
+        row = await self.db.one("SELECT * FROM vpn_moves WHERE id=?", (mid,))
+        if not row or row["kind"] != "agent" or row["status"] != "done":
+            raise MoveError(N_("این انتقال قبلاً برگردانده شده یا پیدا نشد."))
+        ag = await self.db.get_agent(row["sid"])
+        meta = json.loads(ag["meta"] or "{}") if ag else {}
+        prev = meta.get("prev")
+        if not ag or ag["status"] == "deleted" or not prev or ag["panel_id"] != row["to_panel"]:
+            raise MoveError(N_("این نماینده بعد از آن انتقال تغییر کرده است؛ از صفحه‌ی خودش اقدام کنید."))
+        try:
+            ag = await self.sync(ag, force=True)
+        except Exception:  # noqa: BLE001
+            pass
+        new_used = ag["used_bytes"]
+        try:
+            await (await self.vpn.driver(prev["panel_id"])).admin_set_enabled(prev["username"], True, prev["password"])
+        except PanelError as e:
+            raise MoveError(f"{N_('خطای پنل')}: {str(e)[:160]}") from e
+        try:
+            await (await self.vpn.driver(ag["panel_id"])).admin_set_enabled(ag["username"], False, ag["password"])
+        except Exception as e:  # noqa: BLE001
+            log.warning("agent revert: could not disable new admin: %s", e)
+        meta.pop("prev", None)
+        await self.db.update_agent(ag["id"], panel_id=prev["panel_id"], username=prev["username"], password=prev["password"], total_bytes=prev["total"],
+                                   used_bytes=min(prev["used"] + new_used, prev["total"]) if prev["total"] else prev["used"] + new_used, status="active",
+                                   notified="", meta=meta, last_sync=int(time.time()))
+        await self.db.vm_set(mid, "reverted")
+        await self.db.log(actor, "agent_move_revert", f"#{ag['id']}")
+        return await self.db.get_agent(ag["id"])
+
+    async def notify_moved(self, ag, back: bool = False):
+        tr = await self.shop.tr_for(ag["user_id"])
+        t = N_("↩️ پنل نمایندگی شما به لوکیشن قبلی برگشت. آدرس و مشخصات ورود:") if back else \
+            N_("📍 پنل نمایندگی شما به لوکیشن جدید منتقل شد؛ حجم و زمان باقی‌مانده حفظ شد. آدرس و مشخصات ورود جدید:")
+        await self.shop.safe_send(ag["user_id"], tr(t))
+        await self.send_agent(ag["user_id"], ag)
+
+    async def revert_batch(self, batch: str, actor: str = "admin", progress=None) -> dict:
+        import asyncio
+        rows = [r for r in await self.db.vm_batch_rows(batch) if r["status"] == "done" and r["kind"] == "agent"]
+        res = {"ok": 0, "fail": 0, "errors": []}
+        for r in rows:
+            try:
+                await self.notify_moved(await self.revert_move(r["id"], actor), back=True)
+                res["ok"] += 1
+            except MoveError as e:
+                res["fail"] += 1
+                res["errors"].append(f"#{r['sid']}: {e}")
+            except Exception as e:  # noqa: BLE001
+                log.exception("agent revert failed")
+                res["fail"] += 1
+                res["errors"].append(f"#{r['sid']}: {str(e)[:100]}")
+            await asyncio.sleep(0.25)
+        return res
+
+    # ------------------------------------------------------------------ عملیات گروهی روی نماینده‌ها
+    async def select(self, panel_id, flt: str, limit: int = 3000) -> list[dict]:
+        st = None if flt in ("all", "sel") else flt
+        return await self.db.list_agents(status=st, panel_id=panel_id or None, limit=limit)
+
+    async def search_page(self, panel_id, q: str, page: int, per: int = 8):
+        total = await self.db.count_agents(q=q or "", panel_id=panel_id or None)
+        return await self.db.list_agents(q=q or "", panel_id=panel_id or None, limit=per, offset=page * per), total
+
+    async def bulk_run(self, rows: list[dict], act: str, value=None, target_pid=None, actor="admin", progress=None) -> dict:
+        import asyncio
+        res = {"ok": 0, "fail": 0, "errors": []}
+        batch = res["batch"] = f"a{int(time.time())}" if act == "move" else ""
+        for i, ag in enumerate(rows, 1):
+            try:
+                if act == "add_days":
+                    ok, msg = await self.admin_action(ag["id"], "add_days", value, actor=actor)
+                elif act == "add_gb":
+                    if not ag["total_bytes"]:
+                        ok, msg = False, N_("حجم نامحدود است.")
+                    else:
+                        ok, msg = await self.admin_action(ag["id"], "set_traffic", ag["total_bytes"] / GB + float(value), actor=actor)
+                elif act in ("enable", "disable"):
+                    ok, msg = await self.admin_action(ag["id"], act, actor=actor)
+                elif act == "move":
+                    new = await self.move(ag["id"], int(target_pid), actor=actor, batch=batch)
+                    await self.notify_moved(new)
+                    ok, msg = True, ""
+                elif act == "msg":
+                    ok, msg = bool(await self.shop.safe_send(ag["user_id"], str(value))), N_("ارسال نشد")
+                else:
+                    ok, msg = False, N_("عملیات نامعتبر.")
+                if ok:
+                    res["ok"] += 1
+                else:
+                    res["fail"] += 1
+                    res["errors"].append(f"{ag['username']}: {msg}")
+            except MoveError as e:
+                res["fail"] += 1
+                res["errors"].append(f"{ag['username']}: {e}")
+            except Exception as e:  # noqa: BLE001
+                log.exception("agent bulk %s failed", act)
+                res["fail"] += 1
+                res["errors"].append(f"{ag['username']}: {str(e)[:100]}")
+            if progress and i % 50 == 0:
+                await progress(i, len(rows))
+            await asyncio.sleep(0.25)
+        return res
+
     async def admin_delete(self, aid: int, refund=False, actor="admin"):
         ag = await self.db.get_agent(aid)
         if not ag or ag["status"] == "deleted":
@@ -620,6 +811,8 @@ class AgentSales:
         if cr:
             rows.append(cr)
         rows.append([btn(tr("🔑 رمز جدید"), f"vpn:agw:{i}", role="action")])
+        if self.can_user_move(ag) and await self.move_targets(ag):
+            rows.append([btn(tr("📍 تغییر لوکیشن"), f"vpn:agm:{i}", role="action")])
         if self._can_auto(ag):
             rows.append([btn(tr("🔁 تمدید خودکار: روشن ✅") if self.is_auto(ag) else tr("🔁 تمدید خودکار: خاموش"), f"vpn:agt:{i}", role="action")])
         rows.append([btn(tr("🔙 پنل‌های نمایندگی من"), back, role="back")])

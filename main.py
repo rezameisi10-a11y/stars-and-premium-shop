@@ -12,6 +12,7 @@ import admin_manage
 import admin_settings
 import admin_vpn
 import admin_vpn_agent
+import admin_vpn_abulk
 import handlers_admin
 import handlers_ai
 import handlers_group
@@ -49,6 +50,7 @@ async def main() -> int:
     dp.include_router(admin_manage.router)
     dp.include_router(admin_vpn.router)
     dp.include_router(admin_vpn_agent.router)
+    dp.include_router(admin_vpn_abulk.router)
     dp.include_router(handlers_user.router)
     dp.include_router(handlers_vpn.router)
     dp.include_router(handlers_tickets.user_router)

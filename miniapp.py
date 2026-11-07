@@ -221,7 +221,7 @@ async def a_init(ctx: Ctx, d: dict) -> dict:
         "kind_titles": {k: ctx.tr(KIND_TITLE[k]) for k in KIND_TITLE},
         "texts": {"welcome": (mui.get("welcome") or {}).get("t") or shop.text("welcome_text", ctx.lang), "rules": shop.text("rules_text", ctx.lang),
                   "support": shop.text("support_text", ctx.lang)},
-        "support": support, "items": items, "bot": shop.bot_username,
+        "support": support, "items": items, "bot": shop.bot_username, "tickets": s.get("tickets_on", "1") == "1",
         "vpn": {"on": vpn_on, "mine": vpn_n, "test": await shop.vpn.can_test(ctx.uid)},
         "agent": {"on": ag_on, "mine": ag_n},
         "limits": {"min_topup": int(float(s["min_topup"])), "max_topup": int(float(s["max_topup"]))},
@@ -434,7 +434,7 @@ def _svc_dict(ctx: Ctx, sv: dict, full=False) -> dict:
                    can_toggle=pflag(sv, "toggle") and sv["status"] in ("active", "disabled"), on=sv["status"] != "disabled",
                    can_note=pflag(sv, "unote"), note=(json.loads(sv["meta"] or "{}").get("unote") or ""),
                    can_delete=pflag(sv, "udelete") and (sv["status"] == "expired" or bool(sv["expires_at"] and sv["expires_at"] < time.time() and sv["status"] != "pending_manual")),
-                   can_report=pflag(sv, "report"))
+                   can_report=pflag(sv, "report"), can_move=bool(ctx.shop.vpn.ops.show_button(sv)))
     return out
 
 
@@ -547,6 +547,88 @@ async def a_vpn_custom(ctx: Ctx, d: dict) -> dict:
     except (VpnError, ValueError) as e:
         raise _vpn_err(ctx, e) if isinstance(e, VpnError) else ApiError(ctx.tr("فقط یک عدد معتبر بفرستید."))
     return await a_order_get(ctx, {"order_id": oid})
+
+
+async def a_vpn_move_opts(ctx: Ctx, d: dict) -> dict:
+    from vpn_ops import MoveError
+    sv = await _own_svc(ctx, d.get("id"))
+    ops = ctx.shop.vpn.ops
+    sv = await ctx.shop.vpn.sync_safe(sv)
+    sv = await ctx.shop.db.get_vpn_service(sv["id"]) or sv
+    if not await ops.can_user_move(sv):
+        raise ApiError(ctx.tr("تغییر لوکیشن برای این سرویس فعال نیست."), 403)
+    try:
+        gb, days = ops.preview(sv)
+    except MoveError as e:
+        raise ApiError(ctx.tr(str(e)), 400)
+    return {"service": _svc_dict(ctx, sv, True), "gb": gb, "days": days, "targets": [{"id": p["id"], "name": p["name"]} for p in await ops.targets(sv)]}
+
+
+async def a_vpn_move(ctx: Ctx, d: dict) -> dict:
+    from vpn_ops import MoveError
+    try:
+        row = await ctx.shop.vpn.ops.user_move(ctx.uid, int(d.get("id") or 0), int(d.get("panel_id") or 0))
+    except MoveError as e:
+        raise ApiError(ctx.tr(str(e)), 400)
+    await ctx.shop.vpn.send_service(ctx.uid, row)                  # لینک جدید داخل چت ربات هم می‌آید
+    return {"id": row["id"], "message": ctx.tr("✅ سرویس شما به لوکیشن «{p}» منتقل شد؛ حجم و زمان باقی‌مانده حفظ شد.", p=row.get("panel_name") or "")}
+
+
+# ---------------------------------------------------------------- تیکت پشتیبانی
+def _tk_on(ctx: Ctx):
+    if ctx.shop.s.get("tickets_on", "1") != "1":
+        raise ApiError(ctx.tr("تیکت فعلاً فعال نیست."), 403)
+
+
+async def a_tk_list(ctx: Ctx, d: dict) -> dict:
+    _tk_on(ctx)
+    return {"tickets": [{"id": t["id"], "subject": t["subject"], "status": t["status"]} for t in await ctx.shop.db.tk_user_list(ctx.uid)]}
+
+
+async def a_tk_get(ctx: Ctx, d: dict) -> dict:
+    _tk_on(ctx)
+    t = await ctx.shop.db.tk_get(int(d.get("id") or 0))
+    if not t or t["user_id"] != ctx.uid:
+        raise ApiError(ctx.tr("پیدا نشد."), 404)
+    return {"id": t["id"], "subject": t["subject"], "status": t["status"],
+            "msgs": [{"me": x["sender"] == "user", "text": x["text"] or "📎"} for x in await ctx.shop.db.tk_msgs(t["id"])]}
+
+
+async def a_tk_new(ctx: Ctx, d: dict) -> dict:
+    from handlers_tickets import _gate, _notify_admins
+    _tk_on(ctx)
+    txt = str(d.get("text") or "").strip()[:3000]
+    if not txt:
+        raise ApiError(ctx.tr("فقط متن، عکس یا فایل بفرستید."))
+    err = await _gate(ctx.shop, ctx.uid, ctx.tr, True)
+    if err:
+        raise ApiError(err, 429)
+    tid = await ctx.shop.db.tk_create(ctx.uid, txt.splitlines()[0][:60], txt, False)
+    await _notify_admins(ctx.shop, tid, f"{ctx.tg.get('first_name') or ''} @{ctx.tg.get('username') or '-'} ({ctx.uid})", txt, None, True)
+    return {"id": tid}
+
+
+async def a_tk_reply(ctx: Ctx, d: dict) -> dict:
+    from handlers_tickets import _gate, _notify_admins
+    _tk_on(ctx)
+    t = await ctx.shop.db.tk_get(int(d.get("id") or 0))
+    txt = str(d.get("text") or "").strip()[:3000]
+    if not t or t["user_id"] != ctx.uid or t["status"] == "closed" or not txt:
+        raise ApiError(ctx.tr("این تیکت بسته است."), 400)
+    err = await _gate(ctx.shop, ctx.uid, ctx.tr, False)
+    if err:
+        raise ApiError(err, 429)
+    await ctx.shop.db.tk_add(t["id"], "user", txt, has_file=False)
+    await _notify_admins(ctx.shop, t["id"], f"{ctx.tg.get('first_name') or ''} @{ctx.tg.get('username') or '-'} ({ctx.uid})", txt, None, False)
+    return {"id": t["id"]}
+
+
+async def a_tk_close(ctx: Ctx, d: dict) -> dict:
+    t = await ctx.shop.db.tk_get(int(d.get("id") or 0))
+    if not t or t["user_id"] != ctx.uid:
+        raise ApiError(ctx.tr("پیدا نشد."), 404)
+    await ctx.shop.db.tk_set_status(t["id"], "closed")
+    return {"id": t["id"]}
 
 
 async def a_vpn_revoke(ctx: Ctx, d: dict) -> dict:
@@ -724,7 +806,7 @@ ACTIONS = {"vpn_plans": a_vpn_plans, "vpn_order": a_vpn_order, "vpn_test": a_vpn
            "vpn_renew_plans": a_vpn_renew_plans, "vpn_renew": a_vpn_renew, "vpn_addons": a_vpn_addons, "vpn_addon": a_vpn_addon,
            "vpn_revoke": a_vpn_revoke, "vpn_send": a_vpn_send, "vpn_toggle": a_vpn_toggle, "vpn_note": a_vpn_note, "vpn_delete": a_vpn_delete, "vpn_report": a_vpn_report,
            "agent_plans": a_agent_plans, "agent_order": a_agent_order, "agent_list": a_agent_list, "agent_get": a_agent_get,
-           "agent_addon": a_agent_addon, "agent_custom": a_agent_custom, "vpn_custom": a_vpn_custom, "agent_renew_plans": a_agent_renew_plans, "agent_renew": a_agent_renew, "agent_pw": a_agent_pw, "agent_send": a_agent_send,
+           "agent_addon": a_agent_addon, "agent_custom": a_agent_custom, "vpn_custom": a_vpn_custom, "vpn_move_opts": a_vpn_move_opts, "vpn_move": a_vpn_move, "tk_list": a_tk_list, "tk_get": a_tk_get, "tk_new": a_tk_new, "tk_reply": a_tk_reply, "tk_close": a_tk_close, "agent_renew_plans": a_agent_renew_plans, "agent_renew": a_agent_renew, "agent_pw": a_agent_pw, "agent_send": a_agent_send,
            "init": a_init, "catalog": a_catalog, "order_create": a_order_create, "order_get": a_order_get, "discount": a_discount,
            "pay": a_pay, "receipt": a_receipt, "check": a_check, "wallet": a_wallet, "orders": a_orders,
            "referral": a_referral, "set_lang": a_set_lang}

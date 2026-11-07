@@ -28,6 +28,7 @@ BULK_FILTERS = {
     "expired": "⌛️ منقضی‌شده‌ها",
     "disabled": "⏸ غیرفعال‌ها",
     "all": "📡 همه‌ی سرویس‌ها",
+    "sel": "✅ انتخاب کاربر (تیک‌زدن)",
 }
 BULK_ACTIONS = {
     "add_days": "➕ روز", "add_gb": "➕ حجم (GB)", "enable": "▶️ فعال‌سازی", "disable": "⏸ غیرفعال‌سازی",
@@ -105,7 +106,7 @@ class VpnOps:
             days = 0
         return gb, days
 
-    async def move(self, sid: int, target_pid: int, actor: str = "admin", user_id: int | None = None) -> dict:
+    async def move(self, sid: int, target_pid: int, actor: str = "admin", user_id: int | None = None, batch: str = "") -> dict:
         """سرویس را با حجم و زمانِ باقی‌مانده به پنل دیگر می‌برد (نه حجم/زمان تازه). خروجی: ردیف جدید سرویس. خطا: MoveError."""
         vs = self.vs
         lock = self._locks.setdefault(sid, asyncio.Lock())
@@ -177,8 +178,54 @@ class VpnOps:
                 await vs.shop.notify_admins(f"⚠️ انتقال سرویس #{sid} انجام شد ولی حذف نسخه‌ی قدیمی <code>{esc(old_name)}</code> از پنل مبدأ (#{old_panel_id}) ناموفق بود؛ دستی حذفش کنید.\n{esc(str(e)[:150])}",
                                             perm="vpn", topic="alerts")
             await self.db.log(actor, "vpn_move", f"#{sid} {old_panel_id}->{dst['id']}")
+            await self.db.vm_add(batch, "svc", sid, svc["user_id"], old_panel_id, dst["id"], old_name, name, actor)
             fresh = await self.db.get_vpn_service(sid)
             return fresh
+
+    # ------------------------------------------------------------------ بازگشت به لوکیشن قبلی
+    async def revert(self, mid: int, actor: str = "admin") -> dict:
+        """یک انتقال ثبت‌شده را برمی‌گرداند: روی پنل قبلی دوباره می‌سازد (با حجم/زمانِ باقی‌مانده‌ی فعلی) و از پنل فعلی پاک می‌کند."""
+        row = await self.db.one("SELECT * FROM vpn_moves WHERE id=?", (mid,))
+        if not row or row["kind"] != "svc" or row["status"] != "done":
+            raise MoveError(N_("این انتقال قبلاً برگردانده شده یا پیدا نشد."))
+        svc = await self.db.get_vpn_service(row["sid"])
+        if not svc or svc["status"] == "deleted":
+            raise MoveError(N_("سرویس پیدا نشد."))
+        if svc["panel_id"] != row["to_panel"]:
+            raise MoveError(N_("این سرویس بعد از آن انتقال دوباره جابه‌جا شده است؛ برگرداندنش از صفحه‌ی خود سرویس انجام شود."))
+        new = await self.move(row["sid"], row["from_panel"], actor=actor, batch="rv:" + (row["batch"] or str(mid)))
+        await self.db.vm_set(mid, "reverted")
+        return new
+
+    async def revert_batch(self, batch: str, actor: str = "admin", progress=None) -> dict:
+        """برگرداندن همه‌ی انتقال‌های یک دسته؛ برای هر کاربر لینک قبلی/جدید ارسال می‌شود. خطای یکی بقیه را متوقف نمی‌کند."""
+        rows = [r for r in await self.db.vm_batch_rows(batch) if r["status"] == "done"]
+        res = {"ok": 0, "fail": 0, "errors": []}
+        for i, r in enumerate(rows, 1):
+            try:
+                new = await self.revert(r["id"], actor=actor)
+                await self.notify_moved(new, back=True)
+                res["ok"] += 1
+            except MoveError as e:
+                res["fail"] += 1
+                res["errors"].append(f"#{r['sid']}: {e}")
+            except Exception as e:  # noqa: BLE001
+                log.exception("revert failed")
+                res["fail"] += 1
+                res["errors"].append(f"#{r['sid']}: {str(e)[:100]}")
+            if progress and i % 50 == 0:
+                await progress(i, len(rows))
+            await asyncio.sleep(0.25)
+        return res
+
+    async def notify_moved(self, row: dict, back: bool = False):
+        """پیام + کارت سرویس (لینک جدید) به صاحب سرویس بعد از انتقال/بازگشت."""
+        vs = self.vs
+        tr = await vs.shop.tr_for(row["user_id"])
+        t = N_("↩️ سرویس <code>{n}</code> به لوکیشن قبلی برگشت؛ حجم و زمان باقی‌مانده‌ی شما حفظ شده است. لینک اشتراک جدید:") if back else \
+            N_("📍 سرویس <code>{n}</code> به لوکیشن جدید منتقل شد؛ حجم و زمان باقی‌مانده‌ی شما حفظ شده است. لینک اشتراک جدید:")
+        await vs.shop.safe_send(row["user_id"], tr(t, n=esc(row["name"])))
+        await vs.send_service(row["user_id"], row)
 
     async def user_move(self, uid: int, sid: int, target_pid: int):
         row = await self.move(sid, target_pid, actor=f"user:{uid}", user_id=uid)
@@ -207,15 +254,32 @@ class VpnOps:
             a.append(now)
         elif flt == "disabled":
             w.append("s.status='disabled'")
-        elif flt != "all":
+        elif flt not in ("all",):
             return []
         return await self.db.all("SELECT s.*, p.name AS panel_name, p.type AS panel_type FROM vpn_services s LEFT JOIN vpn_panels p ON p.id=s.panel_id "
                                  f"WHERE {' AND '.join(w)} ORDER BY s.id LIMIT ?", (*a, limit))
+
+    async def search_page(self, panel_id, q: str, page: int, per: int = 8) -> tuple[list[dict], int]:
+        """صفحه‌ای از سرویس‌ها برای «انتخاب کاربر با تیک». q: بخشی از نام سرویس/عنوان یا آیدی عددی کاربر."""
+        w, a = ["s.status NOT IN ('deleted','pending_manual')"], []
+        if panel_id:
+            w.append("s.panel_id=?")
+            a.append(int(panel_id))
+        q = (q or "").strip()
+        if q:
+            w.append("(s.name LIKE ? OR s.title LIKE ? OR CAST(s.user_id AS TEXT)=?)")
+            a += [f"%{q}%", f"%{q}%", q]
+        where = " AND ".join(w)
+        total = (await self.db.one(f"SELECT COUNT(*) c FROM vpn_services s WHERE {where}", tuple(a)))["c"]
+        rows = await self.db.all("SELECT s.*, p.name AS panel_name, p.type AS panel_type FROM vpn_services s LEFT JOIN vpn_panels p ON p.id=s.panel_id "
+                                 f"WHERE {where} ORDER BY s.id DESC LIMIT ? OFFSET ?", (*a, per, page * per))
+        return rows, total
 
     async def bulk_run(self, rows: list[dict], act: str, value=None, target_pid=None, actor="admin", progress=None) -> dict:
         """اجرای یک عملیات روی فهرست سرویس‌ها؛ خطای یک سرویس بقیه را متوقف نمی‌کند. خروجی: {ok, fail, errors:[...]}"""
         vs = self.vs
         res = {"ok": 0, "fail": 0, "errors": []}
+        batch = res["batch"] = f"b{int(time.time())}" if act == "move" else ""
         for i, svc in enumerate(rows, 1):
             try:
                 if act in ("add_days", "add_gb", "enable", "disable"):
@@ -223,11 +287,9 @@ class VpnOps:
                 elif act == "delete":
                     ok, msg = await vs.admin_delete(svc["id"], actor=actor)
                 elif act == "move":
-                    await self.move(svc["id"], int(target_pid), actor=actor)
+                    row = await self.move(svc["id"], int(target_pid), actor=actor, batch=batch)
                     ok, msg = True, ""
-                    row = await self.db.get_vpn_service(svc["id"])
-                    await vs.shop.safe_send(row["user_id"], f"📍 سرویس <code>{esc(row['name'])}</code> به لوکیشن جدید منتقل شد؛ حجم و زمان باقی‌مانده‌ی شما حفظ شده است. لینک اشتراک جدید:")
-                    await vs.send_service(row["user_id"], row)
+                    await self.notify_moved(row)
                 elif act == "msg":
                     await vs.shop.safe_send(svc["user_id"], str(value))
                     ok, msg = True, ""

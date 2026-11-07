@@ -415,6 +415,7 @@ async def _agents(target, shop: Shop, status: str, page: int, q=""):
     if nav:
         rows.append(nav)
     rows.append([btn("🔎 جستجو", "adm:vpn:agf", role="admin"), btn("🆕 ساخت برای کاربر", "adm:vpn:agn", role="admin")])
+    rows.append([btn("🧰 عملیات گروهی نماینده‌ها", "adm:vpn:abk", role="admin"), btn("📍 تغییر لوکیشن نماینده‌ها", "adm:vpn:amvs", role="admin")])
     rows.append(back_row("adm:vpn"))
     n_all = await shop.db.count_agents()
     n_soon = await shop.db.count_agents(status="soon")
@@ -441,6 +442,11 @@ async def cb_find(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
 
 
+async def _can_revert(shop: Shop, ag) -> bool:
+    last = await shop.db.vm_last("agent", ag["id"])
+    return bool(last and last["to_panel"] == ag["panel_id"])
+
+
 async def agent_card(shop: Shop, ag):
     u = await shop.db.get_user(ag["user_id"])
     left = days_left(ag["expires_at"])
@@ -456,6 +462,8 @@ async def agent_card(shop: Shop, ag):
             [btn("▶️ فعال" if ag["status"] in ("disabled", "expired") else "⏸ غیرفعال", f"adm:vpn:aga:{aid}:{'enable' if ag['status'] in ('disabled', 'expired') else 'disable'}", role="action"),
              btn("🔑 رمز جدید", f"adm:vpn:aga:{aid}:password", role="action")],
             [btn("📤 ارسال مجدد برای کاربر", f"adm:vpn:aga:{aid}:resend", role="action"), btn("📝 یادداشت", f"adm:vpn:agv:{aid}:note", role="admin")],
+            [btn("📍 انتقال به پنل دیگر", f"adm:vpn:amv:{aid}", role="admin")] + (
+                [btn("↩️ بازگشت به لوکیشن قبلی", f"adm:vpn:arv:{aid}", role="action")] if await _can_revert(shop, ag) else []),
             [btn("🗑 حذف", f"adm:vpn:aga:{aid}:delete", role="reject"), btn("💸 حذف + بازگشت وجه", f"adm:vpn:aga:{aid}:refund", role="reject")],
             back_row("adm:vpn:agl:all:0")]
     return txt, ikb(rows)

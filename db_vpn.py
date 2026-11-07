@@ -40,6 +40,12 @@ CREATE TABLE IF NOT EXISTS vpn_agents(
   users_count INTEGER NOT NULL DEFAULT 0, max_users INTEGER NOT NULL DEFAULT 0, order_id INTEGER, title TEXT NOT NULL DEFAULT '',
   notified TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
   last_sync INTEGER NOT NULL DEFAULT 0, meta TEXT NOT NULL DEFAULT '{}');
+CREATE TABLE IF NOT EXISTS vpn_moves(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, batch TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT 'svc', sid INTEGER NOT NULL,
+  user_id INTEGER NOT NULL DEFAULT 0, from_panel INTEGER NOT NULL, to_panel INTEGER NOT NULL, old_name TEXT NOT NULL DEFAULT '',
+  new_name TEXT NOT NULL DEFAULT '', actor TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'done', at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS ix_vpnmv_batch ON vpn_moves(batch);
+CREATE INDEX IF NOT EXISTS ix_vpnmv_sid ON vpn_moves(kind, sid);
 CREATE TABLE IF NOT EXISTS vpn_stock(
   id INTEGER PRIMARY KEY AUTOINCREMENT, panel_id INTEGER NOT NULL, plan_id INTEGER NOT NULL DEFAULT 0,
   name TEXT NOT NULL DEFAULT '', config TEXT NOT NULL, used INTEGER NOT NULL DEFAULT 0, service_id INTEGER,
@@ -69,6 +75,26 @@ LIVE = ("active", "disabled", "limited", "expired", "on_hold", "pending_manual")
 
 
 class VpnDB:
+    # ---------- لاگ انتقال سرویس/نماینده بین پنل‌ها (برای «بازگشت به لوکیشن قبلی»)
+    async def vm_add(self, batch, kind, sid, user_id, from_panel, to_panel, old_name, new_name, actor) -> int:
+        cur = await self.run("INSERT INTO vpn_moves(batch,kind,sid,user_id,from_panel,to_panel,old_name,new_name,actor,at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                             (batch or "", kind, sid, user_id, from_panel, to_panel, old_name, new_name, actor, int(time.time())))
+        return cur.lastrowid
+
+    async def vm_last(self, kind, sid):
+        return await self.one("SELECT * FROM vpn_moves WHERE kind=? AND sid=? AND status='done' ORDER BY id DESC LIMIT 1", (kind, sid))
+
+    async def vm_set(self, mid, status):
+        await self.run("UPDATE vpn_moves SET status=? WHERE id=?", (status, mid))
+
+    async def vm_batch_rows(self, batch):
+        return await self.all("SELECT * FROM vpn_moves WHERE batch=? ORDER BY id", (batch,))
+
+    async def vm_batches(self, kind="svc", limit=15):
+        return await self.all(
+            "SELECT batch, MIN(at) AS at, COUNT(*) AS n, SUM(status='done') AS n_done, MIN(from_panel) AS from_panel, MIN(to_panel) AS to_panel, MIN(actor) AS actor "
+            "FROM vpn_moves WHERE kind=? AND batch<>'' AND batch NOT LIKE 'rv:%' GROUP BY batch ORDER BY MIN(id) DESC LIMIT ?", (kind, limit))
+
     # ---------- موجودی کانفیگ برای پنل دستی (plan_id: >0 همان پلن، 0 = هر پلن این پنل، -1 = اکانت تست)
     async def add_vpn_stock(self, panel_id: int, plan_id: int, items: list) -> int:
         now = int(time.time())
