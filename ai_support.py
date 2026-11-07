@@ -50,6 +50,7 @@ When the user reports a problem (cannot connect, slow, error, payment or deliver
 2. If the cause is clear, give the MOST LIKELY cause first, then up to 3 other possible causes, each with a one-line fix, as a short numbered list. Ask the user to tell you the result of the first step.
 3. If the description is vague ("it does not work", "error") and you cannot tell what the problem is, do NOT guess: ask ONE short question and {vision}
 4. When the user sends a screenshot: NEVER start with a generic description such as "this is a screenshot of a VPN app". Go straight to the diagnosis: name the concrete symptom you can see (e.g. "all configs show ping -1", "connection timed out", "subscription update failed", "service expired", the exact error text) and answer for THAT symptom using the VPN PLAYBOOK below. If you truly see no problem in the picture, ask what exactly happens (cannot connect? slow? disconnects?) instead of giving a generic list. If the picture is unreadable, cropped or unrelated, say so and ask for a clearer one.
+4b. LIVE SERVICE CHECK: the section below (when not empty) holds a fresh check of the user's own service, taken from the panel just now. If the user reports a connection problem and LIVE SERVICE CHECK is empty because the user has several services and did not say which one, FIRST ask for the service name exactly as it appears in the bot under "My services" (for example vpn_ab12cd) and say you will check it; do not give generic steps yet. When the check exists, tell the findings first in one or two sentences (for example: "your traffic is finished: 10.00 of 10.00 GB used" or "your service expired 2 days ago" or "it is disabled") and which bot button fixes it (renew, buy extra traffic/days, enable). If the check shows a limit was reached or the service is disabled/expired, that is the cause: do not list unrelated network steps. If the check is healthy (active, time and traffic left, panel reachable), say so and continue with the VPN PLAYBOOK steps.
 5. VPN PLAYBOOK. You are an expert on V2Ray/Xray-style VPN subscriptions (VLESS, VMess, Trojan, Shadowsocks, Reality) and their client apps. Match the symptom, then give the steps in this order, most effective first (always keep "update the subscription" first when it applies):
  a) Ping -1 / negative / "failed" / red / test shows timeout for the configs, or "no connection": (1) update the subscription link inside the app (refresh/update button), then run the ping/test again; (2) check that the phone's own internet works without the VPN and try switching between Wi-Fi and mobile data; (3) try the other configs/locations in the list; (4) try another app such as V2Box, Hiddify, Happ or NekoBox (iPhone: V2Box, Streisand, Hiddify, Happ); (5) make sure the service is not expired or out of traffic (check USER ACCOUNT); (6) set date/time to automatic and update the app.
  b) Timeout / "connection timed out" / handshake failed / i/o timeout / context deadline exceeded: (1) update the subscription; (2) set the phone date and time to AUTOMATIC with the correct time zone (a wrong clock is a very common cause, VMess/Reality fail when the time is off); (3) update the app to the latest version; (4) change network (Wi-Fi <-> mobile data) because the provider may block one; (5) try another config/location or another protocol in the list; (6) turn off any other VPN/proxy/private DNS and try again; (7) check service expiry/traffic.
@@ -62,6 +63,9 @@ When the user reports a problem (cannot connect, slow, error, payment or deliver
  i) Windows/Mac: run the app as administrator, try TUN mode instead of system proxy, allow it in the firewall/antivirus, update the app.
  Apps you may suggest: Android: v2rayNG, Hiddify, NekoBox, V2Box, Happ; iPhone: V2Box, Streisand, Hiddify, Happ, Shadowrocket (paid); Windows: Hiddify, v2rayN, Nekoray; Mac: Hiddify, V2Box. If the owner wrote recommended apps or tutorials in BUSINESS KNOWLEDGE, prefer those. Never ask the user to send their subscription link or config text in the chat.
 6. If after two attempts the problem is not solved, end with the marker {mark} so human support is offered.
+
+=== LIVE SERVICE CHECK (this user's service, just fetched) ===
+{check}
 
 === BUSINESS KNOWLEDGE (written by the owner) ===
 {business}
@@ -94,6 +98,7 @@ class AiSupport:
         self.shop = shop
         self._hist: dict[int, tuple[float, list]] = {}
         self._last: dict[int, float] = {}
+        self._focus: dict[int, tuple[float, list]] = {}
 
     # ------------------------------------------------------------------ تنظیمات
     @property
@@ -205,14 +210,76 @@ class AiSupport:
             log.exception("ai account")
         return "\n".join(out)
 
-    async def system_prompt(self, user, lang_name: str) -> str:
+    async def _service_check(self, uid: int, user, text: str) -> str:
+        """بررسی زنده‌ی سرویسِ خودِ کاربر: اگر اسم سرویس در پیام باشد، یا کاربر فقط یک سرویس دارد، یا قبلاً در همین گفتگو اسم داده.
+        فقط داده‌ی خودِ کاربر؛ لینک اشتراک/رمز/آدرس پنل هرگز نمی‌آید."""
+        if not user:
+            return ""
+        shop = self.shop
+        try:
+            svcs = [sv for sv in await shop.db.list_vpn_services(user_id=user["id"], limit=20) if sv["status"] != "deleted"]
+        except Exception:  # noqa: BLE001
+            return ""
+        if not svcs:
+            return "(the user has no VPN service)"
+        low = (text or "").lower()
+        pick = [sv for sv in svcs if sv["name"].lower() in low or (len((sv.get("title") or "").strip()) >= 3 and sv["title"].strip().lower() in low)]
+        if pick:
+            self._focus[uid] = (time.time(), [sv["id"] for sv in pick[:2]])
+        else:
+            ts, ids = self._focus.get(uid, (0, []))
+            if time.time() - ts < HIST_TTL:
+                pick = [sv for sv in svcs if sv["id"] in ids]
+            if not pick and len(svcs) == 1:
+                pick = svcs
+        if not pick:
+            return ""
+        out = []
+        now = time.time()
+        for sv in pick[:2]:
+            reach = "yes"
+            try:
+                sv = await asyncio.wait_for(shop.vpn.sync(sv, force=False), 8) or sv        # پنلِ کند، گفتگو را معطل نکند
+            except Exception as e:  # noqa: BLE001
+                reach = f"NO (could not read it from the panel: {type(e).__name__}); the numbers below may be a few minutes old"
+            sv = await shop.db.get_vpn_service(sv["id"]) or sv
+            total, used = int(sv["total_bytes"] or 0), int(sv["used_bytes"] or 0)
+            gb = 2 ** 30
+            if total:
+                use = f"{used / gb:.2f} of {total / gb:.2f} GB used ({min(100, int(used * 100 / total))}%), {max(total - used, 0) / gb:.2f} GB left"
+            else:
+                use = f"{used / gb:.2f} GB used, traffic unlimited"
+            if sv["expires_at"]:
+                d = int((sv["expires_at"] - now) // 86400)
+                tl = f"{d} days left" if sv["expires_at"] > now else f"EXPIRED {abs(d)} days ago"
+            else:
+                tl = "no expiry date"
+            flags = []
+            if sv["expires_at"] and sv["expires_at"] < now:
+                flags.append("EXPIRED")
+            if total and used >= total:
+                flags.append("TRAFFIC USED UP")
+            if sv["status"] == "disabled":
+                flags.append("DISABLED")
+            if sv["status"] == "pending_manual":
+                flags.append("NOT DELIVERED YET (waiting for manual delivery)")
+            if total and not flags and used * 100 / total >= 90:
+                flags.append("TRAFFIC ALMOST FINISHED")
+            if sv["expires_at"] and not flags and sv["expires_at"] - now < 2 * 86400:
+                flags.append("EXPIRES SOON")
+            out.append(f"service {sv['name']}" + (f" ({sv['title']})" if sv.get("title") else "") + f": status={sv['status']}; time: {tl}; usage: {use}; panel reachable: {reach}; "
+                       + ("PROBLEMS FOUND: " + ", ".join(flags) if flags else "no limit problem found (active, within time and traffic)"))
+        return "\n".join(out)
+
+    async def system_prompt(self, user, lang_name: str, text: str = "") -> str:
         s = self.s
         return SYSTEM.format(
             shop=s.get("shop_name") or "Shop", lang=lang_name, mark=HUMAN_MARK, vision=self._vision_hint(),
             business=(s.get("ai_business") or "").strip()[:6000] or "(the owner has not written anything yet)",
             extra=(s.get("ai_rules") or "").strip()[:2000] or "(none)",
             catalog=await self._catalog(user), payments=self._payments(),
-            account=await self._account(user), unit="Toman (1 Toman = 10 Rial)")
+            account=await self._account(user), check=(await self._service_check(user["id"], user, text) if user else "") or "(empty: the user has not said which service, or has several)",
+            unit="Toman (1 Toman = 10 Rial)")
 
     # ------------------------------------------------------------------ محدودیت
     async def _limits(self, uid: int):
@@ -351,7 +418,7 @@ class AiSupport:
             hist = []
         hist = hist[-(HIST_TURNS * 2):]
         msgs = hist + [{"role": "user", "content": text}]
-        system = await self.system_prompt(user, lang_name)
+        system = await self.system_prompt(user, lang_name, text)
         out, tokens = await self._call(system, msgs, image)
         await self.shop.db.ai_usage_add(uid, today(), tokens)
         out = re.sub(r"<think>.*?</think>", "", out, flags=re.S | re.I).strip()      # مدل‌های استدلالی (Qwen/DeepSeek روی Groq)
@@ -367,3 +434,4 @@ class AiSupport:
 
     def reset(self, uid: int):
         self._hist.pop(uid, None)
+        self._focus.pop(uid, None)

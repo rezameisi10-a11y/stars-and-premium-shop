@@ -176,6 +176,31 @@ async def run(tmp):
     mode["dead"] = ()
     await shop.set_setting("ai_model", "gemini-x")
 
+    # --- بررسی زنده‌ی سرویس کاربر
+    now_sql = "strftime('%s','now')"
+    await db.run("UPDATE vpn_services SET used_bytes=total_bytes, last_sync=strftime('%s','now') WHERE name='vpn_abc'")
+    chk = await shop.ai._service_check(5, await db.get_user(5), "اینترنت ندارم")
+    ok("vpn_abc" in chk and "TRAFFIC USED UP" in chk and "SECRET" not in chk and "https://" not in chk, "کاربر با یک سرویس: خودکار چک می‌شود، حجم تمام‌شده تشخیص داده شد")
+    await db.run(f"UPDATE vpn_services SET used_bytes=0, expires_at={now_sql}-3*86400, last_sync={now_sql} WHERE name='vpn_abc'")
+    chk = await shop.ai._service_check(5, await db.get_user(5), "کار نمیکنه")
+    ok("EXPIRED" in chk, "زمان تمام‌شده تشخیص داده شد")
+    await db.run(f"UPDATE vpn_services SET expires_at={now_sql}+20*86400, status='disabled', last_sync={now_sql} WHERE name='vpn_abc'")
+    ok("DISABLED" in await shop.ai._service_check(5, await db.get_user(5), "x"), "غیرفعال تشخیص داده شد")
+    await db.run(f"UPDATE vpn_services SET status='active', last_sync={now_sql} WHERE name='vpn_abc'")
+    ok("no limit problem" in await shop.ai._service_check(5, await db.get_user(5), "x"), "سالم: مشکل حد و مرز نیست")
+    for n in ("vpn_one", "vpn_two"):
+        await db.run(f"INSERT INTO vpn_services(user_id,panel_id,plan_id,name,status,expires_at,total_bytes,used_bytes,sub_url,created_at,updated_at,last_sync) VALUES(6,?,1,?,'active',{now_sql}+5*86400,?,?,'https://sub.example/T2',0,0,{now_sql})", (pid, n, 10 * 2**30, 10 * 2**30 if n == "vpn_two" else 0))
+    ok(await shop.ai._service_check(6, await db.get_user(6), "وصل نمیشه") == "", "چند سرویس و اسم نداده: خالی (AI باید اسم را بپرسد)")
+    sp = await shop.ai.system_prompt(await db.get_user(6), "Persian", "وصل نمیشه")
+    ok("ask for the service name" in sp and "(empty:" in sp, "پرامپت: اسم سرویس را بپرس")
+    chk = await shop.ai._service_check(6, await db.get_user(6), "سرویس vpn_two من")
+    ok("vpn_two" in chk and "TRAFFIC USED UP" in chk and "vpn_one" not in chk, "با اسم سرویس: همان سرویس چک شد")
+    chk = await shop.ai._service_check(6, await db.get_user(6), "ممنون، حالا چیکار کنم؟")
+    ok("vpn_two" in chk, "اسم در پیام بعدی هم یادش می‌ماند")
+    shop.ai.reset(6)
+    ok(await shop.ai._service_check(6, await db.get_user(6), "ممنون") == "", "بعد از پایان گفتگو فراموش می‌شود")
+    await db.run(f"UPDATE vpn_services SET used_bytes=2*1073741824, expires_at={now_sql}+5*86400, last_sync={now_sql} WHERE name='vpn_abc'")
+
     # --- عکس مشکل (اسکرین‌شات)
     import io
     from datetime import datetime
