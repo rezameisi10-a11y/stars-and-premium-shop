@@ -16,6 +16,13 @@ log = logging.getLogger("vpn_ops")
 GB = 1024 ** 3
 
 
+async def _owner_act(shop, uid, act, value, actor):
+    """اعتبار یا تخفیف شخصی برای یک کاربر؛ (ok, پیام)."""
+    if act in ("credit", "sub_credit"):
+        return await shop.admin_adjust_balance(uid, "add" if act == "credit" else "sub", int(value), "bulk", actor)
+    return await shop.admin_set_personal_discount(uid, max(0, min(int(value), 90)), actor)
+
+
 class MoveError(Exception):
     """خطای قابل‌نمایش (پیام فارسی که به کاربر/ادمین گفته می‌شود)."""
 
@@ -32,6 +39,8 @@ BULK_FILTERS = {
 }
 BULK_ACTIONS = {
     "add_days": "➕ روز", "add_gb": "➕ حجم (GB)", "enable": "▶️ فعال‌سازی", "disable": "⏸ غیرفعال‌سازی",
+    "sub_days": "➖ کاهش روز", "sub_gb": "➖ کاهش حجم (GB)",
+    "credit": "💰 افزایش اعتبار (تومان)", "sub_credit": "💳 کاهش اعتبار (تومان)", "discount": "🏷 تخفیف شخصی (٪)",
     "move": "📍 انتقال به پنل دیگر", "msg": "✉️ پیام به صاحب‌ها", "delete": "🗑 حذف",
 }
 
@@ -280,9 +289,15 @@ class VpnOps:
         vs = self.vs
         res = {"ok": 0, "fail": 0, "errors": []}
         batch = res["batch"] = f"b{int(time.time())}" if act == "move" else ""
+        seen = set()
         for i, svc in enumerate(rows, 1):
             try:
-                if act in ("add_days", "add_gb", "enable", "disable"):
+                if act in ("credit", "sub_credit", "discount"):       # روی «صاحب» اعمال می‌شود؛ چند سرویسِ یک نفر = یک‌بار
+                    if svc["user_id"] in seen:
+                        continue
+                    seen.add(svc["user_id"])
+                    ok, msg = await _owner_act(vs.shop, svc["user_id"], act, value, actor)
+                elif act in ("add_days", "add_gb", "sub_days", "sub_gb", "enable", "disable"):
                     ok, msg = await vs.admin_action(svc["id"], act, value, actor=actor)
                 elif act == "delete":
                     ok, msg = await vs.admin_delete(svc["id"], actor=actor)

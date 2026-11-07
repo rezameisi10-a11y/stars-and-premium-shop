@@ -18,7 +18,8 @@ PER = 8
 AB_FILTERS = {"all": "📡 همه‌ی نماینده‌ها", "active": "🟢 فعال‌ها", "soon": "⚠️ رو به اتمام (زمان یا ≥۹۰٪ حجم)", "limited": "🟠 حجم تمام‌شده",
               "expired": "🔴 منقضی‌شده‌ها", "disabled": "⚫️ غیرفعال‌ها", "sel": "✅ انتخاب نماینده (تیک‌زدن)"}
 AB_ACTIONS = {"add_days": "➕ روز", "add_gb": "➕ حجم (GB)", "enable": "▶️ فعال‌سازی", "disable": "⏸ غیرفعال‌سازی",
-              "move": "📍 انتقال به پنل دیگر", "msg": "✉️ پیام به نماینده‌ها"}
+              "sub_days": "➖ کاهش روز", "sub_gb": "➖ کاهش حجم (GB)",
+              "credit": "💰 افزایش اعتبار (تومان)", "sub_credit": "💳 کاهش اعتبار (تومان)", "discount": "🏷 تخفیف شخصی (٪)", "move": "📍 انتقال به پنل دیگر", "msg": "✉️ پیام به نماینده‌ها"}
 
 
 class AB(StatesGroup):
@@ -224,10 +225,15 @@ async def cb_action(cb: CallbackQuery, shop: Shop, state: FSMContext):
         return
     d["a"] = act
     await state.update_data(ab=d)
-    if act in ("add_days", "add_gb", "msg"):
+    if act in ("add_days", "add_gb", "sub_days", "sub_gb", "msg", "credit", "sub_credit", "discount"):
         await state.set_state(AB.wiz)
         await state.update_data(flow="abval")
-        q = {"add_days": "چند روز اضافه شود؟ (عدد)", "add_gb": "چند گیگ به سقف حجم هر نماینده اضافه شود؟ (عدد؛ نماینده‌ی حجم نامحدود رد می‌شود)",
+        q = {"sub_days": "چند روز از زمان هر نماینده کم شود؟ (عدد)",
+             "sub_gb": "چند گیگ از سقف حجم هر نماینده کم شود؟ (عدد؛ پایین‌تر از مصرف فعلی نمی‌رود؛ نامحدود رد می‌شود)",
+             "sub_credit": "چند تومان از کیف پول هر نماینده کم شود؟ (عدد؛ اگر موجودی کم باشد رد می‌شود)",
+             "credit": "چند تومان به کیف پول هر نماینده اضافه شود؟ (عدد)",
+             "discount": "درصد تخفیف شخصی (۰ تا ۹۰)؟ برای برداشتن تخفیف ۰ بفرستید. جایگزین تخفیف قبلی می‌شود.",
+             "add_days": "چند روز اضافه شود؟ (عدد)", "add_gb": "چند گیگ به سقف حجم هر نماینده اضافه شود؟ (عدد؛ نماینده‌ی حجم نامحدود رد می‌شود)",
              "msg": "متن پیام را بفرستید (به صاحب هر پنل نمایندگی یک‌بار ارسال می‌شود؛ HTML ساده مجاز است):"}[act]
         await cb.message.answer(q, reply_markup=_ask_kb())
     elif act == "move":
@@ -270,10 +276,13 @@ async def wiz_text(m: Message, shop: Shop, state: FSMContext):
             if not val:
                 raise ValueError("متن خالی است.")
         else:
-            val = float((m.text or "").strip().replace(",", "."))
-            if val <= 0:
+            val = float((m.text or "").strip().translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٫٬", "0123456789.,")).replace(",", ""))
+            if d["a"] == "discount":
+                if not 0 <= val <= 90:
+                    raise ValueError("عدد باید بین ۰ تا ۹۰ باشد.")
+            elif val <= 0:
                 raise ValueError("عدد باید بیشتر از صفر باشد.")
-            if d["a"] == "add_days":
+            if d["a"] in ("add_days", "sub_days", "credit", "sub_credit", "discount"):
                 val = int(val)
     except ValueError as e:
         await m.answer(f"❌ {e}")

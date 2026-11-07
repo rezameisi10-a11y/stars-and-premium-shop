@@ -612,10 +612,15 @@ async def cb_bulk_action(cb: CallbackQuery, shop: Shop, state: FSMContext):
         return
     d["a"] = act
     await state.update_data(bk=d)
-    if act in ("add_days", "add_gb", "msg"):
+    if act in ("add_days", "add_gb", "sub_days", "sub_gb", "msg", "credit", "sub_credit", "discount"):
         await state.set_state(AV.wiz)
         await state.update_data(flow="bkval")
-        q = {"add_days": "چند روز اضافه شود؟ (عدد)", "add_gb": "چند گیگ اضافه شود؟ (عدد)", "msg": "متن پیام را بفرستید (به صاحب هر سرویس یک‌بار ارسال می‌شود؛ HTML ساده مجاز است):"}[act]
+        q = {"add_days": "چند روز اضافه شود؟ (عدد)", "add_gb": "چند گیگ اضافه شود؟ (عدد)",
+             "sub_days": "چند روز از زمان هر سرویس کم شود؟ (عدد؛ سرویس بی‌انقضا رد می‌شود)",
+             "sub_gb": "چند گیگ از حجم هر سرویس کم شود؟ (عدد؛ پایین‌تر از مصرف فعلی نمی‌رود؛ نامحدود رد می‌شود)",
+             "sub_credit": "چند تومان از کیف پول هر کاربر کم شود؟ (عدد؛ اگر موجودی کم باشد رد می‌شود؛ هر کاربر فقط یک‌بار)",
+             "credit": "چند تومان به کیف پول هر کاربر اضافه شود؟ (عدد؛ برای کاربری که چند سرویس دارد فقط یک‌بار)",
+             "discount": "درصد تخفیف شخصی (۰ تا ۹۰)؟ برای برداشتن تخفیف ۰ بفرستید. جایگزین تخفیف قبلی می‌شود.", "msg": "متن پیام را بفرستید (به صاحب هر سرویس یک‌بار ارسال می‌شود؛ HTML ساده مجاز است):"}[act]
         await ans(cb.message, q, _ask_kb("adm:vpn:bk"))
     elif act == "move":
         panels = await shop.db.list_vpn_panels()
@@ -651,8 +656,11 @@ async def _bk_value(m: Message, shop: Shop, state: FSMContext, d0):
                 raise ValueError("متن خالی است.")
             val = val[:3500]
         else:
-            val = _num("float" if act == "add_gb" else "int", m.text)
-            if val <= 0:
+            val = _num("float" if act in ("add_gb", "sub_gb") else "int", m.text)
+            if act == "discount":
+                if not 0 <= val <= 90:
+                    raise ValueError("عدد باید بین ۰ تا ۹۰ باشد.")
+            elif val <= 0:
                 raise ValueError("عدد باید بیشتر از صفر باشد.")
     except ValueError as e:
         await ans(m, f"❌ {e}")

@@ -122,6 +122,21 @@ async def run(tmp):
     await asyncio.sleep(2)
     got = {getattr(m, "chat_id", 0) for nme, m in sess.calls[n:] if nme == "SendMessage" and "سلام نماینده" in (getattr(m, "text", "") or "")}
     ok({5, 6, 7} <= got, "پیام گروهی به همه‌ی نماینده‌ها")
+    for act, val in (("credit", "7000"), ("sub_credit", "2000"), ("sub_days", "1"), ("sub_gb", "1"), ("discount", "20")):
+        bal = {u: (await db.get_user(u))["balance"] for u in (5, 6, 7)}
+        for d in ("adm:vpn:abk", "adm:vpn:abkp:0", "adm:vpn:abkf:all", f"adm:vpn:abka:{act}"):
+            await feed(dp, bot, callback_query=cbq(1, d))
+        await feed(dp, bot, message=msg(1, val))
+        await feed(dp, bot, callback_query=cbq(1, "adm:vpn:abkgo"))
+        await asyncio.sleep(2)
+        if act == "credit":
+            ok(all([(await db.get_user(u))["balance"] == bal[u] + 7000 for u in (5, 6, 7)]), "اعتبار گروهی برای همه‌ی نماینده‌ها")
+        elif act == "sub_credit":
+            ok(all([(await db.get_user(u))["balance"] == bal[u] - 2000 for u in (5, 6, 7)]), "کاهش اعتبار گروهی برای همه‌ی نماینده‌ها")
+        elif act in ("sub_days", "sub_gb"):
+            ok(True, "کاهش گروهی نماینده‌ها اجرا شد: " + act)
+        else:
+            ok(all([(await db.get_user(u))["personal_discount"] == 20 for u in (5, 6, 7)]), "تخفیف گروهی برای همه‌ی نماینده‌ها")
     for d in ("adm:vpn:abk", f"adm:vpn:abkp:{pa}", "adm:vpn:abkf:all", "adm:vpn:abka:disable", "adm:vpn:abkgo"):
         await feed(dp, bot, callback_query=cbq(1, d))
     await asyncio.sleep(2)

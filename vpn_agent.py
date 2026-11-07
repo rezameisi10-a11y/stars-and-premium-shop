@@ -506,7 +506,11 @@ class AgentSales:
             if act == "sync":
                 await self.sync(ag)
                 return True, N_("همگام شد.")
-            if act == "add_days":
+            if act == "sub_days":
+                if not ag["expires_at"]:
+                    return False, N_("این نماینده تاریخ انقضا ندارد.")
+                await self.db.update_agent(aid, expires_at=max(ag["expires_at"] - int(value) * 86400, int(time.time()) + 60))
+            elif act == "add_days":
                 d = int(value)
                 base = ag["expires_at"] if ag["expires_at"] > time.time() else int(time.time())
                 await self.db.update_agent(aid, expires_at=base + d * 86400 if ag["expires_at"] or d else 0, notified="")
@@ -687,15 +691,29 @@ class AgentSales:
         import asyncio
         res = {"ok": 0, "fail": 0, "errors": []}
         batch = res["batch"] = f"a{int(time.time())}" if act == "move" else ""
+        seen = set()
         for i, ag in enumerate(rows, 1):
             try:
-                if act == "add_days":
+                if act in ("credit", "sub_credit", "discount"):
+                    if ag["user_id"] in seen:
+                        continue
+                    seen.add(ag["user_id"])
+                    from vpn_ops import _owner_act
+                    ok, msg = await _owner_act(self.shop, ag["user_id"], act, value, actor)
+                elif act == "add_days":
                     ok, msg = await self.admin_action(ag["id"], "add_days", value, actor=actor)
                 elif act == "add_gb":
                     if not ag["total_bytes"]:
                         ok, msg = False, N_("حجم نامحدود است.")
                     else:
                         ok, msg = await self.admin_action(ag["id"], "set_traffic", ag["total_bytes"] / GB + float(value), actor=actor)
+                elif act == "sub_days":
+                    ok, msg = await self.admin_action(ag["id"], "sub_days", value, actor=actor)
+                elif act == "sub_gb":
+                    if not ag["total_bytes"]:
+                        ok, msg = False, N_("حجم نامحدود است.")
+                    else:
+                        ok, msg = await self.admin_action(ag["id"], "set_traffic", max(ag["total_bytes"] / GB - float(value), (ag["used_bytes"] or 0) / GB, 0.01), actor=actor)
                 elif act in ("enable", "disable"):
                     ok, msg = await self.admin_action(ag["id"], act, actor=actor)
                 elif act == "move":

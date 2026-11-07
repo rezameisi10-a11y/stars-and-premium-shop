@@ -1268,6 +1268,16 @@ class VPN:
                 u = await drv.add_days(svc["name"], meta, int(value))
             elif act == "add_gb":
                 u = await drv.add_traffic(svc["name"], meta, float(value))
+            elif act == "sub_days":                                   # کاهش زمان (هرگز به «نامحدود» تبدیل نمی‌شود)
+                u0 = await drv.info(svc["name"], meta)
+                if not u0.expire:
+                    raise PanelError("این سرویس تاریخ انقضا ندارد")
+                u = await drv._set_limits(svc["name"], meta, total=u0.total, expire=max(u0.expire - int(value) * 86400, int(time.time()) + 60))
+            elif act == "sub_gb":                                     # کاهش حجم؛ پایین‌تر از مصرف فعلی نمی‌رود
+                u0 = await drv.info(svc["name"], meta)
+                if not u0.total:
+                    raise PanelError("حجم این سرویس نامحدود است")
+                u = await drv._set_limits(svc["name"], meta, total=max(u0.total - int(float(value) * GB), u0.used, 1), expire=u0.expire)
             elif act == "reset":
                 await drv.reset_usage(svc["name"], meta)
                 u = await drv.info(svc["name"], meta)
@@ -1303,6 +1313,14 @@ class VPN:
             f = dict(expires_at=base + int(value) * 86400, status="active")
         elif act == "add_gb":
             f = dict(total_bytes=(svc["total_bytes"] or 0) + int(float(value) * GB))
+        elif act == "sub_days":
+            if not svc["expires_at"]:
+                return False, N_("این سرویس تاریخ انقضا ندارد")
+            f = dict(expires_at=max(svc["expires_at"] - int(value) * 86400, int(time.time()) + 60))
+        elif act == "sub_gb":
+            if not svc["total_bytes"]:
+                return False, N_("حجم این سرویس نامحدود است")
+            f = dict(total_bytes=max(svc["total_bytes"] - int(float(value) * GB), svc["used_bytes"] or 0, 1))
         elif act == "reset":
             f = dict(used_bytes=0)
         elif act in ("enable", "disable"):

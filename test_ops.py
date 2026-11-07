@@ -74,6 +74,29 @@ async def run(tmp):
     xs = [await mk(6) for _ in range(3)]
     rows = await ops.select(pa, "all")
     ok(len(rows) >= 3, "انتخاب با فیلتر همه")
+    b6 = (await db.get_user(6))["balance"]
+    res = await ops.bulk_run([r for r in rows if r["user_id"] == 6], "credit", 5000)
+    ok(res["ok"] == 1 and (await db.get_user(6))["balance"] == b6 + 5000, "اعتبار گروهی: چند سرویس = یک‌بار")
+    res = await ops.bulk_run([r for r in rows if r["user_id"] == 6], "discount", 15)
+    ok(res["ok"] == 1 and (await db.get_user(6))["personal_discount"] == 15, "تخفیف شخصی گروهی")
+    res = await ops.bulk_run([r for r in rows if r["user_id"] == 6], "sub_credit", 2000)
+    ok(res["ok"] == 1 and (await db.get_user(6))["balance"] == b6 + 3000, "کاهش اعتبار گروهی")
+    res = await ops.bulk_run([r for r in rows if r["user_id"] == 6], "sub_credit", 10**9)
+    ok(res["fail"] == 1 and (await db.get_user(6))["balance"] == b6 + 3000, "کاهش بیش از موجودی رد شد")
+    r0 = [r for r in rows if r["user_id"] == 6][:1]
+    e0 = r0[0]["expires_at"]; t0 = (await db.get_vpn_service(r0[0]["id"]))["total_bytes"]
+    res = await ops.bulk_run(r0, "sub_days", 3)
+    e1 = (await db.get_vpn_service(r0[0]["id"]))["expires_at"]
+    ok(res["ok"] == 1 and 2.9 * 86400 < e0 - e1 < 3.1 * 86400, "کاهش روز گروهی")
+    res = await ops.bulk_run(r0, "sub_gb", 2)
+    t1 = (await db.get_vpn_service(r0[0]["id"]))["total_bytes"]
+    ok(res["ok"] == 1 and abs((t0 - t1) - 2 * GB) < 0.01 * GB, "کاهش حجم گروهی")
+    res = await ops.bulk_run(r0, "sub_gb", 999)
+    t2 = (await db.get_vpn_service(r0[0]["id"]))["total_bytes"]
+    ok(t2 >= (await db.get_vpn_service(r0[0]["id"]))["used_bytes"] and t2 > 0, "کاهش حجم زیر مصرف نمی‌رود و نامحدود نمی‌شود")
+    await ops.bulk_run([r for r in rows if r["user_id"] == 6], "discount", 0)
+    ok((await db.get_user(6))["personal_discount"] == 0, "تخفیف ۰ = برداشتن")
+    rows = await ops.select(pa, "all")
     before = {r["id"]: r["expires_at"] for r in rows}
     res = await ops.bulk_run(rows, "add_days", 5)
     ok(res["ok"] == len(rows) and res["fail"] == 0, "افزودن روز گروهی")
