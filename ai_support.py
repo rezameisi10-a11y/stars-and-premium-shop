@@ -234,43 +234,57 @@ class AiSupport:
         ts, ids = self._focus.get(uid, (0, []))
         return bool(ids) and time.time() - ts < HIST_TTL
 
-    async def _check_one(self, it: dict) -> str:
-        shop, now, gb = self.shop, time.time(), 2 ** 30
+    async def item_state(self, it: dict) -> dict:
+        """وضعیت زنده‌ی یک اشتراک (VPN یا نمایندگی) از پنل؛ برای پرامپت و برای پیام قطعی بعد از انتخاب."""
+        shop, now = self.shop, time.time()
         row, agent = it["row"], it["kind"] == "a"
-        reach = "yes"
+        reach = True
         try:
             fn = shop.vpn.agents.sync if agent else shop.vpn.sync
             await asyncio.wait_for(fn(row, force=False), 8)               # پنلِ کند، گفتگو را معطل نکند
         except Exception as e:  # noqa: BLE001
-            reach = f"NO (could not read it from the panel: {type(e).__name__}); the numbers below may be a few minutes old"
+            reach = type(e).__name__
         row = (await (shop.db.get_agent(row["id"]) if agent else shop.db.get_vpn_service(row["id"]))) or row
         total, used = int(row["total_bytes"] or 0), int(row["used_bytes"] or 0)
-        use = (f"{used / gb:.2f} of {total / gb:.2f} GB used ({min(100, int(used * 100 / total))}%), {max(total - used, 0) / gb:.2f} GB left"
+        exp = int(row["expires_at"] or 0)
+        gb = 2 ** 30
+        st = {"it": it, "row": row, "agent": agent, "total": total, "used": used, "exp": exp, "reach": reach,
+              "gb_left": max(total - used, 0) / gb if total else None, "days_left": int((exp - now) // 86400) if exp else None,
+              "time_over": bool(exp and exp < now), "traffic_over": bool(total and used >= total), "disabled": row["status"] == "disabled",
+              "pending": row["status"] == "pending_manual"}
+        st["limit"] = st["time_over"] or st["traffic_over"]
+        return st
+
+    @staticmethod
+    def format_state(st: dict) -> str:
+        gb, it, row = 2 ** 30, st["it"], st["row"]
+        total, used, exp = st["total"], st["used"], st["exp"]
+        use = (f"{used / gb:.2f} of {total / gb:.2f} GB used ({min(100, int(used * 100 / total))}%), {st['gb_left']:.2f} GB left"
                if total else f"{used / gb:.2f} GB used, traffic unlimited")
-        if row["expires_at"]:
-            d = int((row["expires_at"] - now) // 86400)
-            tl = f"{d} days left" if row["expires_at"] > now else f"EXPIRED {abs(d)} days ago"
-        else:
-            tl = "no expiry date"
+        tl = "no expiry date" if not exp else (f"{st['days_left']} days left" if not st["time_over"] else f"EXPIRED {abs(st['days_left'])} days ago")
         flags = []
-        if row["expires_at"] and row["expires_at"] < now:
+        if st["time_over"]:
             flags.append("EXPIRED")
-        if total and used >= total:
+        if st["traffic_over"]:
             flags.append("TRAFFIC USED UP")
-        if row["status"] == "disabled":
+        if st["disabled"]:
             flags.append("DISABLED")
-        if row["status"] == "pending_manual":
+        if st["pending"]:
             flags.append("NOT DELIVERED YET (waiting for manual delivery)")
         if total and not flags and used * 100 / total >= 90:
             flags.append("TRAFFIC ALMOST FINISHED")
-        if row["expires_at"] and not flags and row["expires_at"] - now < 2 * 86400:
+        if exp and not flags and st["days_left"] is not None and st["days_left"] < 2:
             flags.append("EXPIRES SOON")
         extra = ""
-        if agent:
+        if st["agent"]:
             extra = f"; customers {row['users_count']}" + (f" of max {row['max_users']}" if row["max_users"] else "")
-        head = ("RESELLER (agent) panel account " if agent else "service ") + row.get("username" if agent else "name", it["name"]) + (f" ({it['title']})" if it["title"] else "")
+        reach = "yes" if st["reach"] is True else f"NO (could not read it from the panel: {st['reach']}); the numbers below may be a few minutes old"
+        head = ("RESELLER (agent) panel account " if st["agent"] else "service ") + it["name"] + (f" ({it['title']})" if it["title"] else "")
         return (head + f": status={row['status']}; time: {tl}; usage: {use}{extra}; panel reachable: {reach}; "
                 + ("PROBLEMS FOUND: " + ", ".join(flags) if flags else "no limit problem found (active, within time and traffic)"))
+
+    async def _check_one(self, it: dict) -> str:
+        return self.format_state(await self.item_state(it))
 
     async def _service_check(self, uid: int, user, text: str) -> str:
         """بررسی زنده‌ی اشتراکِ خودِ کاربر (VPN یا پنل نمایندگی): اسمش در پیام باشد، انتخاب‌شده با دکمه باشد، یا فقط یکی داشته باشد.
@@ -429,7 +443,7 @@ class AiSupport:
         if image and (not self.vision_on() or len(image[0]) > MAX_IMG):
             raise AiError(N_("عکس پذیرفته نشد؛ مشکل را به‌صورت متن بنویسید.") if not self.vision_on() else N_("حجم عکس زیاد است؛ عکس کوچک‌تر بفرستید."))
         if image and not text:
-            text = "(The user sent only a screenshot of the problem. Analyze it.)"
+            text = f"(The user sent only a screenshot of the problem, without text. Analyze it and answer in {lang_name}.)"
         if not text:
             raise AiError(N_("لطفاً سؤال خود را به‌صورت متن بنویسید."))
         if not self.enabled():

@@ -20,9 +20,9 @@ class AiSt(StatesGroup):
     chat = State()
 
 
-def _kb(tr, human=False, fb=False, pick=False):
+def _kb(tr, human=False, fb=False, pick=False, extra=None):
     """fb: بعد از پاسخ AI؛ «حل شد / حل نشد» (حل نشد = وصل به پشتیبان انسانی). pick: چند اشتراک دارد؛ تعویض سرویس."""
-    rows = []
+    rows = list(extra or [])
     if fb:
         rows.append([btn(tr("✅ مشکلم حل شد"), "ai:ok", role="confirm"), btn(tr("❌ حل نشد؛ وصلم کن به پشتیبانی"), "ai:human", role="action")])
     elif human:
@@ -100,9 +100,42 @@ async def ai_choose(cb: CallbackQuery, shop: Shop, state: FSMContext, tr):
         return
     shop.ai.set_focus(uid, kind, sid)
     await state.update_data(ai_svc=it["name"])
-    await cb.message.answer(tr("✅ «{n}» انتخاب شد. چه مشکلی دارید؟ توضیح بدهید یا عکس (اسکرین‌شات) خطا را بفرستید.", n=esc(it["title"] or it["name"])),
-                            reply_markup=_kb(tr, pick=True))
     await cb.answer()
+    text, rows = await _state_msg(shop, it, tr)
+    await cb.message.answer(text, reply_markup=_kb(tr, pick=True, extra=rows))
+
+
+def _gbs(x) -> str:
+    return f"{x:.1f}".rstrip("0").rstrip(".") if x is not None else "∞"
+
+
+async def _state_msg(shop: Shop, it: dict, tr):
+    """بعد از انتخاب اشتراک: وضعیت زنده‌ی حجم/زمان را قطعی بگوید؛ تمام‌شده → دکمه‌ی تمدید، سالم → «مشکل از حجم/زمان نیست»."""
+    st = await shop.ai.item_state(it)
+    n = esc(it["title"] or it["name"])
+    row, agent, sid = st["row"], st["agent"], it["id"]
+    rows = []
+    if st["pending"]:
+        return tr("⏳ سرویس «{n}» هنوز تحویل داده نشده و در انتظار تحویل دستی است. اگر طولانی شده، دکمه‌ی «حل نشد» را بزنید.", n=n), rows
+    if st["limit"]:
+        what = (tr("حجم و زمان") if st["traffic_over"] and st["time_over"] else tr("حجم") if st["traffic_over"] else tr("زمان"))
+        text = tr("⚠️ {w} سرویس «{n}» تمام شده است؛ مشکل از همین‌جاست. از دکمه‌ی زیر می‌توانید اشتراک خود را تمدید کنید.", w=what, n=n)
+        if agent:
+            rows.append([btn(tr("🔄 تمدید"), f"vpn:agq:{sid}", role="action")])
+        else:
+            rows.append([btn(tr("🔄 تمدید"), f"vpn:rn:{sid}", role="action")])
+            if st["traffic_over"] and not st["time_over"]:
+                rows.append([btn(tr("➕ خرید حجم اضافه"), f"vpn:ad:{sid}:gb", role="action")])
+        return text, rows
+    if st["disabled"]:
+        rows.append([btn(tr("📡 کارت سرویس"), f"vpn:ag:{sid}" if agent else f"vpn:s:{sid}", role="action")])
+        return tr("⏸ سرویس «{n}» غیرفعال است؛ از کارت سرویس می‌توانید آن را روشن کنید. اگر روشن بود و باز مشکل دارید، توضیح بدهید.", n=n), rows
+    days = tr("{d} روز", d=st["days_left"]) if st["days_left"] is not None else tr("بدون محدودیت زمانی")
+    vol = tr("{g} گیگابایت", g=_gbs(st["gb_left"])) if st["gb_left"] is not None else tr("حجم نامحدود")
+    text = tr("✅ سرویس «{n}» هنوز {v} حجم و {d} زمان باقی‌مانده دارد؛ پس مشکل از تمام شدن حجم یا زمان نیست. لطفاً مشکل خود را بیان کنید یا عکس خطا را بفرستید.", n=n, v=vol, d=days)
+    if st["reach"] is not True:
+        text += "\n" + tr("(اطلاعات از پنل به‌صورت لحظه‌ای خوانده نشد و ممکن است چند دقیقه قدیمی باشد.)")
+    return text, rows
 
 
 @router.callback_query(F.data == "ai:ok")

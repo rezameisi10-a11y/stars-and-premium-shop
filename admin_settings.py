@@ -92,6 +92,11 @@ EXTRA_BUTTONS = {
 }
 
 
+def gcb(gid: str, page: int, uid: int = 0) -> str:
+    """callback صفحه‌ی یک گروه؛ اگر ادمین از «نرخ‌ها و قیمت‌گذاری» آمده، ':r' می‌چسبد تا «بازگشت» همان‌جا برگردد."""
+    return f"adm:sg:{gid}:{page}" + (":r" if uid in FROM_RATES else "")
+
+
 def group_view(shop: Shop, gid: str, page: int, uid: int = 0):
     g = GROUP_IDS[gid]
     fields = g[3]
@@ -110,11 +115,11 @@ def group_view(shop: Shop, gid: str, page: int, uid: int = 0):
             lines.append(f"{i}. {esc(label)}: <code>{esc(shown(key, val))}</code>")
     nav = []
     if page > 0:
-        nav.append(btn("◀️", f"adm:sg:{gid}:{page - 1}", role="nav"))
+        nav.append(btn("◀️", gcb(gid, page - 1, uid), role="nav"))
     if pages > 1:
         nav.append(btn(f"{page + 1}/{pages}", "adm:noop", role="nav"))
     if page < pages - 1:
-        nav.append(btn("▶️", f"adm:sg:{gid}:{page + 1}", role="nav"))
+        nav.append(btn("▶️", gcb(gid, page + 1, uid), role="nav"))
     if nav:
         kb.append(nav)
     extra = EXTRA_BUTTONS.get(gid, [])
@@ -135,6 +140,8 @@ async def cb_group(cb: CallbackQuery, shop: Shop, state: FSMContext):
     page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
     if len(parts) > 4 and parts[4] == "r":
         FROM_RATES.add(cb.from_user.id)
+    else:                                                       # از منوی تنظیمات/خانه باز شده، نه از «نرخ‌ها»
+        FROM_RATES.discard(cb.from_user.id)
     await view(cb, *group_view(shop, gid, page, cb.from_user.id))
     await cb.answer()
 
@@ -160,7 +167,7 @@ async def cb_field(cb: CallbackQuery, shop: Shop, state: FSMContext):
     if typ.startswith("select:"):
         opts = select_options(typ)
         kb = [[btn(("✔ " if s.get(key) == o else "") + option_label(key, o), f"adm:sv:{key}:{i}", role="admin")] for i, o in enumerate(opts)]
-        kb.append(back_row(f"adm:sg:{gid}:{page_of(gid, key)}"))
+        kb.append(back_row(gcb(gid, page_of(gid, key), cb.from_user.id)))
         await view(cb, f"<b>{esc(label)}</b>\n{hint_tg(hlp)}\n\nمقدار فعلی: <code>{esc(s.get(key, '') or '—')}</code>", ikb(kb))
         await cb.answer()
         return
@@ -170,7 +177,7 @@ async def cb_field(cb: CallbackQuery, shop: Shop, state: FSMContext):
     extra = ""
     if key in TEXT_KEYS:
         extra = "\n💡 می‌توانید متن را با فرمت (ضخیم، ایموجی پریمیوم و ...) بفرستید؛ همان‌طور که هست ذخیره می‌شود."
-    kb = ikb([[btn("🗑 پاک کردن مقدار", f"adm:sx:{key}", role="reject"), btn("❌ انصراف", f"adm:sg:{gid}:{page_of(gid, key)}", role="back")]])
+    kb = ikb([[btn("🗑 پاک کردن مقدار", f"adm:sx:{key}", role="reject"), btn("❌ انصراف", gcb(gid, page_of(gid, key), cb.from_user.id), role="back")]])
     await cb.message.answer(f"<b>{esc(label)}</b>\n{hint_tg(hlp)}\n\nمقدار فعلی: <code>{esc(cur)}</code>\n\nمقدار جدید را بفرستید:" + extra
                             + ("\n🔒 پیام شما بعد از ذخیره پاک می‌شود." if is_secret(key) else ""), reply_markup=kb)
     await cb.answer()
@@ -221,7 +228,7 @@ async def got_value(m: Message, shop: Shop, state: FSMContext):
             await m.delete()
         except Exception:  # noqa: BLE001
             pass
-    await m.answer("✅ ذخیره شد.", reply_markup=ikb([[btn("🔙 بازگشت به تنظیمات", f"adm:sg:{d['gid']}:{page_of(d['gid'], key)}", role="back")]]))
+    await m.answer("✅ ذخیره شد.", reply_markup=ikb([[btn("🔙 بازگشت به تنظیمات", gcb(d['gid'], page_of(d['gid'], key), m.from_user.id), role="back")]]))
 
 
 # ============================================================ کانال‌های عضویت اجباری

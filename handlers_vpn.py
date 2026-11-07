@@ -646,7 +646,8 @@ async def vpn_move_confirm(cb: CallbackQuery, shop: Shop, tr):
     tm = tr("نامحدود") if not days else tr("{d} روز", d=days)
     await cb.message.answer(tr("📍 انتقال به «{p}»", p=esc(dst["name"])) + "\n" + tr("حجم باقی‌مانده: {v}", v=vol) + "\n" + tr("زمان باقی‌مانده: {t}", t=tm)
                             + "\n\n" + tr("لینک اشتراک قبلی بعد از انتقال کار نمی‌کند و لینک جدید برای شما ارسال می‌شود. ادامه می‌دهید؟"),
-                            reply_markup=ikb([[btn(tr("✅ بله، منتقل کن"), f"vpn:mvg:{sid}:{pid}", role="confirm"), btn(tr("❌ انصراف"), f"vpn:rf:{sid}", role="reject")]]))
+                            reply_markup=ikb([[btn(tr("✅ بله، منتقل کن"), f"vpn:mvg:{sid}:{pid}", role="confirm"), btn(tr("❌ انصراف"), f"vpn:rf:{sid}", role="reject")],
+                                                  [btn(tr("🔙 بازگشت"), f"vpn:mv:{sid}", role="back")]]))
     await cb.answer()
 
 
@@ -805,7 +806,8 @@ async def agent_move_confirm(cb: CallbackQuery, shop: Shop, tr):
         await cb.answer(tr("این لوکیشن در دسترس نیست."), show_alert=True)
         return
     await cb.message.answer(tr("📍 انتقال به «{p}»", p=esc(dst["name"])) + "\n\n" + tr("آدرس و رمز پنل نمایندگی شما عوض می‌شود. کاربرانی که قبلاً داخل پنل قبلی ساخته‌اید خودکار منتقل نمی‌شوند و باید برای آن‌ها با پشتیبانی هماهنگ کنید. ادامه می‌دهید؟"),
-                            reply_markup=ikb([[btn(tr("✅ بله، منتقل کن"), f"vpn:agmg:{aid}:{pid}", role="confirm"), btn(tr("❌ انصراف"), f"vpn:ag:{aid}", role="reject")]]))
+                            reply_markup=ikb([[btn(tr("✅ بله، منتقل کن"), f"vpn:agmg:{aid}:{pid}", role="confirm"), btn(tr("❌ انصراف"), f"vpn:ag:{aid}", role="reject")],
+                                                  [btn(tr("🔙 بازگشت"), f"vpn:agm:{aid}", role="back")]]))
     await cb.answer()
 
 

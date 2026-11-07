@@ -56,9 +56,11 @@ async def _notify_admins(shop: Shop, tid: int, who: str, text: str, m: Message |
 
 # ============================================================ کاربر
 def support_kb(shop: Shop, tr):
-    if shop.s.get("tickets_on", "1") != "1":
-        return None
-    return ikb([[btn(tr("➕ تیکت جدید"), "tk:n", role="action"), btn(tr("🎫 تیکت‌های من"), "tk:l", role="admin")]])
+    rows = []
+    if shop.s.get("tickets_on", "1") == "1":
+        rows.append([btn(tr("➕ تیکت جدید"), "tk:n", role="action"), btn(tr("🎫 تیکت‌های من"), "tk:l", role="admin")])
+    rows.append([btn(tr("🔙 منوی اصلی"), "menu", role="back")])
+    return ikb(rows)
 
 
 @user_router.callback_query(F.data == "tk:l")
@@ -66,6 +68,7 @@ async def tk_list(cb: CallbackQuery, shop: Shop, tr):
     rows = await shop.db.tk_user_list(cb.from_user.id)
     kb = [[btn(f"{ICON[t['status']]} #{t['id']} {t['subject'][:30]}", f"tk:v:{t['id']}", role="admin")] for t in rows]
     kb.append([btn(tr("➕ تیکت جدید"), "tk:n", role="action")])
+    kb.append([btn(tr("🔙 پشتیبانی"), "support", role="back")])
     await cb.message.answer(tr("🎫 <b>تیکت‌های من</b>") if rows else tr("هنوز تیکتی نساخته‌اید."), reply_markup=ikb(kb))
     await cb.answer()
 
@@ -107,7 +110,8 @@ async def tk_new(cb: CallbackQuery, shop: Shop, tr, state: FSMContext):
         await cb.answer(err, show_alert=True)
         return
     await state.set_state(TkSt.new)
-    await cb.message.answer(tr("✍️ مشکل یا سؤال‌تان را بنویسید (می‌توانید عکس یا فایل هم بفرستید). خط اول، عنوان تیکت می‌شود. برای انصراف /start"))
+    await cb.message.answer(tr("✍️ مشکل یا سؤال‌تان را بنویسید (می‌توانید عکس یا فایل هم بفرستید). خط اول، عنوان تیکت می‌شود. برای انصراف /start"),
+                            reply_markup=ikb([[btn(tr("❌ انصراف"), "support", role="reject")]]))
     await cb.answer()
 
 

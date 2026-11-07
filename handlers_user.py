@@ -127,7 +127,8 @@ async def join_check(cb: CallbackQuery, shop: Shop, lang: str, tr):
 
 
 @router.callback_query(F.data == "support")
-async def support(cb: CallbackQuery, shop: Shop, lang: str, tr):
+async def support(cb: CallbackQuery, shop: Shop, lang: str, tr, state: FSMContext):
+    await state.clear()                                         # «انصراف» از نوشتن تیکت به همین صفحه برمی‌گردد
     s = await shop.settings()
     u = s["support_username"].lstrip("@")
     text = shop.text("support_text", lang) + (("\n\n" + tr("☎️ پشتیبانی: {u}", u="@" + esc(u))) if u else "")
@@ -138,15 +139,15 @@ async def support(cb: CallbackQuery, shop: Shop, lang: str, tr):
 
 @router.callback_query(F.data == "rules")
 async def rules(cb: CallbackQuery, shop: Shop, lang: str, tr):
-    await cb.message.answer(shop.text("rules_text", lang) or tr("قوانینی ثبت نشده است."))
+    await cb.message.answer(shop.text("rules_text", lang) or tr("قوانینی ثبت نشده است."), reply_markup=ikb([[btn(tr("🔙 منوی اصلی"), "menu", role="back")]]))
     await cb.answer()
 
 
 @router.callback_query(F.data.startswith("txt:"))
-async def custom_text(cb: CallbackQuery, shop: Shop, lang: str):
+async def custom_text(cb: CallbackQuery, shop: Shop, lang: str, tr):
     b = await shop.db.get_menu_button(int(cb.data.split(":")[1]))
     if b and b["action"] == "text" and b["enabled"]:
-        await cb.message.answer(shop.button_text(b, lang) or "—")
+        await cb.message.answer(shop.button_text(b, lang) or "—", reply_markup=ikb([[btn(tr("🔙 منوی اصلی"), "menu", role="back")]]))
     await cb.answer()
 
 
