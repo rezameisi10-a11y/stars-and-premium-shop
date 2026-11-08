@@ -222,6 +222,7 @@ async def a_init(ctx: Ctx, d: dict) -> dict:
         "texts": {"welcome": (mui.get("welcome") or {}).get("t") or shop.text("welcome_text", ctx.lang), "rules": shop.text("rules_text", ctx.lang),
                   "support": shop.text("support_text", ctx.lang)},
         "support": support, "items": items, "bot": shop.bot_username, "tickets": s.get("tickets_on", "1") == "1",
+        "ai": s.get("miniapp_ai_on", "1") == "1" and shop.ai.enabled(), "ai_vision": shop.ai.vision_on(),
         "vpn": {"on": vpn_on, "mine": vpn_n, "test": await shop.vpn.can_test(ctx.uid)},
         "agent": {"on": ag_on, "mine": ag_n},
         "limits": {"min_topup": int(float(s["min_topup"])), "max_topup": int(float(s["max_topup"]))},
@@ -719,15 +720,20 @@ async def a_agent_plans(ctx: Ctx, d: dict) -> dict:
     if not ag.enabled():
         raise ApiError(ctx.tr("فروش پنل نمایندگی فعال نیست."), 403)
     u = await ctx.shop.db.get_user(ctx.uid)
+    cv = await ag.cv_cfg()
     return {"plans": [_agent_plan_dict(ctx, p) for p in await ag.plans_for(u)], "ask_name": (ctx.shop.s.get("vpn_agent_name_mode") or "random") == "ask",
-            "discount": (u or {}).get("personal_discount") or 0}
+            "discount": (u or {}).get("personal_discount") or 0,
+            "cv": ({"unit": ctx.shop._personal(cv["price"], u), "unit_text": _money(ctx, ctx.shop._personal(cv["price"], u)), "min": cv["min"], "max": cv["max"],
+                    "days": cv["plan"]["days"], "max_users": cv["plan"]["max_users"]} if cv else None)}
 
 
 async def a_agent_order(ctx: Ctx, d: dict) -> dict:
     try:
-        oid = await ctx.shop.vpn.agents.create_order(ctx.uid, int(d.get("plan_id") or 0), str(d.get("name") or "").strip().lower() or None)
-    except VpnError as e:
-        raise _vpn_err(ctx, e)
+        gb = d.get("gb")
+        oid = await ctx.shop.vpn.agents.create_order(ctx.uid, int(d.get("plan_id") or 0), str(d.get("name") or "").strip().lower() or None,
+                                                     gb=float(gb) if gb not in (None, "") else None)
+    except (VpnError, ValueError) as e:
+        raise _vpn_err(ctx, e) if isinstance(e, VpnError) else ApiError(ctx.tr("مقدار خارج از بازه‌ی مجاز است."))
     return await a_order_get(ctx, {"order_id": oid})
 
 
@@ -802,7 +808,60 @@ async def a_agent_send(ctx: Ctx, d: dict) -> dict:
     return {"ok": True, "message": ctx.tr("در چت ربات ارسال شد.")}
 
 
-ACTIONS = {"vpn_plans": a_vpn_plans, "vpn_order": a_vpn_order, "vpn_test": a_vpn_test, "vpn_test_options": a_vpn_test_options, "vpn_services": a_vpn_services, "vpn_service": a_vpn_service,
+def _ai_on(ctx: Ctx) -> bool:
+    return ctx.shop.s.get("miniapp_ai_on", "1") == "1" and ctx.shop.ai.enabled()
+
+
+async def a_ai_ask(ctx: Ctx, d: dict) -> dict:
+    """چت پشتیبان هوشمند داخل مینی‌اپ (متن و در صورت روشن‌بودن، عکس)."""
+    import base64
+    from ai_support import AiError, MAX_IMG
+    from handlers_ai import LANG_NAMES
+    if not _ai_on(ctx):
+        raise ApiError(ctx.tr("پشتیبان هوشمند فعال نیست."), 403)
+    img = None
+    raw = str(d.get("image") or "")
+    if raw.startswith("data:image/") and ";base64," in raw:
+        try:
+            head, b64 = raw.split(";base64,", 1)
+            data = base64.b64decode(b64, validate=False)
+            if len(data) <= MAX_IMG:
+                img = (data, head[5:] if head[5:] in ("image/jpeg", "image/png", "image/webp") else "image/jpeg")
+        except Exception:  # noqa: BLE001
+            img = None
+        if not img:
+            raise ApiError(ctx.tr("عکس پذیرفته نشد؛ مشکل را به‌صورت متن بنویسید."))
+    try:
+        text, human = await ctx.shop.ai.ask(ctx.uid, str(d.get("text") or ""), LANG_NAMES.get(ctx.lang, "Persian"), image=img)
+    except AiError as e:
+        raise ApiError(ctx.tr(str(e)), 400, extra={"human": True})
+    except Exception:  # noqa: BLE001
+        log.exception("miniapp ai ask failed")
+        raise ApiError(ctx.tr("پشتیبان هوشمند موقتاً در دسترس نیست؛ کمی بعد دوباره تلاش کنید."), 503, extra={"human": True})
+    return {"text": text, "human": bool(human), "tickets": ctx.shop.s.get("tickets_on", "1") == "1"}
+
+
+async def a_ai_human(ctx: Ctx, d: dict) -> dict:
+    """ارجاع گفتگو به پشتیبان انسانی: همان گفتگو به‌صورت تیکت ثبت می‌شود."""
+    from handlers_tickets import _notify_admins
+    _tk_on(ctx)
+    if not _ai_on(ctx):
+        raise ApiError(ctx.tr("پشتیبان هوشمند فعال نیست."), 403)
+    txt = ("🤖 ارجاع از پشتیبان هوشمند (مینی‌اپ)\n\n" + (ctx.shop.ai.transcript(ctx.uid) or str(d.get("last") or "-")))[:3000]
+    if not ctx.shop.warn_once(f"ai_human_tk:{ctx.uid}", 0.1):
+        raise ApiError(ctx.tr("درخواست قبلی شما ثبت شده است؛ کمی صبر کنید."), 429)
+    tid = await ctx.shop.db.tk_create(ctx.uid, "پشتیبان هوشمند (مینی‌اپ)", txt, False)
+    await _notify_admins(ctx.shop, tid, f"{ctx.tg.get('first_name') or ''} @{ctx.tg.get('username') or '-'} ({ctx.uid})", txt, None, True)
+    ctx.shop.ai.reset(ctx.uid)
+    return {"id": tid}
+
+
+async def a_ai_reset(ctx: Ctx, d: dict) -> dict:
+    ctx.shop.ai.reset(ctx.uid)
+    return {}
+
+
+ACTIONS = {"ai_ask": a_ai_ask, "ai_human": a_ai_human, "ai_reset": a_ai_reset, "vpn_plans": a_vpn_plans, "vpn_order": a_vpn_order, "vpn_test": a_vpn_test, "vpn_test_options": a_vpn_test_options, "vpn_services": a_vpn_services, "vpn_service": a_vpn_service,
            "vpn_renew_plans": a_vpn_renew_plans, "vpn_renew": a_vpn_renew, "vpn_addons": a_vpn_addons, "vpn_addon": a_vpn_addon,
            "vpn_revoke": a_vpn_revoke, "vpn_send": a_vpn_send, "vpn_toggle": a_vpn_toggle, "vpn_note": a_vpn_note, "vpn_delete": a_vpn_delete, "vpn_report": a_vpn_report,
            "agent_plans": a_agent_plans, "agent_order": a_agent_order, "agent_list": a_agent_list, "agent_get": a_agent_get,

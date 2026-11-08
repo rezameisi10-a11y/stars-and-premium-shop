@@ -27,6 +27,8 @@ class VpnSt(StatesGroup):
     report = State()
     name = State()
     agent_name = State()
+    agent_cv = State()
+    agent_cv_name = State()
     custom_amount = State()
 
 
@@ -705,11 +707,78 @@ async def agent_home(cb: CallbackQuery, shop: Shop, tr):
         return
     u = await shop.db.get_user(cb.from_user.id)
     plans = await shop.vpn.agents.plans_for(u)
-    head = tr("🧑‍💼 <b>خرید پنل نمایندگی</b>") + "\n" + (tr("پلن مورد نظر را انتخاب کنید؛ پس از پرداخت، پنل شما خودکار ساخته و اطلاعات ورود ارسال می‌شود.") if plans else tr("در حال حاضر پلنی برای فروش موجود نیست."))
-    rows = [[btn(f"{p['title']} | {fmt(p['user_price'])} {tr('ت')}", f"vpn:agp:{p['id']}", role="action")] for p in plans[:40]]
+    head = tr("🧑‍💼 <b>خرید پنل نمایندگی</b>") + "\n" + (tr("پلن مورد نظر را انتخاب کنید؛ پس از پرداخت، پنل شما خودکار ساخته و اطلاعات ورود ارسال می‌شود.") if plans or await shop.vpn.agents.cv_cfg() else tr("در حال حاضر پلنی برای فروش موجود نیست."))
+    noop = "vpn:agnoop"
+    rows = []
+    if plans:
+        rows.append([btn(tr("=-=-= مشخصات پنل‌های ما =-=-="), noop, role="confirm")])
+        rows.append([btn(tr("📊 حجم"), noop, role="back"), btn(tr("💲 قیمت"), noop, role="back")])
+    for p in plans[:40]:
+        gb = tr("نامحدود") if not p["traffic_gb"] else ltr(f"{p['traffic_gb']:g}GB")
+        rows.append([btn(gb, f"vpn:agp:{p['id']}", role="action"), btn(f"{fmt(p['user_price'])} {tr('تومان')}", f"vpn:agp:{p['id']}", role="action")])
+    cv = await shop.vpn.agents.cv_cfg()
+    if cv:
+        rows.append([btn(tr("➕ حجم دلخواه"), "vpn:agc", role="action"), btn(f"{fmt(shop._personal(cv['price'], u))} {tr('تومان')}", "vpn:agc", role="action")])
     rows.append([btn(tr("🔙 منوی اصلی"), "menu", role="back")])
     await cb.message.answer(head, reply_markup=ikb(rows))
     await cb.answer()
+
+
+@router.callback_query(F.data == "vpn:agnoop")
+async def agent_noop(cb: CallbackQuery):
+    await cb.answer()
+
+
+@router.callback_query(F.data == "vpn:agc")
+async def agent_cv_start(cb: CallbackQuery, shop: Shop, state: FSMContext, tr):
+    cv = await shop.vpn.agents.cv_cfg()
+    if not cv:
+        await cb.answer(tr("این امکان دیگر در دسترس نیست."), show_alert=True)
+        return
+    u = await shop.db.get_user(cb.from_user.id)
+    await state.set_state(VpnSt.agent_cv)
+    await cb.message.answer(tr("➕ <b>خرید پنل نمایندگی با حجم دلخواه</b>\nحداقل حجم: {a} گیگابایت\nحداکثر حجم: {b} گیگابایت\nقیمت هر گیگابایت: {p} تومان\n\nحجم دلخواه را (فقط عدد، به گیگابایت) بفرستید.",
+                                a=f"{cv['min']:g}", b=f"{cv['max']:g}", p=fmt(shop._personal(cv["price"], u))),
+                            reply_markup=ikb([[btn(tr("🔙 بازگشت"), "vpn:agh", role="back")]]))
+    await cb.answer()
+
+
+async def _cv_finish(m: Message, shop: Shop, state: FSMContext, tr, gb, name=None):
+    try:
+        oid = await shop.vpn.agents.create_order(m.from_user.id, 0, name, gb=gb)
+    except VpnError as e:
+        await m.answer(tr(str(e)))
+        return
+    await state.clear()
+    await _offer(m, shop, tr, oid, m.from_user.id)
+
+
+@router.message(VpnSt.agent_cv, F.text)
+async def agent_cv_amount(m: Message, shop: Shop, state: FSMContext, tr):
+    t = (m.text or "").strip().translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٫٬٫", "0123456789...")).replace(",", "")
+    try:
+        gb = float(t)
+        if gb <= 0:
+            raise ValueError
+    except ValueError:
+        await m.answer(tr("فقط یک عدد معتبر بفرستید."))
+        return
+    cv = await shop.vpn.agents.cv_cfg()
+    if cv and not cv["min"] <= gb <= cv["max"]:
+        await m.answer(tr("مقدار خارج از بازه است؛ حداقل {a} و حداکثر {b} مجاز است.", a=f"{cv['min']:g}", b=f"{cv['max']:g}"))
+        return
+    if (shop.s.get("vpn_agent_name_mode") or "random") == "ask":
+        await state.set_state(VpnSt.agent_cv_name)
+        await state.update_data(gb=gb)
+        await m.answer(tr("نام کاربری دلخواه برای ادمین پنل را بفرستید (۳ تا ۲۴ حرف کوچک انگلیسی، عدد یا _). برای انصراف /start:"))
+        return
+    await _cv_finish(m, shop, state, tr, gb)
+
+
+@router.message(VpnSt.agent_cv_name, F.text)
+async def agent_cv_name(m: Message, shop: Shop, state: FSMContext, tr):
+    d = await state.get_data()
+    await _cv_finish(m, shop, state, tr, d.get("gb"), m.text.strip().lower())
 
 
 @router.callback_query(F.data.startswith("vpn:agp:"))

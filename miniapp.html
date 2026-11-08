@@ -34,6 +34,23 @@ h1{font-size:19px;margin:16px 2px 10px}h2{font-size:16px;margin:14px 2px 8px}
 .tile{background:var(--card);border:0;border-radius:var(--r);padding:14px 8px;text-align:center;color:var(--fg);font:inherit;cursor:pointer;display:flex;flex-direction:column;gap:6px;align-items:center}
 .tile .ic{font-size:26px;line-height:1}.tile span{font-size:13px}
 .tile:active,.row:active,.b:active{opacity:.7}
+.agpair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:4px 0 14px}
+.agpair.one{grid-template-columns:1fr}
+html .agb{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:112px;padding:16px 8px;border:2px solid rgba(255,255,255,.55);border-radius:26px;font:inherit;font-weight:900;font-size:17px;line-height:1.35;text-align:center;cursor:pointer;
+  color:var(--on-agent,#fff);background:linear-gradient(135deg,var(--c-agent,#f59e0b),color-mix(in srgb,var(--c-agent,#f59e0b) 60%,#7c2d12));box-shadow:0 16px 32px rgba(0,0,0,.30),0 0 0 4px color-mix(in srgb,var(--c-agent,#f59e0b) 28%,transparent),inset 0 1px 0 rgba(255,255,255,.55);position:relative;overflow:hidden;text-shadow:0 1px 2px rgba(0,0,0,.25)}
+html .agb.alt{background:linear-gradient(135deg,#6366f1,#4338ca);color:#fff;box-shadow:0 16px 32px rgba(0,0,0,.30),0 0 0 4px rgba(99,102,241,.28),inset 0 1px 0 rgba(255,255,255,.55)}
+html .agb .ai{font-size:34px;line-height:1;filter:drop-shadow(0 4px 8px rgba(0,0,0,.3))}
+html .agb small{font-size:12px;font-weight:700;opacity:.92}
+html .agb:active{transform:scale(.97)}
+.hbuy{margin-inline-start:auto;border:0;border-radius:16px;padding:11px 18px;font:inherit;font-weight:800;font-size:15px;cursor:pointer;color:#fff;background:linear-gradient(135deg,var(--a2,#3b82f6),var(--a3,#6366f1));box-shadow:0 8px 18px rgba(0,0,0,.25);white-space:nowrap}
+.hbuy:active{transform:scale(.96)}
+.aichat{display:flex;flex-direction:column;gap:8px;margin:8px 0}
+.aim{max-width:88%;padding:10px 13px;border-radius:18px;line-height:1.7;white-space:pre-wrap;word-break:break-word;font-size:14px}
+.aim.me{align-self:flex-end;background:linear-gradient(135deg,var(--a2,#3b82f6),var(--a3,#6366f1));color:#fff;border-end-end-radius:6px}
+.aim.bot{align-self:flex-start;background:var(--card);border:1px solid var(--line);border-end-start-radius:6px}
+.aim img{max-width:160px;border-radius:12px;display:block;margin-bottom:6px}
+.aibar{display:flex;gap:8px;align-items:flex-end;margin-top:6px}
+.aibar textarea{flex:1;min-height:44px;max-height:120px}
 .row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--card);border-radius:var(--r);padding:13px 14px;margin:8px 0;cursor:pointer;border:0;width:100%;color:var(--fg);font:inherit;text-align:start}
 .row .sub{color:var(--hint);font-size:13px}.row b{white-space:nowrap}
 .b{border:0;border-radius:12px;padding:13px 16px;font:inherit;font-weight:600;background:var(--btn);color:var(--btnfg);width:100%;cursor:pointer;margin:6px 0}
@@ -681,7 +698,7 @@ async function api(action, data) {
   } catch (e) { throw {msg: t("اتصال برقرار نشد؛ دوباره تلاش کنید."), code: "net"}; }
   let j = {};
   try { j = await r.json(); } catch (e) {}
-  if (!r.ok) throw {msg: j.error || "error", code: j.code || "", status: r.status};
+  if (!r.ok) throw {msg: j.error || "error", code: j.code || "", status: r.status, human: !!j.human};
   return j;
 }
 async function run(btnEl, fn) {          // اجرای اکشن با قفل کردن دکمه و نمایش خطا
@@ -770,20 +787,22 @@ VIEWS.home = async () => {
   const u = I.user, S = I.stats || {orders: 0, done: 0, spent: {short: "0"}, invited: 0};
   const KT = k => L("kind_" + k, I.kind_titles[k].replace(/^\S+\s*/, ""));
   const TL = k => k === "vpn" ? [IC("kind_vpn", "🛡"), L("kind_vpn", t("خرید VPN"))] : k === "agent" ? [IC("kind_agent", "🧑‍💼"), L("kind_agent", t("خرید پنل نمایندگی"))] : [IC("kind_" + k, KIND_IC[k]), KT(k)];
-  let tiles = (I.tiles || []).map(k => { const x = TL(k); return `<button class="tile k-${k}" data-t="${k}"${CS("kind_" + k)}><span class="ic">${x[0]}</span><span>${esc(x[1])}</span></button>`; }).join("");
-  const nT = (I.tiles || []).length;
+  let tiles = (I.tiles || []).filter(k => k !== "agent").map(k => { const x = TL(k); return `<button class="tile k-${k}" data-t="${k}"${CS("kind_" + k)}><span class="ic">${x[0]}</span><span>${esc(x[1])}</span></button>`; }).join("");
+  const nT = (I.tiles || []).filter(k => k !== "agent").length;
   const av = I.photo ? `<img class="av" src="${esc(I.photo)}" alt="">` : `<div class="av orb"><span>${esc((u.name || "?").trim().charAt(0).toUpperCase())}</span></div>`;
   if (!I.photo && !window._avTried) { window._avTried = 1; fetch("/app/avatar", {headers: {"X-Init-Data": TG ? TG.initData : ""}}).then(r => r.ok ? r.blob() : null).then(b => { if (b && b.size) { I.photo = URL.createObjectURL(b); const o = document.querySelector(".hero2 .av"); if (o) { const im = document.createElement("img"); im.className = "av"; im.alt = ""; im.src = I.photo; o.replaceWith(im); } } }).catch(() => {}); }
-  let html = `<div class="hero2">${av}<div><small>${esc(L("greet", t("سلام")))} ${IC("greet", "👋")}</small><b>${esc(u.name)}</b></div></div>
+  let html = `<div class="hero2">${av}<div><small>${esc(L("greet", t("سلام")))} ${IC("greet", "👋")}</small><b>${esc(u.name)}</b></div>${(I.tiles || []).length ? `<button class="hbuy" id="hbuy"${CS("btn_buy")}>${IC("btn_buy", "🛍")} ${esc(L("btn_buy", t("خرید")))}</button>` : ""}</div>
+  ${I.texts.welcome ? `<div class="card hint" style="color:var(--fg)">${safeHtml(I.texts.welcome)}</div>` : ""}
   <div class="wcard"><div class="wt"><i>${IC("wallet_title", "👛")}</i><span>${esc(L("wallet_title", t("موجودی کیف پول")))}</span></div>
     <div class="wb">${num(u.balance)} <small>${esc(t("تومان"))}</small></div>
     <div class="wbtns"><button class="wbtn" id="wbuy"${CS("btn_buy")}><span>${IC("btn_buy", "🛍")}</span> ${esc(L("btn_buy", t("خرید")))}</button><button class="wbtn" id="wtop"${CS("btn_topup")}><span>${IC("btn_topup", "➕")}</span> ${esc(L("btn_topup", t("افزایش موجودی")))}</button></div></div>`;
-  if (I.texts.welcome) html += `<div class="card hint" style="color:var(--fg)">${safeHtml(I.texts.welcome)}</div>`;
+  const agBuy = (I.tiles || []).includes("agent"), agMy = (I.rows || []).includes("agent_my");
+  if (agBuy || agMy) html += `<div class="agpair ${agBuy && agMy ? "" : "one"}">${agBuy ? `<button class="agb" data-t="agent"${CS("kind_agent")}><span class="ai">${IC("kind_agent", "🧑‍💼")}</span><span>${esc(L("kind_agent", t("خرید پنل نمایندگی")))}</span></button>` : ""}${agMy ? `<button class="agb alt" data-go="agent_my"${CS("agent_my")}><span class="ai">${IC("agent_my", "🗂")}</span><span>${esc(L("agent_my", t("پنل‌های نمایندگی من")))}</span>${I.agent.mine ? `<small>${num(I.agent.mine)}</small>` : ""}</button>` : ""}</div>`;
   html += `<div class="grid ${nT === 3 ? "g3" : ""}">${tiles}</div><div class="sp"></div>`;
   (I.rows || []).forEach(k => {
     if (k === "vpn_test") html += `<button class="row" data-go="vpn_test"${CS("vpn_test")}><span>${IC("vpn_test", "🎁")} ${esc(L("vpn_test", t("اکانت تست رایگان")))}</span><span class="sub">›</span></button><div class="sp"></div>`;
     if (k === "vpn_my") html += `<button class="row" data-go="vpn_my"${CS("vpn_my")}><span>${IC("vpn_my", "📡")} ${esc(L("vpn_my", t("سرویس‌های VPN من")))}</span><span class="sub">${I.vpn.mine ? num(I.vpn.mine) : ""} ›</span></button><div class="sp"></div>`;
-    if (k === "agent_my") html += `<button class="row" data-go="agent_my"${CS("agent_my")}><span>${IC("agent_my", "🧑‍💼")} ${esc(L("agent_my", t("پنل‌های نمایندگی من")))}</span><span class="sub">${I.agent.mine ? num(I.agent.mine) : ""} ›</span></button><div class="sp"></div>`;
+    if (k === "agent_my" && false) html += `<button class="row" data-go="agent_my"${CS("agent_my")}><span>${IC("agent_my", "🧑‍💼")} ${esc(L("agent_my", t("پنل‌های نمایندگی من")))}</span><span class="sub">${I.agent.mine ? num(I.agent.mine) : ""} ›</span></button><div class="sp"></div>`;
   });
   html += `<div class="grid st">
     <button class="stile s1" data-go="orders"${CS("tile_done")}><i>${IC("tile_done", "🛒")}</i><b>${num(S.done)}</b><span>${esc(L("tile_done", t("خریدها")))}</span></button>
@@ -797,8 +816,9 @@ VIEWS.home = async () => {
   html += `<button class="row" id="more"${CS("btn_more")}><span>${IC("btn_more", "☰")} ${esc(L("btn_more", t("بیشتر")))}</span><span>›</span></button>`;
   if (u.is_admin) html += `<button class="row" id="adm"><span>🛠 ${esc(t("پنل مدیریت"))}</span><span class="sub">${esc(t("ورود با حساب تلگرام"))}</span></button>`;
   $app.innerHTML = html;
-  $app.querySelectorAll(".tile").forEach(b => b.onclick = () => openTile(b.dataset.t));
+  $app.querySelectorAll(".tile,.agb[data-t]").forEach(b => b.onclick = () => openTile(b.dataset.t));
   $app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
+  const hb = $app.querySelector("#hbuy"); if (hb) hb.onclick = () => go("products");
   $app.querySelector("#wbuy").onclick = () => go("products");
   $app.querySelector("#wtop").onclick = () => go("wallet");
   $app.querySelector("#more").onclick = () => go("more");
@@ -1070,8 +1090,22 @@ VIEWS.agent = async () => {
   if (r.discount) h += `<div class="card">🎁 ${esc(t("تخفیف اختصاصی شما ({p}٪) در قیمت‌ها اعمال شده است.", {p: r.discount}))}</div>`;
   if (!r.plans.length) h += `<div class="card hint">${esc(t("در حال حاضر پلنی برای فروش موجود نیست."))}</div>`;
   h += r.plans.map(p => `<button class="row prod k-vpn" data-id="${p.id}"><i class="ri">🧑‍💼</i><span>${esc(p.title)}<div class="sub" style="direction:inherit">${esc(agLine(p))}</div>${p.note ? `<div class="sub">${esc(p.note)}</div>` : ""}</span><b>${esc(p.price.short)}</b></button>`).join("");
+  if (r.cv) h += `<div class="card"><h2>➕ ${esc(t("حجم دلخواه"))}</h2><p class="hint">${esc(t("حداقل {a} و حداکثر {b} گیگابایت · هر گیگابایت {p} تومان", {a: r.cv.min, b: r.cv.max, p: num(r.cv.unit)}))}</p>
+    <input id="cv-g" type="number" inputmode="decimal" min="${r.cv.min}" max="${r.cv.max}" step="any" placeholder="${esc(t("حجم به گیگابایت"))}" dir="ltr">
+    <div class="lbl" id="cv-p">&nbsp;</div><button class="b" id="cv-b">${esc(t("ادامه"))}</button></div>`;
   h += `<button class="row" id="am"><span>🧑‍💼 ${esc(t("پنل‌های نمایندگی من"))}</span><span>›</span></button>`;
   $app.innerHTML = h;
+  const cvg = $app.querySelector("#cv-g");
+  if (cvg) {
+    cvg.oninput = () => { const g = parseFloat(cvg.value); $app.querySelector("#cv-p").textContent = g > 0 ? t("مبلغ تقریبی: {p} تومان", {p: num(Math.round(g * r.cv.unit))}) : ""; };
+    const cb = $app.querySelector("#cv-b");
+    cb.onclick = () => {
+      const g = parseFloat(cvg.value);
+      if (!(g >= r.cv.min && g <= r.cv.max)) { toast(t("مقدار خارج از بازه است؛ حداقل {a} و حداکثر {b} مجاز است.", {a: r.cv.min, b: r.cv.max}), true); return; }
+      const p = {id: 0, cv: g, title: t("پنل نمایندگی") + " " + g + " GB", days: r.cv.days, gb: g, max_users: r.cv.max_users, price: {text: num(Math.round(g * r.cv.unit)) + " " + t("تومان")}};
+      if (r.ask_name) go("agent_name", p); else run(cb, async () => { const o = await api("agent_order", {plan_id: 0, gb: g}); go("order", o.id); });
+    };
+  }
   $app.querySelectorAll(".row.prod").forEach(b => b.onclick = () => {
     const p = r.plans.find(x => x.id == b.dataset.id);
     if (r.ask_name) go("agent_name", p); else run(b, async () => { const o = await api("agent_order", {plan_id: p.id}); go("order", o.id); });
@@ -1083,7 +1117,7 @@ VIEWS.agent_name = async (p) => {
     <div class="lbl">${esc(t("نام کاربری دلخواه برای پنل (۳ تا ۲۴ حرف کوچک انگلیسی، عدد یا _)"))}</div><input id="vn" dir="ltr" autocapitalize="off" autocomplete="off" maxlength="24" placeholder="myagent">
     <button class="b" id="go">${esc(t("ادامه"))}</button>`;
   const g = $app.querySelector("#go");
-  g.onclick = () => run(g, async () => { const o = await api("agent_order", {plan_id: p.id, name: $app.querySelector("#vn").value}); go("order", o.id, true); });
+  g.onclick = () => run(g, async () => { const o = await api("agent_order", p.cv ? {plan_id: 0, gb: p.cv, name: $app.querySelector("#vn").value} : {plan_id: p.id, name: $app.querySelector("#vn").value}); go("order", o.id, true); });
 };
 VIEWS.agent_my = async () => {
   const r = await api("agent_list");
@@ -1212,13 +1246,59 @@ VIEWS.lang = async () => {
 VIEWS.support = async () => {
   let h = `<h1>☎️ ${esc(t("پشتیبانی"))}</h1>`;
   if (I.texts.support) h += `<div class="card">${safeHtml(I.texts.support)}</div>`;
+  if (I.ai) h += `<button class="b" id="aib">🤖 ${esc(t("پشتیبان هوشمند"))}</button><div class="sp"></div>`;
   if (I.support) h += `<button class="b" id="sp">${esc(t("☎️ پشتیبانی: {u}", {u: "@" + I.support}))}</button>`;
   if (!I.texts.support && !I.support) h += `<div class="card hint">${esc(t("☎️ پشتیبانی هنوز تنظیم نشده است."))}</div>`;
   $app.innerHTML = h;
   if (I.tickets) h += `<button class="b" id="tk">🎫 ${esc(t("🎫 تیکت‌های من").replace("🎫 ", ""))}</button>`;
   $app.innerHTML = h;
+  const aib = $app.querySelector("#aib"); if (aib) aib.onclick = () => go("ai");
   const sp = $app.querySelector("#sp"); if (sp) sp.onclick = () => openLink("https://t.me/" + I.support);
   const tk = $app.querySelector("#tk"); if (tk) tk.onclick = () => go("tickets");
+};
+let AICHAT = [];
+function aiShrink(file) {            // کوچک‌کردن عکس قبل از ارسال (حداکثر ۱۲۸۰ پیکسل، JPEG)
+  return new Promise((ok, bad) => {
+    const rd = new FileReader();
+    rd.onerror = () => bad(); rd.onload = () => {
+      const im = new Image(); im.onerror = () => bad();
+      im.onload = () => { const k = Math.min(1, 1280 / Math.max(im.width, im.height)); const c = document.createElement("canvas"); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL("image/jpeg", .82)); };
+      im.src = rd.result;
+    };
+    rd.readAsDataURL(file);
+  });
+}
+VIEWS.ai = async () => {
+  if (!I.ai) { go("support"); return; }
+  const draw = () => {
+    const box = document.getElementById("aichat"); if (!box) return;
+    box.innerHTML = (AICHAT.length ? "" : `<div class="aim bot">${esc(t("سلام! مشکل یا سؤال خود را بنویسید؛ اگر خطایی می‌بینید، عکس آن را هم بفرستید."))}</div>`) +
+      AICHAT.map(m => `<div class="aim ${m.me ? "me" : "bot"}">${m.img ? `<img src="${esc(m.img)}" alt="">` : ""}${esc(m.text)}</div>`).join("");
+    window.scrollTo(0, document.body.scrollHeight);
+  };
+  $app.innerHTML = `<h1>🤖 ${esc(t("پشتیبان هوشمند"))}</h1><div class="aichat" id="aichat"></div>
+    <div class="aibar"><textarea id="ai-t" rows="1" placeholder="${esc(t("پیام خود را بنویسید…"))}"></textarea>${I.ai_vision ? `<label class="b sec" style="width:auto;padding:10px 14px;margin:0;cursor:pointer">📷<input id="ai-f" type="file" accept="image/*" hidden></label>` : ""}<button class="b" id="ai-s" style="width:auto;margin:0">➤</button></div>
+    <div class="grid" style="margin-top:10px">${I.tickets ? `<button class="b sec" id="ai-h">🙋 ${esc(t("ارجاع به پشتیبان انسانی"))}</button>` : ""}<button class="b sec" id="ai-r">🔄 ${esc(t("گفتگوی تازه"))}</button></div>`;
+  draw();
+  let pend = "";
+  const send = async (b) => {
+    const ta = document.getElementById("ai-t"), txt = ta.value.trim();
+    if (!txt && !pend) return;
+    const img = pend; pend = ""; ta.value = "";
+    AICHAT.push({me: 1, text: txt || "📷", img}); AICHAT.push({me: 0, text: "…", tmp: 1}); draw();
+    try {
+      const r = await api("ai_ask", {text: txt, image: img});
+      AICHAT.pop(); AICHAT.push({me: 0, text: r.text});
+    } catch (e) { AICHAT.pop(); AICHAT.push({me: 0, text: (e && e.msg) || t("خطای ناشناخته")}); }
+    draw();
+  };
+  const sb = document.getElementById("ai-s"); sb.onclick = () => send(sb);
+  document.getElementById("ai-t").onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(sb); } };
+  const f = document.getElementById("ai-f");
+  if (f) f.onchange = async () => { const x = f.files[0]; f.value = ""; if (!x) return; try { pend = await aiShrink(x); toast(t("📷 عکس پیوست شد؛ پیام را بفرستید.")); } catch (e) { toast(t("عکس پذیرفته نشد؛ مشکل را به‌صورت متن بنویسید."), true); } };
+  const h = document.getElementById("ai-h");
+  if (h) h.onclick = () => run(h, async () => { const r = await api("ai_human", {last: (AICHAT.filter(m => m.me).pop() || {}).text || ""}); AICHAT = []; toast(t("✅ درخواست شما برای پشتیبان ثبت شد.")); go("ticket", r.id); });
+  const rs = document.getElementById("ai-r"); rs.onclick = () => run(rs, async () => { await api("ai_reset"); AICHAT = []; draw(); });
 };
 VIEWS.rules = async () => {
   $app.innerHTML = `<h1>📜 ${esc(t("قوانین"))}</h1><div class="card">${I.texts.rules ? safeHtml(I.texts.rules) : `<span class="hint">${esc(t("قوانینی ثبت نشده است."))}</span>`}</div>`;

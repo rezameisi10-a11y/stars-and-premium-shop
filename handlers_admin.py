@@ -425,7 +425,7 @@ async def cb_user_list(cb: CallbackQuery, shop: Shop):
         if rank in ("newest", "oldest"): return f"📅{jdate(u['created_at'])}"
         if rank == "recent": return f"🕒{jdate(u.get('last_seen'))}"
         return f"{fmt(u['balance'])}ت"
-    kb = [[btn(f"{'⛔' if u['banned'] else '👤'} {u['first_name'] or ''} @{u['username'] or '-'} · {metric(u)}", f"adm:u:{u['id']}", role="admin")] for u in users]
+    kb = [[btn(f"{'⛔' if u['banned'] else '👤'} {u['first_name'] or ''} @{u['username'] or '-'} · {metric(u)}", f"adm:u:{u['id']}:l", role="admin")] for u in users]
     flt = rank or flt
     nav = []
     if page > 0:
@@ -454,12 +454,12 @@ async def got_user_q(m: Message, shop: Shop, state: FSMContext):
         return
     kb = [[btn(f"📡 {s['name']} · {s.get('panel_name') or ''} · {s['user_id']}", f"adm:vpn:s:{s['id']}", role="admin")] for s in svcs]
     kb += [[btn(f"🧑‍💼 {a['username']} · {a.get('panel_name') or ''} · {a['user_id']}", f"adm:vpn:ag:{a['id']}", role="admin")] for a in ags]
-    kb += [[btn(f"👤 {u['first_name'] or ''} @{u['username'] or '-'} ({u['id']})", f"adm:u:{u['id']}", role="admin")] for u in users]
+    kb += [[btn(f"👤 {u['first_name'] or ''} @{u['username'] or '-'} ({u['id']})", f"adm:u:{u['id']}:l", role="admin")] for u in users]
     kb.append(back_row("adm:users"))
     await m.answer(f"نتایج «{esc(q[:40])}»: " + f"{len(svcs)} سرویس VPN، {len(ags)} نماینده، {len(users)} کاربر\n(سرویس‌ها و نماینده‌ها اول آمده‌اند)", reply_markup=ikb(kb))
 
 
-async def user_card(shop: Shop, uid) -> tuple[str, object] | None:
+async def user_card(shop: Shop, uid, back="adm:users") -> tuple[str, object] | None:
     u = await shop.db.get_user(uid)
     if not u:
         return None
@@ -492,23 +492,35 @@ async def user_card(shop: Shop, uid) -> tuple[str, object] | None:
         [btn("🌐 زبان", f"adm:ulg:{uid}", role="admin"), btn("🤝 زیرمجموعه‌ها", f"adm:ur:{uid}", role="admin")],
         [btn("🧾 سفارش‌ها", f"adm:uo:{uid}", role="admin"), btn("💳 پرداخت‌ها", f"adm:up:{uid}", role="admin"),
          btn("👛 کیف پول", f"adm:uw:{uid}", role="admin")],
-        back_row("adm:users"),
+        back_row(back),
     ])
     return "\n".join(lines), kb
 
 
 async def show_user(t, shop: Shop, uid):
     msg = t.message if isinstance(t, CallbackQuery) else t
-    card = await user_card(shop, uid)
+    card = await user_card(shop, uid, _USER_BACK.get((msg.chat.id, uid), "adm:users"))
     if not card:
         await msg.answer("کاربر پیدا نشد.")
         return
     await msg.answer(card[0], reply_markup=card[1])
 
 
+_USER_BACK: dict = {}      # (ادمین، کاربر) → مقصد دکمه‌ی بازگشت کارت؛ مثلاً همان تیکتی که از آن آمده
+
+
 @router.callback_query(F.data.startswith("adm:u:"))
 async def cb_user(cb: CallbackQuery, shop: Shop):
-    card = await user_card(shop, int(cb.data.split(":")[2]))
+    parts = cb.data.split(":")
+    uid, key = int(parts[2]), (cb.from_user.id, int(parts[2]))
+    extra = parts[3] if len(parts) > 3 else ""
+    if extra.startswith("t") and extra[1:].isdigit():
+        _USER_BACK[key] = f"adm:tkv:{extra[1:]}"
+    elif extra == "l":                                    # از فهرست کاربران آمده
+        _USER_BACK.pop(key, None)
+    if len(_USER_BACK) > 500:
+        _USER_BACK.clear()
+    card = await user_card(shop, uid, _USER_BACK.get(key, "adm:users"))
     if not card:
         await cb.answer("پیدا نشد", show_alert=True)
         return

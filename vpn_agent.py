@@ -80,6 +80,41 @@ class AgentSales:
             out.append(p)
         return out
 
+    # ------------------------------------------------------------------ حجم دلخواه برای خرید پنل
+    async def cv_cfg(self):
+        """خرید پنل با حجم دلخواه: {price, min, max, plan} یا None (خاموش / ناقص).
+        پلن الگو مدت، سقف کاربر و پنل را مشخص می‌کند؛ فقط حجم و قیمت از تنظیمات می‌آید."""
+        if not self.enabled() or not self._flag("vpn_agent_cv_on"):
+            return None
+        price = self._int("vpn_agent_cv_price")
+        if price <= 0:
+            return None
+        plans = await self.db.list_agent_plans(active_only=True)
+        plan = next((p for p in plans if p["id"] == self._int("vpn_agent_cv_plan")), None) or (min(plans, key=lambda p: (p["price"], p["id"])) if plans else None)
+        if not plan:
+            return None
+        mn = float(self.s.get("vpn_agent_cv_min") or 1) or 1
+        mx = float(self.s.get("vpn_agent_cv_max") or 10 ** 6) or 10 ** 6
+        if mx < mn:
+            return None
+        return {"price": price, "min": mn, "max": mx, "plan": dict(plan)}
+
+    async def cv_quote(self, gb, user) -> tuple:
+        """(پلن الگو, حجم گرد‌شده, قیمت کاربر, هزینه) یا VpnError."""
+        cfg = await self.cv_cfg()
+        if not cfg:
+            raise VpnError(N_("این امکان دیگر در دسترس نیست."))
+        try:
+            gb = round(float(gb), 2)
+        except (TypeError, ValueError):
+            raise VpnError(N_("مقدار خارج از بازه‌ی مجاز است.")) from None
+        if not math.isfinite(gb) or not cfg["min"] <= gb <= cfg["max"]:
+            raise VpnError(N_("مقدار خارج از بازه‌ی مجاز است."))
+        plan = cfg["plan"]
+        price = self.shop._personal(int(round(gb * cfg["price"])), user)
+        cost = int(round(plan["cost"] / plan["traffic_gb"] * gb)) if plan["traffic_gb"] else 0
+        return plan, gb, price, cost
+
     async def make_name(self, panel_id: int, user_id: int, asked: str | None = None) -> str:
         prefix = re.sub(r"[^a-z0-9_]", "", (self.s.get("vpn_agent_prefix") or "agent").lower())[:10] or "agent"
         taken = "SELECT 1 x FROM vpn_agents WHERE panel_id=? AND username=? AND status!='deleted'"
@@ -103,10 +138,19 @@ class AgentSales:
             raise VpnError(N_("این پلن دیگر در دسترس نیست."))
 
     # ------------------------------------------------------------------ ساخت سفارش
-    async def create_order(self, user_id: int, plan_id: int, name: str | None = None) -> int:
+    async def create_order(self, user_id: int, plan_id: int, name: str | None = None, gb=None) -> int:
         if not self.enabled():
             raise VpnError(N_("فروش پنل نمایندگی فعال نیست."))
         await self.vpn.guard_pending(user_id)
+        if gb is not None:                                   # حجم دلخواه (پلن الگو از تنظیمات)
+            user = await self.db.get_user(user_id)
+            plan, gb, price, cost = await self.cv_quote(gb, user)
+            panel = await self.db.get_vpn_panel(plan["panel_id"])
+            await self._check_plan(plan, panel)
+            if name:
+                name = await self.make_name(panel["id"], user_id, name)
+            ref = f"vpn:agent:{plan['id']}:c:{gb:g}" + (f":{name}" if name else "")
+            return await self.db.create_vpn_order(user_id, f"{N_('پنل نمایندگی')} {gb:g} GB", plan["days"], ref, price, cost)
         plan = await self.db.get_agent_plan(plan_id)
         panel = await self.db.get_vpn_panel(plan["panel_id"]) if plan else None
         await self._check_plan(plan, panel)
@@ -126,6 +170,11 @@ class AgentSales:
             raise VpnError(N_("این پلن برای تمدید مجاز نیست."))
         await self.vpn.guard_pending(user_id)
         user = await self.db.get_user(user_id)
+        cv = (json.loads(ag.get("meta") or "{}")).get("custom_gb")
+        if cv and plan["id"] == ag.get("plan_id") and await self.cv_cfg():      # پنل با حجم دلخواه با همان حجم تمدید می‌شود
+            _p, cv, price, cost = await self.cv_quote(cv, user)
+            return await self.db.create_vpn_order(user_id, f"{N_('تمدید پنل نمایندگی')} {ag['username']} — {cv:g} GB", plan["days"],
+                                                  f"vpn:arenew:{agent_id}:{plan_id}:{cv:g}", price, cost)
         price = self.shop._personal(plan["price"], user)
         return await self.db.create_vpn_order(user_id, f"{N_('تمدید پنل نمایندگی')} {ag['username']} — {plan['title']}", plan["days"],
                                               f"vpn:arenew:{agent_id}:{plan_id}", price, plan["cost"])
@@ -256,13 +305,16 @@ class AgentSales:
             else:
                 await self._fulfil_addon(o, int(ref[2]), int(ref[3]))
         elif ref[1] == "agent":
-            await self._fulfil_new(o, int(ref[2]), ref[3] if len(ref) > 3 else None)
+            if len(ref) > 4 and ref[3] == "c":               # حجم دلخواه: vpn:agent:{plan}:c:{gb}[:{name}]
+                await self._fulfil_new(o, int(ref[2]), ref[5] if len(ref) > 5 else None, gb=float(ref[4]))
+            else:
+                await self._fulfil_new(o, int(ref[2]), ref[3] if len(ref) > 3 else None)
         elif ref[1] == "arenew":
-            await self._fulfil_renew(o, int(ref[2]), int(ref[3]))
+            await self._fulfil_renew(o, int(ref[2]), int(ref[3]), gb=float(ref[4]) if len(ref) > 4 else None)
         else:
             raise VpnError("bad agent ref")
 
-    async def _fulfil_new(self, o, plan_id, asked):
+    async def _fulfil_new(self, o, plan_id, asked, gb=None):
         existing = await self.db.agent_by_order(o["id"])
         if existing:                                         # تلاش مجدد پس از ساخت موفق
             existing = await self.db.get_agent(existing["id"])
@@ -273,6 +325,8 @@ class AgentSales:
         panel = await self.db.get_vpn_panel(plan["panel_id"]) if plan else None
         if not plan or not panel:
             raise VpnError("plan/panel missing")
+        if gb:
+            plan = {**plan, "traffic_gb": gb, "title": f"{plan['title']} — {gb:g} GB"}
         drv = await self.vpn.driver(panel["id"])
         spec = agent_spec(plan)
         spec["telegram_id"] = 0
@@ -290,7 +344,8 @@ class AgentSales:
         try:
             aid = await self.db.add_agent(user_id=o["user_id"], panel_id=panel["id"], plan_id=plan_id, username=name, password=pw, status="active",
                                           expires_at=exp, total_bytes=int((plan["traffic_gb"] or 0) * GB), used_bytes=info.used, max_users=plan["max_users"],
-                                          order_id=o["id"], title=plan["title"], last_sync=int(time.time()))
+                                          order_id=o["id"], title=plan["title"], last_sync=int(time.time()),
+                                          **({"meta": json.dumps({"custom_gb": gb})} if gb else {}))
         except Exception:
             log.exception("agent store failed; rolling back panel admin %s", name)
             try:
@@ -304,11 +359,13 @@ class AgentSales:
                                      f"کاربر: <code>{o['user_id']}</code> | مبلغ: {fmt(o['amount'])} تومان")
         await self.shop.finish_order(o["id"], f"agent #{aid}")
 
-    async def _fulfil_renew(self, o, aid, plan_id):
+    async def _fulfil_renew(self, o, aid, plan_id, gb=None):
         ag = await self.db.get_agent(aid)
         plan = await self.db.get_agent_plan(plan_id)
         if not ag or not plan or ag["status"] == "deleted":
             raise VpnError("agent/plan missing")
+        if gb:
+            plan = {**plan, "traffic_gb": gb, "title": f"{plan['title']} — {gb:g} GB"}
         meta = json.loads(ag["meta"] or "{}")
         if o["id"] not in meta.get("applied", []):
             drv = await self.vpn.driver(ag["panel_id"])

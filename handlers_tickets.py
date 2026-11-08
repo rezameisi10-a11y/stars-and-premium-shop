@@ -232,7 +232,7 @@ async def _thread(shop: Shop, tid: int):
         rows.append([btn("✍️ پاسخ", f"adm:tkr:{tid}", role="action"), btn("🔒 بستن", f"adm:tkx:{tid}:c", role="reject")])
     else:
         rows.append([btn("🔓 بازگشایی", f"adm:tkx:{tid}:o", role="action")])
-    rows.append([btn("👤 کارت کاربر", f"adm:u:{t['user_id']}", role="admin")])
+    rows.append([btn("👤 کارت کاربر", f"adm:u:{t['user_id']}:t{tid}", role="admin")])
     rows.append(back_row("adm:tk"))
     return "\n".join(L)[:4000], ikb(rows)
 

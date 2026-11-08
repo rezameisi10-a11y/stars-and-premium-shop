@@ -193,6 +193,7 @@ GROUPS = [
     ]),
     ("miniapp", N_("مینی‌اپ تلگرام"), "settings", [
         ("miniapp_enabled", N_("فعال بودن مینی‌اپ"), "bool", N_("نیاز به آدرس عمومی HTTPS (همان PUBLIC_URL/دامنه‌ی پنل). همه‌ی کارهای کاربر در ربات داخل مینی‌اپ هم هست و ادمین‌ها با یک دکمه وارد پنل کامل مدیریت می‌شوند")),
+        ("miniapp_ai_on", N_("پشتیبان هوشمند داخل مینی‌اپ"), "bool", N_("روشن: صفحه‌ی پشتیبانی مینی‌اپ دکمه‌ی چت با پشتیبان هوشمند دارد (فقط وقتی «پشتیبان هوشمند» ربات هم روشن و کلید API وارد شده باشد)")),
         ("miniapp_menu_button", N_("دکمه‌ی مینی‌اپ کنار کادر پیام (Menu Button)"), "bool", N_("به‌جای دکمه‌ی پیش‌فرض منوی ربات، دکمه‌ی باز کردن مینی‌اپ نشان داده می‌شود")),
         ("miniapp_title", N_("متن دکمه‌ی مینی‌اپ"), "text", N_("مثال: 🛍 فروشگاه")),
         ("miniapp_skin", N_("ظاهر پیش‌فرض مینی‌اپ"), "select:a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|q", N_("ظاهر مینی‌اپ برای همه‌ی کاربران. ظاهرهای نئون شب، مینیمال روشن، زرین لوکس، آب‌نباتی شاد و همه‌ی ظاهرهای متحرک حالت روز/شب ثابت دارند")),
@@ -236,6 +237,11 @@ GROUPS = [
         ("vpn_user_cd_min", N_("حداقل زمان اضافه — کاربران (روز)"), "number", N_("مثال: ۱")),
         ("vpn_user_cd_max", N_("حداکثر زمان اضافه — کاربران (روز)"), "number", N_("مثال: ۳۶۵")),
         ("vpn_agent_enabled", N_("فروش پنل نمایندگی"), "bool", N_("با خرید، ادمین خودکار در پنل ساخته می‌شود")),
+        ("vpn_agent_cv_on", N_("خرید پنل نمایندگی با حجم دلخواه"), "bool", N_("خریدار حجم پنل را (در بازه‌ی زیر) خودش وارد می‌کند؛ مدت و سقف کاربر از «پلن الگو» می‌آید")),
+        ("vpn_agent_cv_price", N_("قیمت هر گیگابایت — پنل نمایندگی دلخواه (تومان)"), "number", N_("باید بیشتر از ۰ باشد")),
+        ("vpn_agent_cv_min", N_("حداقل حجم — پنل نمایندگی دلخواه (گیگابایت)"), "number", N_("مثال: ۱۰۰")),
+        ("vpn_agent_cv_max", N_("حداکثر حجم — پنل نمایندگی دلخواه (گیگابایت)"), "number", N_("مثال: ۵۰۰۰")),
+        ("vpn_agent_cv_plan", N_("شناسه‌ی پلن الگو برای حجم دلخواه"), "number", N_("۰ = ارزان‌ترین پلن فعال؛ مدت، پنل و سقف کاربر از همین پلن گرفته می‌شود")),
         ("vpn_agent_name_mode", N_("نام کاربری ادمین نماینده"), "select:random|ask", N_("random: تصادفی · ask: از خریدار بپرسد")),
         ("vpn_agent_prefix", N_("پیشوند نام کاربری نماینده‌ها"), "text", N_("فقط حروف کوچک انگلیسی، عدد و _ ؛ مثال: agent")),
         ("vpn_agent_remind_days", N_("یادآوری پایان زمان نماینده (روز مانده)"), "number", N_("۰ = خاموش")),
@@ -263,11 +269,11 @@ TEXT_KEYS = {"welcome_text", "rules_text", "support_text", "maintenance_text", "
 
 DEFAULTS = {
     "btn_ovr": "", "force_channels": "",
-    "miniapp_ui": "", "miniapp_layout": "", "miniapp_enabled": "1", "miniapp_menu_button": "1", "miniapp_title": "🛍 فروشگاه", "miniapp_skin": "a", "miniapp_skin_pick": "0", "miniapp_mode": "auto",
+    "miniapp_ui": "", "miniapp_layout": "", "miniapp_enabled": "1", "miniapp_ai_on": "1", "miniapp_menu_button": "1", "miniapp_title": "🛍 فروشگاه", "miniapp_skin": "a", "miniapp_skin_pick": "0", "miniapp_mode": "auto",
     "vpn_enabled": "1", "vpn_name_mode": "random", "vpn_prefix": "vpn", "vpn_test_enabled": "0", "vpn_test_days": "1",
     "vpn_test_gb": "0.5", "vpn_test_panel": "0", "vpn_stack": "1", "vpn_allow_addon": "1", "vpn_allow_revoke": "1", "vpn_allow_move": "0", "vpn_agent_move": "0", "vpn_agent_move_max": "1", "rc_auto_on": "0", "rc_auto_max": "300000", "rc_auto_min_orders": "0", "rc_auto_open_max": "1", "rc_auto_wallet": "0", "rc_auto_ban": "0", "rc_fake_text": "", "rc_warn_text": "", "tickets_on": "1", "tickets_max_open": "3",
     "vpn_remind_days": "3", "vpn_remind_usage": "90", "vpn_health_on": "1", "vpn_health_min": "5", "vpn_health_fails": "2", "vpn_health_autoclose": "0", "vpn_health_cpu": "90", "vpn_health_mem": "90", "vpn_health_disk": "90", "vpn_health_cap": "90", "vpn_down": "", "vpn_autorenew_on": "1", "vpn_autorenew_days": "1", "vpn_winback_on": "0", "vpn_winback_percent": "10", "vpn_winback_after": "2", "vpn_winback_valid": "3", "vpn_autodelete_days": "0", "vpn_sync_min": "10", "vpn_notify_admin": "1",
-    "vpn_help_text": "", "vpn_agent_enabled": "1", "vpn_agent_name_mode": "random", "vpn_agent_prefix": "agent", "vpn_agent_remind_days": "3",
+    "vpn_help_text": "", "vpn_agent_enabled": "1", "vpn_agent_cv_on": "0", "vpn_agent_cv_price": "0", "vpn_agent_cv_min": "10", "vpn_agent_cv_max": "1000", "vpn_agent_cv_plan": "0", "vpn_agent_name_mode": "random", "vpn_agent_prefix": "agent", "vpn_agent_remind_days": "3",
     "vpn_agent_autodelete_days": "0", "vpn_agent_help_text": "",
     "vpn_user_cgb_on": "0", "vpn_user_cgb_price": "0", "vpn_user_cgb_min": "1", "vpn_user_cgb_max": "1000",
     "vpn_user_cd_on": "0", "vpn_user_cd_price": "0", "vpn_user_cd_min": "1", "vpn_user_cd_max": "365",

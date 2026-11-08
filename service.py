@@ -1119,6 +1119,8 @@ class Shop:
                 if kind == "agent" and len(ref) > 2:
                     ap = await db.get_agent_plan(int(ref[2]))
                     L = ["خرید پنل نمایندگی", f"نام محصول : {esc(o['title'])}"]
+                    if ap and len(ref) > 4 and ref[3] == "c":
+                        ap = {**ap, "traffic_gb": float(ref[4])}
                     return L + ([f"حجم پنل : {gbs(ap['traffic_gb'])}", f"زمان پنل : {days(ap['days'])}", f"حداکثر کاربر : {ap['max_users'] or 'نامحدود'}"] if ap else [])
                 if kind == "arenew" and len(ref) > 2:
                     ag = await db.get_agent(int(ref[2]))
