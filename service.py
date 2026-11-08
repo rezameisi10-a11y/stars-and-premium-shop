@@ -1117,10 +1117,9 @@ class Shop:
                         L += ([f"حجم اضافه : {gbs(ad['gb'])}"] if ad["gb"] else []) + ([f"زمان اضافه : {days(ad['days'])}"] if ad["days"] else [])
                     return L
                 if kind == "agent" and len(ref) > 2:
-                    ap = await db.get_agent_plan(int(ref[2]))
+                    cvx = ref[2] == "c" and len(ref) > 6
+                    ap = {"traffic_gb": float(ref[3]), "days": int(ref[4]), "max_users": int(ref[5])} if cvx else await db.get_agent_plan(int(ref[2]))
                     L = ["خرید پنل نمایندگی", f"نام محصول : {esc(o['title'])}"]
-                    if ap and len(ref) > 4 and ref[3] == "c":
-                        ap = {**ap, "traffic_gb": float(ref[4])}
                     return L + ([f"حجم پنل : {gbs(ap['traffic_gb'])}", f"زمان پنل : {days(ap['days'])}", f"حداکثر کاربر : {ap['max_users'] or 'نامحدود'}"] if ap else [])
                 if kind == "arenew" and len(ref) > 2:
                     ag = await db.get_agent(int(ref[2]))

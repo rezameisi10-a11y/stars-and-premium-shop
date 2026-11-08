@@ -724,7 +724,7 @@ async def a_agent_plans(ctx: Ctx, d: dict) -> dict:
     return {"plans": [_agent_plan_dict(ctx, p) for p in await ag.plans_for(u)], "ask_name": (ctx.shop.s.get("vpn_agent_name_mode") or "random") == "ask",
             "discount": (u or {}).get("personal_discount") or 0,
             "cv": ({"unit": ctx.shop._personal(cv["price"], u), "unit_text": _money(ctx, ctx.shop._personal(cv["price"], u)), "min": cv["min"], "max": cv["max"],
-                    "days": cv["plan"]["days"], "max_users": cv["plan"]["max_users"]} if cv else None)}
+                    "days": cv["days"], "max_users": cv["users"]} if cv else None)}
 
 
 async def a_agent_order(ctx: Ctx, d: dict) -> dict:

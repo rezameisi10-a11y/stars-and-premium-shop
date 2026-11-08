@@ -965,11 +965,11 @@ async def agent_quick_renew(cb: CallbackQuery, shop: Shop, tr):
     ag = await _own_agent(cb, shop, tr, cb.data.split(":")[2])
     if not ag:
         return
-    if not ag["plan_id"]:
+    if not ag["plan_id"] and not shop.vpn.agents.is_custom(ag):
         await cb.answer(tr("پلنی برای تمدید موجود نیست."), show_alert=True)
         return
     try:
-        oid = await shop.vpn.agents.renew_order(cb.from_user.id, ag["id"], ag["plan_id"])
+        oid = await shop.vpn.agents.renew_order(cb.from_user.id, ag["id"], ag["plan_id"] or 0)
     except VpnError as e:
         await cb.answer(tr(str(e)), show_alert=True)
         return
