@@ -61,7 +61,15 @@ def _by_panel(plans) -> dict:
 
 
 async def _show_plans(cb: CallbackQuery, shop: Shop, tr, plans, panel_name="", multi=False):
-    rows = [[btn(_plan_label(p, tr, p["user_price"]), f"vpn:p:{p['id']}", role="action")] for p in plans[:40]]
+    rows = []
+    if plans:                                       # دو ستون مثل خرید نمایندگی: مشخصات | قیمت
+        rows.append([btn(tr("=-=-= مشخصات سرویس‌های ما =-=-="), "vpn:agnoop", role="confirm")])
+        rows.append([btn(tr("📊 مشخصات"), "vpn:agnoop", role="back"), btn(tr("💲 قیمت"), "vpn:agnoop", role="back")])
+    for p in plans[:40]:
+        gb = tr("نامحدود") if not p["gb"] else ltr(f"{p['gb']:g}GB")
+        spec = f"{p['title']} | {gb} | {tr('{d} روز', d=p['days']) if p['days'] else tr('بدون انقضا')}"
+        price = tr("❌ ناموجود") if p.get("out_of_stock") else f"{fmt(p['user_price'])} {tr('تومان')}"
+        rows.append([btn(spec, f"vpn:p:{p['id']}", role="action"), btn(price, f"vpn:p:{p['id']}", role="action")])
     if multi:
         rows.append([btn(tr("🔙 انتخاب لوکیشن/پنل"), "vpn", role="back")])
     else:
