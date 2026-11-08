@@ -177,6 +177,17 @@ def btn(text, data=None, url=None, role=None, style=None, emoji=None, webapp=Non
     return InlineKeyboardButton(text=text, callback_data=data, **kw)
 
 
+def plan_btn_kw(p: dict, part: str) -> dict:
+    """رنگ/ایموجی پریمیوم اختصاصی دکمه‌ی یک محصول؛ part = «s» (مشخصات) یا «p» (قیمت). خالی = همان رنگ/ایموجی نقش دکمه."""
+    kw = {}
+    st, em = (p.get(f"{part}_style") or ""), str(p.get(f"{part}_emoji") or "")
+    if st in ("primary", "success", "danger"):
+        kw["style"] = st
+    if em.isdigit():
+        kw["emoji"] = em
+    return kw
+
+
 def ikb(rows):
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

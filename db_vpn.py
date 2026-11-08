@@ -61,12 +61,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_vpns_name ON vpn_services(panel_id, name) W
 """
 
 PANEL_FIELDS = {"name", "type", "url", "username", "password", "token", "sub_url", "inbound_ids", "extra", "capacity", "enabled", "sort", "note"}
-PLAN_FIELDS = {"title", "panel_id", "days", "gb", "price", "cost", "ip_limit", "active", "sort", "note", "utype"}
+PLAN_FIELDS = {"title", "panel_id", "days", "gb", "price", "cost", "ip_limit", "active", "sort", "note", "utype", "s_style", "s_emoji", "p_style", "p_emoji"}
 ADDON_FIELDS = {"title", "gb", "days", "price", "cost", "active", "sort"}
 SERVICE_FIELDS = {"panel_id", "plan_id", "name", "status", "expires_at", "total_bytes", "used_bytes", "sub_url", "links", "meta", "title",
                   "notified", "note", "last_sync", "user_id", "is_test"}
 AGENT_PLAN_FIELDS = {"title", "panel_id", "days", "traffic_gb", "max_users", "role_id", "service_ids", "modify_users", "data_min_gb", "data_max_gb",
-                     "expire_min_days", "expire_max_days", "price", "cost", "active", "sort", "note", "addon_on",
+                     "expire_min_days", "expire_max_days", "price", "cost", "active", "sort", "note", "addon_on", "s_style", "s_emoji", "p_style", "p_emoji",
                      "custom_gb_on", "custom_gb_price", "custom_gb_min", "custom_gb_max", "custom_days_on", "custom_days_price", "custom_days_min", "custom_days_max"}
 AGENT_ADDON_FIELDS = {"plan_id", "kind", "amount", "price", "cost", "active", "sort"}
 AGENT_FIELDS = {"user_id", "panel_id", "plan_id", "username", "password", "status", "expires_at", "total_bytes", "used_bytes", "users_count",

@@ -195,7 +195,7 @@ class AgentSales:
     # ------------------------------------------------------------------ حجم / زمان اضافه
     async def addons_for(self, ag) -> list:
         """بسته‌های افزودنی فعال پلن فعلی نماینده (اگر ادمین برای آن پلن خاموش کرده باشد، خالی)."""
-        if not ag.get("plan_id") or ag["status"] == "deleted":
+        if not ag.get("plan_id") or ag["status"] == "deleted" or self.is_custom(ag):    # پنل حجم‌دلخواه: بسته‌ی ثابت ندارد؛ فقط حجم اضافه با قیمت خودش (custom_for)
             return []
         plan = await self.db.get_agent_plan(ag["plan_id"])
         if not plan or not plan.get("addon_on", 1) or plan["panel_id"] != ag["panel_id"]:
@@ -212,6 +212,11 @@ class AgentSales:
         اگر پلن قیمت اختصاصی گذاشته باشد همان؛ وگرنه تنظیم عمومی «تنظیمات ← پنل نمایندگی»."""
         if ag["status"] == "deleted":
             return {}
+        if self.is_custom(ag):                                  # قیمت حجم اضافه‌ی مخصوص پنل‌های حجم دلخواه (تنظیمات مستقل)
+            price = self._int("vpn_agent_cv_add_price")
+            if not self._flag("vpn_agent_cv_add_on") or price <= 0 or not ag["total_bytes"]:
+                return {}
+            return {"gb": {"price": price, "min": float(self.s.get("vpn_agent_cv_add_min") or 1) or 1, "max": float(self.s.get("vpn_agent_cv_add_max") or 10 ** 6) or 10 ** 6}}
         plan = await self.db.get_agent_plan(ag["plan_id"]) if ag.get("plan_id") else None
         if plan and (not plan.get("addon_on", 1) or plan["panel_id"] != ag["panel_id"]):
             return {}

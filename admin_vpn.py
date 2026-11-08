@@ -62,6 +62,7 @@ OPTIONAL = {"sub_url", "inbound_ids", "test_days", "test_gb", "test_max", *LIMIT
 
 class AV(StatesGroup):
     wiz = State()
+    pb_emoji = State()
 
 
 def _ask_kb(cancel="adm:vpn"):
@@ -93,7 +94,7 @@ VPN_SECTIONS = [
     ("r", "🔔 یادآوری و تمدید", ["vpn_remind_days", "vpn_remind_usage", "vpn_autorenew_on", "vpn_autorenew_days"]),
     ("w", "🎁 بازگشت مشتری", ["vpn_winback_on", "vpn_winback_percent", "vpn_winback_after", "vpn_winback_valid"]),
     ("h", "🩺 پایش سلامت پنل‌ها", ["vpn_health_on", "vpn_health_min", "vpn_health_fails", "vpn_health_autoclose", "vpn_health_cpu", "vpn_health_mem", "vpn_health_disk", "vpn_health_cap"]),
-    ("a", "🧑‍💼 پنل نمایندگی", ["vpn_agent_enabled", "vpn_agent_cv_on", "vpn_agent_cv_price", "vpn_agent_cv_min", "vpn_agent_cv_max", "vpn_agent_cv_days", "vpn_agent_cv_users", "vpn_agent_cv_panel", "vpn_agent_cv_cost", "vpn_agent_name_mode", "vpn_agent_prefix", "vpn_agent_remind_days", "vpn_agent_autodelete_days", "vpn_agent_help_text"]),
+    ("a", "🧑‍💼 پنل نمایندگی", ["vpn_agent_enabled", "vpn_agent_cv_on", "vpn_agent_cv_price", "vpn_agent_cv_min", "vpn_agent_cv_max", "vpn_agent_cv_days", "vpn_agent_cv_users", "vpn_agent_cv_panel", "vpn_agent_cv_cost", "vpn_agent_cv_add_on", "vpn_agent_cv_add_price", "vpn_agent_cv_add_min", "vpn_agent_cv_add_max", "vpn_agent_name_mode", "vpn_agent_prefix", "vpn_agent_remind_days", "vpn_agent_autodelete_days", "vpn_agent_help_text"]),
 ]
 _SEC_BY_ID = {x[0]: x for x in VPN_SECTIONS}
 _placed = {k for _, _, ks in VPN_SECTIONS for k in ks} | {"vpn_allow_addon"}
@@ -1259,6 +1260,7 @@ async def cb_plan(cb: CallbackQuery, shop: Shop):
             [btn("✏️ روز", f"adm:vpn:ne:{pid}:days", role="admin"), btn("✏️ حجم", f"adm:vpn:ne:{pid}:gb", role="admin")],
             [btn("✏️ عنوان", f"adm:vpn:ne:{pid}:title", role="admin"), btn("✏️ محدودیت IP", f"adm:vpn:ne:{pid}:ip_limit", role="admin")],
             [btn("✏️ نوع کاربر", f"adm:vpn:ne:{pid}:utype", role="admin"), btn("📝 یادداشت", f"adm:vpn:ne:{pid}:note", role="admin")],
+            [btn("🎨 رنگ و ایموجی دکمه‌ها", f"adm:vpn:pb:v:{pid}", role="admin")],
             back_row("adm:vpn:pne", "▶️ بازگشت به منوی قبل")]
     await view(cb, txt, ikb(rows))
     await cb.answer()
@@ -2301,3 +2303,78 @@ async def cb_health_run(cb: CallbackQuery, shop: Shop):
     await cb.answer("در حال بررسی...")
     await shop.vpn.health_tick(force=True)
     await _health_screen(cb, shop)
+
+
+# ============================================================ رنگ و ایموجی پریمیوم دکمه‌های هر محصول (وی‌پی‌ان v | پنل نمایندگی a)
+_PB = {"v": ("get_vpn_plan", "update_vpn_plan", "adm:vpn:n:"), "a": ("get_agent_plan", "update_agent_plan", "adm:vpn:agpv:")}
+_PB_PART = {"s": ("📊 دکمه‌ی مشخصات", "s"), "p": ("💲 دکمه‌ی قیمت", "p")}
+_SDOT = {"": "⚪ پیش‌فرض", "primary": "🔵 آبی", "success": "🟢 سبز", "danger": "🔴 قرمز"}
+
+
+async def _pb_view(cb: CallbackQuery, shop: Shop, k: str, pid: int):
+    from admin_settings import style_row
+    from admin_common import C2S
+    get, _upd, back = _PB[k]
+    p = await getattr(shop.db, get)(pid)
+    if not p:
+        await cb.answer("پیدا نشد", show_alert=True)
+        return
+    lines, rows = [f"🎨 <b>رنگ و ایموجی دکمه‌های «{esc(p['title'])}»</b>",
+                   "این تنظیم فقط روی دکمه‌های همین محصول در لیست خرید ربات اثر دارد؛ هر محصول جدید هم از همین‌جا قابل تنظیم است."], []
+    for part, (lab, _x) in _PB_PART.items():
+        st, em = p.get(f"{part}_style") or "", p.get(f"{part}_emoji") or ""
+        lines.append(f"\n{lab}: {_SDOT.get(st, '⚪')} | " + (f"🌟 <code>{esc(em)}</code>" if em else "🌟 بدون ایموجی"))
+        rows.append([btn(lab, "vpn:agnoop", style="")])
+        rows.append(style_row(f"adm:vpn:pbc:{k}:{pid}:{part}", st))
+        rows.append([btn("🌟 ایموجی پریمیوم", f"adm:vpn:pbe:{k}:{pid}:{part}", role="action"), btn("✖️ حذف ایموجی", f"adm:vpn:pbe:{k}:{pid}:{part}:clr", role="reject")])
+    rows.append(back_row(f"{back}{pid}"))
+    await view(cb, "\n".join(lines), ikb(rows))
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:pb:(v|a):\d+$"))
+async def cb_pb(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    await state.clear()
+    _, _, _, k, pid = cb.data.split(":")
+    await _pb_view(cb, shop, k, int(pid))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:pbc:(v|a):\d+:(s|p):(d|p|s|x)$"))
+async def cb_pb_color(cb: CallbackQuery, shop: Shop):
+    from admin_common import C2S
+    _, _, _, k, pid, part, c = cb.data.split(":")
+    await getattr(shop.db, _PB[k][1])(int(pid), **{f"{part}_style": C2S[c]})
+    await shop.db.log(f"tg:{cb.from_user.id}", "plan_btn_color", f"{k}{pid}.{part}={C2S[c]}")
+    await _pb_view(cb, shop, k, int(pid))
+    await cb.answer("انجام شد")
+
+
+@router.callback_query(F.data.regexp(r"^adm:vpn:pbe:(v|a):\d+:(s|p)(:clr)?$"))
+async def cb_pb_emoji(cb: CallbackQuery, shop: Shop, state: FSMContext):
+    from admin_settings import EMOJI_HELP
+    parts = cb.data.split(":")
+    k, pid, part = parts[3], int(parts[4]), parts[5]
+    if len(parts) > 6:
+        await getattr(shop.db, _PB[k][1])(pid, **{f"{part}_emoji": ""})
+        await _pb_view(cb, shop, k, pid)
+        await cb.answer("حذف شد")
+        return
+    await state.set_state(AV.pb_emoji)
+    await state.update_data(k=k, pid=pid, part=part)
+    await cb.message.answer(EMOJI_HELP, reply_markup=_ask_kb(f"adm:vpn:pb:{k}:{pid}"))
+    await cb.answer()
+
+
+@router.message(AV.pb_emoji, ~F.text.startswith("/"))
+async def got_pb_emoji(m: Message, shop: Shop, state: FSMContext):
+    from admin_settings import extract_emoji_id
+    eid = extract_emoji_id(m)
+    if not eid:
+        await m.answer("ایموجی پریمیوم در پیام پیدا نشد. یک پیام با ایموجی پریمیوم بفرستید یا شناسه‌ی عددی را بفرستید.")
+        return
+    d = await state.get_data()
+    await state.clear()
+    await getattr(shop.db, _PB[d["k"]][1])(d["pid"], **{f"{d['part']}_emoji": eid})
+    await shop.db.log(f"tg:{m.from_user.id}", "plan_btn_emoji", f"{d['k']}{d['pid']}.{d['part']}={eid}")
+    await m.answer(f"✅ ایموجی پریمیوم ثبت شد (<code>{eid}</code>).\nاگر مالک ربات تلگرام پریمیوم نباشد، تلگرام آن را نشان نمی‌دهد و ربات خودکار بدون ایموجی ادامه می‌دهد.",
+                   reply_markup=ikb([[btn("🎨 بازگشت به رنگ و ایموجی", f"adm:vpn:pb:{d['k']}:{d['pid']}", role="back")]]))

@@ -34,6 +34,12 @@ h1{font-size:19px;margin:16px 2px 10px}h2{font-size:16px;margin:14px 2px 8px}
 .tile{background:var(--card);border:0;border-radius:var(--r);padding:14px 8px;text-align:center;color:var(--fg);font:inherit;cursor:pointer;display:flex;flex-direction:column;gap:6px;align-items:center}
 .tile .ic{font-size:26px;line-height:1}.tile span{font-size:13px}
 .tile:active,.row:active,.b:active{opacity:.7}
+.pgh{margin:6px 0 8px;padding:12px 14px;border-radius:16px;font-weight:800;text-align:center;color:#fff;background:linear-gradient(135deg,#16a34a,#15803d);box-shadow:0 6px 14px rgba(0,0,0,.18)}
+.pg{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:8px;margin:0 0 12px}
+.pg .pgt{padding:9px 6px;border-radius:12px;text-align:center;font-weight:800;font-size:13px;background:var(--card);border:1px solid var(--line);opacity:.95}
+.pg .pgc{margin:0;min-height:56px;justify-content:center;text-align:center}
+.pg .pgc>span{flex:1;text-align:center}
+.pg .pgp b{margin:0 auto;font-size:15px}
 .agpair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:4px 0 14px}
 .agpair.one{grid-template-columns:1fr}
 html .agb{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:112px;padding:16px 8px;border:2px solid rgba(255,255,255,.55);border-radius:26px;font:inherit;font-weight:900;font-size:17px;line-height:1.35;text-align:center;cursor:pointer;
@@ -971,6 +977,8 @@ function setupReceipt(r) {
 
 /* ------------ VPN ------------ */
 const LTR = x => "\u2066" + x + "\u2069";            // اعداد/واحد لاتین داخل متن راست‌به‌چپ جابه‌جا نشوند
+const planGrid = (head, plans, kind, line, ic) => `<div class="pgh">${esc(head)}</div><div class="pg"><div class="pgt">📊 ${esc(t("مشخصات"))}</div><div class="pgt">💲 ${esc(t("قیمت"))}</div>` +
+  plans.map(p => `<button class="row prod pgc k-${kind}" data-id="${p.id}"><i class="ri">${ic}</i><span>${esc(p.title)}<div class="sub" style="direction:inherit">${esc(line(p))}</div>${p.note ? `<div class="sub">${esc(p.note)}</div>` : ""}</span></button><button class="row prod pgc pgp k-${kind}" data-id="${p.id}"><b>${esc(p.price.short)}</b></button>`).join("") + `</div>`;
 const planLine = p => `${p.days ? t("{d} روز", {d: p.days}) : t("بدون انقضا")} · ${p.gb ? LTR(p.gb + " GB") : t("نامحدود")}`;
 VIEWS.vpn = async (pid) => {
   const r = await api("vpn_plans");
@@ -985,7 +993,7 @@ VIEWS.vpn = async (pid) => {
   } else {
     h += `<p class="hint">${esc(t("یکی از پلن‌ها را انتخاب کنید:"))}</p>`;
     if (!pick.length) h += `<div class="card hint">${esc(t("در حال حاضر پلنی برای فروش موجود نیست."))}</div>`;
-    h += pick.map(p => `<button class="row prod k-vpn" data-id="${p.id}"><i class="ri">🛡</i><span>${esc(p.title)}<div class="sub" style="direction:inherit">${esc(planLine(p))}</div></span><b>${esc(p.price.short)}</b></button>`).join("");
+    if (pick.length) h += planGrid(t("🛡 پلن مناسب خود را انتخاب کنید"), pick, "vpn", planLine, "🛡");
   }
   h += `<button class="row" id="vm"><span>📡 ${esc(t("سرویس‌های من"))}</span><span>›</span></button>`;
   $app.innerHTML = h;
@@ -1089,7 +1097,7 @@ VIEWS.agent = async () => {
   let h = `<h1>${IC("kind_agent", "🧑‍💼")} ${esc(L("kind_agent", t("خرید پنل نمایندگی")))}</h1><p class="hint">${esc(t("پس از پرداخت، آدرس پنل با نام کاربری و رمز به‌صورت خودکار برای شما ساخته و ارسال می‌شود. پلن را انتخاب کنید:"))}</p>`;
   if (r.discount) h += `<div class="card">🎁 ${esc(t("تخفیف اختصاصی شما ({p}٪) در قیمت‌ها اعمال شده است.", {p: r.discount}))}</div>`;
   if (!r.plans.length) h += `<div class="card hint">${esc(t("در حال حاضر پلنی برای فروش موجود نیست."))}</div>`;
-  h += r.plans.map(p => `<button class="row prod k-vpn" data-id="${p.id}"><i class="ri">🧑‍💼</i><span>${esc(p.title)}<div class="sub" style="direction:inherit">${esc(agLine(p))}</div>${p.note ? `<div class="sub">${esc(p.note)}</div>` : ""}</span><b>${esc(p.price.short)}</b></button>`).join("");
+  if (r.plans.length) h += planGrid(t("🧑‍💼 پلن پنل نمایندگی را انتخاب کنید"), r.plans, "vpn", agLine, "🧑‍💼");
   if (r.cv) h += `<div class="card"><h2>➕ ${esc(t("حجم دلخواه"))}</h2><p class="hint">${esc(t("حداقل {a} و حداکثر {b} گیگابایت · هر گیگابایت {p} تومان", {a: r.cv.min, b: r.cv.max, p: num(r.cv.unit)}))}</p>
     <input id="cv-g" type="number" inputmode="decimal" min="${r.cv.min}" max="${r.cv.max}" step="any" placeholder="${esc(t("حجم به گیگابایت"))}" dir="ltr">
     <div class="lbl" id="cv-p">&nbsp;</div><button class="b" id="cv-b">${esc(t("ادامه"))}</button></div>`;

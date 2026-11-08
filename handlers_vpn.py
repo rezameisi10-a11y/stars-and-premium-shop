@@ -10,7 +10,7 @@ from aiogram.types import CallbackQuery, Message
 from handlers_user import order_text
 from i18n import N_
 from service import Shop
-from ui import btn, esc, fmt, ikb
+from ui import plan_btn_kw, btn, esc, fmt, ikb
 from vpn_ops import MoveError
 from vpn_panels import PanelError
 from vpn_service import STATUS_FA, VpnError, ltr, pflag
@@ -63,13 +63,13 @@ def _by_panel(plans) -> dict:
 async def _show_plans(cb: CallbackQuery, shop: Shop, tr, plans, panel_name="", multi=False):
     rows = []
     if plans:                                       # دو ستون مثل خرید نمایندگی: مشخصات | قیمت
-        rows.append([btn(tr("=-=-= مشخصات سرویس‌های ما =-=-="), "vpn:agnoop", role="confirm")])
+        rows.append([btn(tr("🛡 پلن مناسب خود را انتخاب کنید"), "vpn:agnoop", role="confirm")])
         rows.append([btn(tr("📊 مشخصات"), "vpn:agnoop", role="back"), btn(tr("💲 قیمت"), "vpn:agnoop", role="back")])
     for p in plans[:40]:
         gb = tr("نامحدود") if not p["gb"] else ltr(f"{p['gb']:g}GB")
         spec = f"{p['title']} | {gb} | {tr('{d} روز', d=p['days']) if p['days'] else tr('بدون انقضا')}"
         price = tr("❌ ناموجود") if p.get("out_of_stock") else f"{fmt(p['user_price'])} {tr('تومان')}"
-        rows.append([btn(spec, f"vpn:p:{p['id']}", role="action"), btn(price, f"vpn:p:{p['id']}", role="action")])
+        rows.append([btn(spec, f"vpn:p:{p['id']}", role="action", **plan_btn_kw(p, "s")), btn(price, f"vpn:p:{p['id']}", role="action", **plan_btn_kw(p, "p"))])
     if multi:
         rows.append([btn(tr("🔙 انتخاب لوکیشن/پنل"), "vpn", role="back")])
     else:
@@ -719,11 +719,11 @@ async def agent_home(cb: CallbackQuery, shop: Shop, tr):
     noop = "vpn:agnoop"
     rows = []
     if plans:
-        rows.append([btn(tr("=-=-= مشخصات پنل‌های ما =-=-="), noop, role="confirm")])
+        rows.append([btn(tr("🧑‍💼 پلن پنل نمایندگی را انتخاب کنید"), noop, role="confirm")])
         rows.append([btn(tr("📊 حجم"), noop, role="back"), btn(tr("💲 قیمت"), noop, role="back")])
     for p in plans[:40]:
         gb = tr("نامحدود") if not p["traffic_gb"] else ltr(f"{p['traffic_gb']:g}GB")
-        rows.append([btn(gb, f"vpn:agp:{p['id']}", role="action"), btn(f"{fmt(p['user_price'])} {tr('تومان')}", f"vpn:agp:{p['id']}", role="action")])
+        rows.append([btn(gb, f"vpn:agp:{p['id']}", role="action", **plan_btn_kw(p, "s")), btn(f"{fmt(p['user_price'])} {tr('تومان')}", f"vpn:agp:{p['id']}", role="action", **plan_btn_kw(p, "p"))])
     cv = await shop.vpn.agents.cv_cfg()
     if cv:
         rows.append([btn(tr("➕ حجم دلخواه"), "vpn:agc", role="action"), btn(f"{fmt(shop._personal(cv['price'], u))} {tr('تومان')}", "vpn:agc", role="action")])

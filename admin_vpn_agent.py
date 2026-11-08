@@ -89,7 +89,7 @@ async def cb_plan(cb: CallbackQuery, shop: Shop):
     rows = [[btn("⏯ فعال/غیرفعال", f"adm:vpn:agpt:{pid}", role="action"), btn("🗑 حذف", f"adm:vpn:agpd:{pid}", role="reject")],
             [btn("➕ حجم/زمان اضافه: " + ("روشن ✅" if p.get("addon_on", 1) else "خاموش ⛔"), f"adm:vpn:agpo:{pid}", role="action"),
              btn("📦 بسته‌های افزودنی", f"adm:vpn:agao:{pid}", role="admin")],
-            [btn("✏️ حجم/زمان دلخواه", f"adm:vpn:agco:{pid}", role="admin")]]
+            [btn("✏️ حجم/زمان دلخواه", f"adm:vpn:agco:{pid}", role="admin"), btn("🎨 رنگ و ایموجی دکمه‌ها", f"adm:vpn:pb:a:{pid}", role="admin")]]
     fields = [f for f in EDITABLE if f in ("title", "days", "price") or (f in ("traffic_gb", "max_users") and p["panel_type"] == "pasarguard")]
     lab = {"title": "عنوان", "days": "روز", "price": "قیمت", "traffic_gb": "حجم", "max_users": "سقف کاربر"}
     btns = [btn(f"✏️ {lab[f]}", f"adm:vpn:agpe:{pid}:{f}", role="admin") for f in fields]
