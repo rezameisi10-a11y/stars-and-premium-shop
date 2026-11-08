@@ -76,7 +76,7 @@ FEATURES = [("vpn_enabled", "فروش VPN", "bool", ["vpn_name_mode", "vpn_prefi
             ("vpn_allow_revoke", "ساخت لینک جدید توسط کاربر", "bool", []),
             ("vpn_stack", "جمع شدن روزهای باقی‌مانده در تمدید", "bool", []),
             ("vpn_notify_admin", "اعلان فروش به ادمین", "bool", []),
-            ("vpn_agent_enabled", "فروش پنل نمایندگی", "bool", ["vpn_agent_name_mode", "vpn_agent_prefix", "vpn_agent_remind_days", "vpn_agent_autodelete_days", "vpn_agent_help_text"]),
+            ("vpn_agent_enabled", "فروش پنل نمایندگی", "bool", ["vpn_agent_cv_on", "vpn_agent_cv_price", "vpn_agent_cv_min", "vpn_agent_cv_max", "vpn_agent_cv_plan", "vpn_agent_name_mode", "vpn_agent_prefix", "vpn_agent_remind_days", "vpn_agent_autodelete_days", "vpn_agent_help_text"]),
             ("vpn_remind_days", "هشدار زمان", "val", ["vpn_remind_days"]),
             ("vpn_remind_usage", "هشدار حجم", "val", ["vpn_remind_usage"]),
             ("vpn_autodelete_days", "حذف خودکار سرویس منقضی", "val", ["vpn_autodelete_days"]),
@@ -93,7 +93,7 @@ VPN_SECTIONS = [
     ("r", "🔔 یادآوری و تمدید", ["vpn_remind_days", "vpn_remind_usage", "vpn_autorenew_on", "vpn_autorenew_days"]),
     ("w", "🎁 بازگشت مشتری", ["vpn_winback_on", "vpn_winback_percent", "vpn_winback_after", "vpn_winback_valid"]),
     ("h", "🩺 پایش سلامت پنل‌ها", ["vpn_health_on", "vpn_health_min", "vpn_health_fails", "vpn_health_autoclose", "vpn_health_cpu", "vpn_health_mem", "vpn_health_disk", "vpn_health_cap"]),
-    ("a", "🧑‍💼 پنل نمایندگی", ["vpn_agent_enabled", "vpn_agent_name_mode", "vpn_agent_prefix", "vpn_agent_remind_days", "vpn_agent_autodelete_days", "vpn_agent_help_text"]),
+    ("a", "🧑‍💼 پنل نمایندگی", ["vpn_agent_enabled", "vpn_agent_cv_on", "vpn_agent_cv_price", "vpn_agent_cv_min", "vpn_agent_cv_max", "vpn_agent_cv_plan", "vpn_agent_name_mode", "vpn_agent_prefix", "vpn_agent_remind_days", "vpn_agent_autodelete_days", "vpn_agent_help_text"]),
 ]
 _SEC_BY_ID = {x[0]: x for x in VPN_SECTIONS}
 _placed = {k for _, _, ks in VPN_SECTIONS for k in ks} | {"vpn_allow_addon"}
