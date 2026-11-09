@@ -721,7 +721,7 @@ async def a_agent_plans(ctx: Ctx, d: dict) -> dict:
         raise ApiError(ctx.tr("فروش پنل نمایندگی فعال نیست."), 403)
     u = await ctx.shop.db.get_user(ctx.uid)
     cv = await ag.cv_cfg()
-    return {"plans": [_agent_plan_dict(ctx, p) for p in await ag.plans_for(u)], "ask_name": (ctx.shop.s.get("vpn_agent_name_mode") or "random") == "ask",
+    return {"plans": [_agent_plan_dict(ctx, p) for p in await ag.plans_for(u)], "ask_name": bool(ctx.shop.vpn.agents.ask_kind()), "ask_kind": ctx.shop.vpn.agents.ask_kind(),
             "discount": (u or {}).get("personal_discount") or 0,
             "cv": ({"unit": ctx.shop._personal(cv["price"], u), "unit_text": _money(ctx, ctx.shop._personal(cv["price"], u)), "min": cv["min"], "max": cv["max"],
                     "days": cv["days"], "max_users": cv["users"]} if cv else None)}

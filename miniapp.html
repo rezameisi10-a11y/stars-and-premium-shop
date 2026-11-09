@@ -1111,18 +1111,18 @@ VIEWS.agent = async () => {
       const g = parseFloat(cvg.value);
       if (!(g >= r.cv.min && g <= r.cv.max)) { toast(t("مقدار خارج از بازه است؛ حداقل {a} و حداکثر {b} مجاز است.", {a: r.cv.min, b: r.cv.max}), true); return; }
       const p = {id: 0, cv: g, title: t("پنل نمایندگی") + " " + g + " GB", days: r.cv.days, gb: g, max_users: r.cv.max_users, price: {text: num(Math.round(g * r.cv.unit)) + " " + t("تومان")}};
-      if (r.ask_name) go("agent_name", p); else run(cb, async () => { const o = await api("agent_order", {plan_id: 0, gb: g}); go("order", o.id); });
+      if (r.ask_name) go("agent_name", Object.assign(p, {ask_kind: r.ask_kind})); else run(cb, async () => { const o = await api("agent_order", {plan_id: 0, gb: g}); go("order", o.id); });
     };
   }
   $app.querySelectorAll(".row.prod").forEach(b => b.onclick = () => {
     const p = r.plans.find(x => x.id == b.dataset.id);
-    if (r.ask_name) go("agent_name", p); else run(b, async () => { const o = await api("agent_order", {plan_id: p.id}); go("order", o.id); });
+    if (r.ask_name) go("agent_name", Object.assign(p, {ask_kind: r.ask_kind})); else run(b, async () => { const o = await api("agent_order", {plan_id: p.id}); go("order", o.id); });
   });
   $app.querySelector("#am").onclick = () => go("agent_my");
 };
 VIEWS.agent_name = async (p) => {
   $app.innerHTML = `<h1>${esc(p.title)}</h1><div class="card">${esc(agLine(p))}<div><b>${esc(p.price.text)}</b></div></div>
-    <div class="lbl">${esc(t("نام کاربری پنل را به‌صورت انگلیسی بنویسید (حداقل ۴ حرف؛ حروف کوچک انگلیسی، عدد یا _)"))}</div><input id="vn" dir="ltr" autocapitalize="off" autocomplete="off" maxlength="24" placeholder="myagent">
+    <div class="lbl">${esc(p.ask_kind === "prefix" ? t("یک پیشوند انگلیسی برای نام کاربری پنل بنویسید (حداقل ۴ حرف، حداکثر ۱۴؛ حروف کوچک انگلیسی، عدد یا _)؛ چند نویسه‌ی تصادفی بعدش اضافه می‌شود") : t("نام کاربری پنل را به‌صورت انگلیسی بنویسید (حداقل ۴ حرف؛ حروف کوچک انگلیسی، عدد یا _)"))}</div><input id="vn" dir="ltr" autocapitalize="off" autocomplete="off" maxlength="24" placeholder="myagent">
     <button class="b" id="go">${esc(t("ادامه"))}</button>`;
   const g = $app.querySelector("#go");
   g.onclick = () => run(g, async () => { const o = await api("agent_order", p.cv ? {plan_id: 0, gb: p.cv, name: $app.querySelector("#vn").value} : {plan_id: p.id, name: $app.querySelector("#vn").value}); go("order", o.id, true); });

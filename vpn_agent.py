@@ -121,23 +121,37 @@ class AgentSales:
             raise VpnError(N_("مقدار خارج از بازه‌ی مجاز است."))
         return cfg, gb, self.shop._personal(int(round(gb * cfg["price"])), user), int(round(gb * cfg["cost"]))
 
+    def ask_kind(self) -> str:
+        """چه چیزی از خریدار پرسیده شود: "name" (کل نام) / "prefix" (فقط پیشوند) / "" (هیچ)."""
+        if (self.s.get("vpn_agent_name_mode") or "random") == "ask":
+            return "name"
+        return "prefix" if (self.s.get("vpn_agent_prefix_mode") or "text") == "ask" else ""
+
     async def make_name(self, panel_id: int, user_id: int, asked: str | None = None) -> str:
         prefix = re.sub(r"[^a-z0-9_]", "", (self.s.get("vpn_agent_prefix") or "agent").lower())[:10] or "agent"
         taken = "SELECT 1 x FROM vpn_agents WHERE panel_id=? AND username=? AND status!='deleted'"
+        kind = self.ask_kind()
         if asked:
             n = asked.strip().lower()
             if not NAME_RE.match(n) or len(n) < 4:
                 raise VpnError(N_("نام کاربری نامعتبر است (انگلیسی، حداقل ۴ و حداکثر ۲۴ حرف کوچک، عدد یا _)."))
-            if await self.db.one(taken, (panel_id, n)):
-                raise VpnError(N_("این نام کاربری قبلاً استفاده شده است."))
-            return n
+            if kind == "prefix":
+                if len(n) > 14:
+                    raise VpnError(N_("پیشوند حداکثر ۱۴ نویسه می‌تواند باشد."))
+                prefix, asked = n, None
+            else:
+                if await self.db.one(taken, (panel_id, n)):
+                    raise VpnError(N_("این نام کاربری قبلاً استفاده شده است."))
+                return n
+        elif (self.s.get("vpn_agent_prefix_mode") or "text") == "digits":
+            prefix = "".join(secrets.choice("0123456789") for _ in range(5))
         while True:
             n = self._rand_name(prefix)
             if not await self.db.one(taken, (panel_id, n)):
                 return n
 
     def _rand_name(self, prefix: str) -> str:
-        """نام تصادفی: حالت digits ← پیشوند_آیدی عددی ۱۰ رقمی؛ حالت random ← پیشوند_hex."""
+        """نام تصادفی: حالت digits ← پیشوند_آیدی عددی؛ حالت random ← پیشوند_hex (حداکثر ۲۴ نویسه)."""
         if (self.s.get("vpn_agent_name_mode") or "random") == "digits":
             n = max(min(10, 24 - len(prefix) - 1), 4)
             return f"{prefix}_{secrets.randbelow(9) + 1}" + "".join(secrets.choice("0123456789") for _ in range(n - 1))

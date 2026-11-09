@@ -775,12 +775,18 @@ async def agent_cv_amount(m: Message, shop: Shop, state: FSMContext, tr):
     if cv and not cv["min"] <= gb <= cv["max"]:
         await m.answer(tr("مقدار خارج از بازه است؛ حداقل {a} و حداکثر {b} مجاز است.", a=f"{cv['min']:g}", b=f"{cv['max']:g}"))
         return
-    if (shop.s.get("vpn_agent_name_mode") or "random") == "ask":
+    if shop.vpn.agents.ask_kind():
         await state.set_state(VpnSt.agent_cv_name)
         await state.update_data(gb=gb)
-        await m.answer(tr("نام کاربری ادمین پنل را به‌صورت انگلیسی بفرستید (حداقل ۴ حرف؛ حروف کوچک انگلیسی، عدد یا _ ، حداکثر ۲۴). برای انصراف /start:"))
+        await m.answer(_ask_text(shop, tr))
         return
     await _cv_finish(m, shop, state, tr, gb)
+
+
+def _ask_text(shop: Shop, tr) -> str:
+    if shop.vpn.agents.ask_kind() == "prefix":
+        return tr("یک پیشوند برای نام کاربری ادمین پنل به‌صورت انگلیسی بفرستید (حداقل ۴ حرف، حداکثر ۱۴؛ حروف کوچک انگلیسی، عدد یا _ ). چند نویسه‌ی تصادفی بعدش اضافه می‌شود. برای انصراف /start:")
+    return tr("نام کاربری ادمین پنل را به‌صورت انگلیسی بفرستید (حداقل ۴ حرف؛ حروف کوچک انگلیسی، عدد یا _ ، حداکثر ۲۴). برای انصراف /start:")
 
 
 @router.message(VpnSt.agent_cv_name, F.text)
@@ -796,11 +802,11 @@ async def agent_pick(cb: CallbackQuery, shop: Shop, state: FSMContext, tr):
         plan = await shop.db.get_agent_plan(plan_id)
         if not plan or not plan["active"]:
             raise VpnError(N_("این پلن دیگر در دسترس نیست."))
-        if (shop.s.get("vpn_agent_name_mode") or "random") == "ask":
+        if shop.vpn.agents.ask_kind():
             await state.set_state(VpnSt.agent_name)
             await state.update_data(plan_id=plan_id)
             await cb.message.answer(_agent_plan_text(plan, tr, shop._personal(plan["price"], await shop.db.get_user(cb.from_user.id))) + "\n\n" +
-                                    tr("نام کاربری ادمین پنل را به‌صورت انگلیسی بفرستید (حداقل ۴ حرف؛ حروف کوچک انگلیسی، عدد یا _ ، حداکثر ۲۴). برای انصراف /start:"))
+                                    _ask_text(shop, tr))
             await cb.answer()
             return
         oid = await shop.vpn.agents.create_order(cb.from_user.id, plan_id)
