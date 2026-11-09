@@ -271,6 +271,8 @@ async def _section(cb: CallbackQuery, shop: Shop, sid: str):
         pid = int(shop.s.get("vpn_agent_cv_panel", "0") or 0)
         pn = await shop.db.get_vpn_panel(pid) if pid else None
         top = [[btn(f"🖥 پنل حجم دلخواه: {pn['name'] if pn else 'انتخاب نشده ⚠️'}"[:64], "adm:vpn:cvp", role="admin")]]
+        if pn and pn["type"] == "pasarguard":
+            top.append([btn(f"👤 نقش ادمین حجم دلخواه: {shop.s.get('vpn_agent_cv_role') or 'انتخاب نشده ⚠️'}"[:64], "adm:vpn:cvr", role="admin")])
     await _settings_list(cb, shop, keys, f"s:{sid}", f"⚙️ <b>{title}</b>\nروی هر مورد بزنید تا تغییرش بدهید.", "adm:vpn:st", top)
 
 
@@ -285,6 +287,30 @@ async def cb_cv_panel(cb: CallbackQuery, shop: Shop):
     rows.append(back_row("adm:vpn:ss:a"))
     await view(cb, "🖥 <b>حجم دلخواه نمایندگی روی کدام پنل ساخته شود؟</b>\nتا انتخاب نکنید، این امکان برای کاربر نشان داده نمی‌شود.", ikb(rows))
     await cb.answer()
+
+
+@router.callback_query(F.data == "adm:vpn:cvr")
+async def cb_cv_role(cb: CallbackQuery, shop: Shop):
+    pid = int(shop.s.get("vpn_agent_cv_panel", "0") or 0)
+    if not pid:
+        await cb.answer("اول پنل را انتخاب کنید.", show_alert=True)
+        return
+    try:
+        opts = await (await shop.vpn.driver(pid)).admin_role_options()
+    except Exception as e:
+        await cb.answer(f"دریافت نقش‌ها از پنل ممکن نشد: {str(e)[:120]}", show_alert=True)
+        return
+    cur = (shop.s.get("vpn_agent_cv_role") or "").strip()
+    rows = [[btn(f"{'✅' if str(o['id']) == cur else '⬜'} {o['name']}"[:60], f"adm:vpn:cvs:{o['id']}", role="action")] for o in opts[:40]]
+    rows.append(back_row("adm:vpn:ss:a"))
+    await view(cb, "👤 <b>نقش ادمین برای پنل‌های حجم دلخواه</b>\nپاسارگارد بدون نقش ادمین نمی‌سازد. یکی را انتخاب کنید:" + ("" if opts else "\n\n⚠️ پنل نقشی برنگرداند."), ikb(rows))
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("adm:vpn:cvs:"))
+async def cb_cv_role_set(cb: CallbackQuery, shop: Shop):
+    await shop.set_setting("vpn_agent_cv_role", cb.data.split(":")[3], f"tg:{cb.from_user.id}")
+    await cb_cv_role(cb, shop)
 
 
 @router.callback_query(F.data.startswith("adm:vpn:cvq:"))

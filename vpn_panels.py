@@ -241,6 +241,10 @@ class BasePanel:
     async def admin_create(self, username, password, spec: dict) -> PanelAdmin:
         self._no_admin()
 
+    async def admin_user_stats(self, username) -> dict | None:
+        """آمار کاربران ادمین: total/active/online/limited/expired — اگر پنل پشتیبانی نکند None."""
+        return None
+
     async def admin_info(self, username) -> PanelAdmin:
         self._no_admin()
 
@@ -436,6 +440,29 @@ class Marzban(BasePanel):
         d = await self._call("POST", self.ADMIN_PATH, json=body)
         return self._admin_parse(d if isinstance(d, dict) else {"username": username})
 
+    PAGED = False                    # Marzban: offset/limit ؛ Marzneshin: page/size
+    OWNER_PARAM = "admin"
+
+    async def admin_user_stats(self, username):
+        st = {"total": 0, "active": 0, "online": 0, "limited": 0, "expired": 0}
+        now = time.time()
+        for i in range(40):                                   # حداکثر ۴۰×۲۰۰ کاربر
+            prm = {self.OWNER_PARAM: username, **({"page": i + 1, "size": 200} if self.PAGED else {"offset": i * 200, "limit": 200})}
+            d = await self._call("GET", self.USER, params=prm)
+            items = (d.get("items") or d.get("users") or []) if isinstance(d, dict) else (d or [])
+            for it in items:
+                u = self._parse(it)
+                st["total"] += 1
+                if u.status == "active":
+                    st["active"] += 1
+                elif u.status in ("limited", "expired"):
+                    st[u.status] += 1
+                if u.online_at and now - u.online_at < 120:
+                    st["online"] += 1
+            if len(items) < 200:
+                break
+        return st
+
     async def admin_info(self, username):
         d = await self._call("GET", "/admins", params={"username": username})
         items = d.get("admins") if isinstance(d, dict) else d
@@ -591,6 +618,8 @@ class Marzneshin(Marzban):
     OPTION_LABEL = "سرویس (id)"
     TOKEN = "/admins/token"
     USER = "/users"
+    PAGED = True
+    OWNER_PARAM = "owner_username"
 
     def _sample_names(self) -> list:
         return [(x[1:] if x.startswith("@") else x) for x in (str(y) for y in (self.cfg.get("inbound_ids") or [])) if x and not x.isdigit() and x != "-"]

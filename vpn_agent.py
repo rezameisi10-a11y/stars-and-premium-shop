@@ -96,12 +96,14 @@ class AgentSales:
         panel = await self.db.get_vpn_panel(pid) if pid else None
         if not panel or not panel["enabled"] or not getattr(vpn_panels.DRIVERS.get(panel["type"]), "ADMIN", False):
             return None
+        if panel["type"] == "pasarguard" and not (self.s.get("vpn_agent_cv_role") or "").strip():
+            return None                                        # پاسارگارد بدون «نقش» ادمین نمی‌سازد (HTTP 422)
         return {"price": price, "min": mn, "max": mx, "days": max(self._int("vpn_agent_cv_days", 30), 0), "users": max(self._int("vpn_agent_cv_users"), 0),
                 "panel": panel["id"], "cost": max(self._int("vpn_agent_cv_cost"), 0)}
 
     async def cv_plan(self, panel_id: int, gb: float, days: int, users: int) -> dict:
         """پلنِ مجازی برای حجم دلخواه: فقط از تنظیمات خودش (حجم، مدت، سقف کاربر)؛ از هیچ پلن نمایندگی چیزی به ارث نمی‌برد."""
-        base = {"id": None, "role_id": "", "service_ids": "", "modify_users": 1, "data_min_gb": 0, "data_max_gb": 0, "expire_min_days": 0, "expire_max_days": 0, "note": ""}
+        base = {"id": None, "role_id": (self.s.get("vpn_agent_cv_role") or "").strip(), "service_ids": "", "modify_users": 1, "data_min_gb": 0, "data_max_gb": 0, "expire_min_days": 0, "expire_max_days": 0, "note": ""}
         base.update(panel_id=panel_id, days=days, max_users=users, traffic_gb=gb, price=0, cost=0, active=1, title=f"{N_('پنل نمایندگی')} {gb:g} GB")
         return base
 
@@ -443,6 +445,14 @@ class AgentSales:
             if st == "disabled" and ag["status"] == "limited":
                 st = "limited"
         f = dict(used_bytes=info.used, users_count=info.users, last_sync=int(time.time()), note="", status=st)
+        try:                                                  # آمار کاربران (فعال/آنلاین/محدود/منقضی) — اختیاری؛ خطا همگام‌سازی را خراب نمی‌کند
+            us = await drv.admin_user_stats(ag["username"])
+            if us:
+                m = json.loads(ag.get("meta") or "{}")
+                m["ustats"] = us
+                f["meta"] = json.dumps(m)
+        except Exception:
+            pass
         if info.total:
             f["total_bytes"] = info.total
         if info.max_users:
@@ -938,8 +948,15 @@ class AgentSales:
         if total:
             lines.append(f"• {tr('ترافیک باقی‌مانده')}: {ltr(fmt_gb(max(total - used, 0)))}")
             lines.append(bar(used, total))
+        try:
+            us = json.loads(ag.get("meta") or "{}").get("ustats")
+        except ValueError:
+            us = None
+        lines += [sep, f"• {tr('کل کاربران')}: " + ltr(f"{ag['users_count']} / {ag['max_users']}" if ag["max_users"] else str(ag["users_count"]))]
+        if us:
+            lines += [f"• {tr('کاربران فعال')}: {us.get('active', 0)}", f"• {tr('کاربران آنلاین')}: {us.get('online', 0)}",
+                      f"• {tr('کاربران محدود')}: {us.get('limited', 0)}", f"• {tr('کاربران منقضی')}: {us.get('expired', 0)}"]
         lines += [sep,
-                  f"• {tr('تعداد کاربران')}: " + ltr(f"{ag['users_count']} / {ag['max_users']}" if ag["max_users"] else str(ag["users_count"])),
                   f"• {tr('وضعیت')}: {tr(AGENT_STATUS_FA.get(ag['status'], ag['status']))}",
                   f"• {tr('زمان باقی‌مانده')}: " + (tr("نامحدود") if left is None else tr("{d} روز", d=left))]
         if self._can_auto(ag):
