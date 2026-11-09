@@ -297,6 +297,18 @@ class AgentSales:
         return await self.db.create_vpn_order(user_id, f"{ag['username']} — {self.addon_title(ad)}", int(ad["amount"]) if ad["kind"] == "days" else 0,
                                               f"vpn:aaddon:{agent_id}:{addon_id}", price, ad["cost"])
 
+    async def _set_total(self, drv, ag, new_total: int) -> int:
+        """سقف حجم را روی پنل می‌گذارد، دوباره از پنل می‌خواند و اگر با مقدار خواسته‌شده فرق داشت به ادمین خبر می‌دهد؛ مقدار واقعی پنل برگردانده می‌شود."""
+        await drv.admin_set_traffic(ag["username"], new_total / GB)
+        try:
+            real = int((await drv.admin_info(ag["username"])).total or 0)
+        except Exception:
+            return new_total
+        if real and abs(real - new_total) > max(GB, new_total * 0.002):
+            await self.vpn._notify_admin(f"⚠️ ناهماهنگی سقف حجم نماینده {esc(ag['username'])}\nدرخواست ربات: {fmt_gb(new_total)} | مقدار ثبت‌شده در پنل: {fmt_gb(real)}\n(بایت: {new_total} ← {real})")
+            return real
+        return new_total if not real else real
+
     async def _fulfil_addon(self, o, aid, addon_id, custom=None):
         ag = await self.db.get_agent(aid)
         ad = {"kind": custom[0], "amount": float(custom[1])} if custom else await self.db.get_agent_addon(addon_id)
@@ -308,7 +320,7 @@ class AgentSales:
             f = {}
             if ad["kind"] == "gb":
                 new_total = int(ag["total_bytes"] + ad["amount"] * GB)
-                await drv.admin_set_traffic(ag["username"], new_total / GB)
+                new_total = await self._set_total(drv, ag, new_total)
                 f["total_bytes"] = new_total
                 if ag["status"] == "limited" and ag["used_bytes"] < new_total:        # حجم تمام‌شده بود: دوباره فعال
                     await drv.admin_set_enabled(ag["username"], True, ag["password"])
@@ -406,7 +418,7 @@ class AgentSales:
             if add_gb and type(drv).admin_set_traffic is not vpn_panels.BasePanel.admin_set_traffic:
                 # تمدید = اضافه‌شدن حجم پایه روی حجم فعلی؛ مصرف صفر نمی‌شود (۱۰۰ گیگ مصرف‌شده + تمدید ۱۰۰ ← کل ۲۰۰، باقی‌مانده ۱۰۰)
                 new_total = int((ag["total_bytes"] or 0) + add_gb * GB)
-                await drv.admin_set_traffic(ag["username"], new_total / GB)
+                new_total = await self._set_total(drv, ag, new_total)
                 await drv.admin_set_enabled(ag["username"], True, ag["password"])
                 new_used = ag["used_bytes"]
             else:                                          # پنلی که سقف حجم ادمین را پشتیبانی نمی‌کند: تمدید کلاسیک (حجم و مصرف از نو)
