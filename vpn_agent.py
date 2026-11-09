@@ -92,23 +92,16 @@ class AgentSales:
         mx = float(self.s.get("vpn_agent_cv_max") or 10 ** 6) or 10 ** 6
         if mx < mn:
             return None
-        plans = await self.db.list_agent_plans(active_only=True)
-        if plans:                                             # پنل خودکار: پنلِ ارزان‌ترین پلن نمایندگی فعال؛ اگر پلنی نبود اولین پنل فعال
-            pid = min(plans, key=lambda p: (p["price"], p["id"]))["panel_id"]
-        else:
-            pl = await self.db.list_vpn_panels(only_enabled=True)
-            pid = pl[0]["id"] if pl else 0
+        pid = self._int("vpn_agent_cv_panel")                 # پنل را ادمین دستی انتخاب می‌کند (بدون انتخاب خودکار)
         panel = await self.db.get_vpn_panel(pid) if pid else None
-        if not panel or not panel["enabled"]:
+        if not panel or not panel["enabled"] or not getattr(vpn_panels.DRIVERS.get(panel["type"]), "ADMIN", False):
             return None
         return {"price": price, "min": mn, "max": mx, "days": max(self._int("vpn_agent_cv_days", 30), 0), "users": max(self._int("vpn_agent_cv_users"), 0),
                 "panel": panel["id"], "cost": max(self._int("vpn_agent_cv_cost"), 0)}
 
     async def cv_plan(self, panel_id: int, gb: float, days: int, users: int) -> dict:
-        """پلنِ مجازی برای حجم دلخواه. اگر روی همان پنل پلن نمایندگی فعالی هست، نقش/سرویس‌ها و محدودیت‌های آن (نه مدت/حجم/کاربر) به ارث می‌رسد."""
-        plans = [p for p in await self.db.list_agent_plans(active_only=True) if p["panel_id"] == panel_id]
-        base = dict(min(plans, key=lambda p: (p["price"], p["id"]))) if plans else {
-            "id": None, "role_id": "", "service_ids": "", "modify_users": 1, "data_min_gb": 0, "data_max_gb": 0, "expire_min_days": 0, "expire_max_days": 0, "note": ""}
+        """پلنِ مجازی برای حجم دلخواه: فقط از تنظیمات خودش (حجم، مدت، سقف کاربر)؛ از هیچ پلن نمایندگی چیزی به ارث نمی‌برد."""
+        base = {"id": None, "role_id": "", "service_ids": "", "modify_users": 1, "data_min_gb": 0, "data_max_gb": 0, "expire_min_days": 0, "expire_max_days": 0, "note": ""}
         base.update(panel_id=panel_id, days=days, max_users=users, traffic_gb=gb, price=0, cost=0, active=1, title=f"{N_('پنل نمایندگی')} {gb:g} GB")
         return base
 

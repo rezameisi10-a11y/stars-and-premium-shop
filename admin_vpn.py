@@ -266,7 +266,35 @@ async def cb_move_dest(cb: CallbackQuery, shop: Shop):
 
 async def _section(cb: CallbackQuery, shop: Shop, sid: str):
     _, title, keys = _SEC_BY_ID[sid]
-    await _settings_list(cb, shop, keys, f"s:{sid}", f"⚙️ <b>{title}</b>\nروی هر مورد بزنید تا تغییرش بدهید.", "adm:vpn:st")
+    top = None
+    if sid == "a":
+        pid = int(shop.s.get("vpn_agent_cv_panel", "0") or 0)
+        pn = await shop.db.get_vpn_panel(pid) if pid else None
+        top = [[btn(f"🖥 پنل حجم دلخواه: {pn['name'] if pn else 'انتخاب نشده ⚠️'}"[:64], "adm:vpn:cvp", role="admin")]]
+    await _settings_list(cb, shop, keys, f"s:{sid}", f"⚙️ <b>{title}</b>\nروی هر مورد بزنید تا تغییرش بدهید.", "adm:vpn:st", top)
+
+
+@router.callback_query(F.data == "adm:vpn:cvp")
+async def cb_cv_panel(cb: CallbackQuery, shop: Shop):
+    cur = int(shop.s.get("vpn_agent_cv_panel", "0") or 0)
+    panels = [p for p in await shop.db.list_vpn_panels() if getattr(vpn_panels.DRIVERS.get(p["type"]), "ADMIN", False)]
+    if not panels:
+        await cb.answer("ابتدا یک پنل پاسارگارد، مرزبان یا مرزنشین اضافه کنید.", show_alert=True)
+        return
+    rows = [[btn(f"{'✅' if p['id'] == cur else '⬜'} {p['name']} · {p['type']}", f"adm:vpn:cvq:{p['id']}", role="action")] for p in panels]
+    rows.append(back_row("adm:vpn:ss:a"))
+    await view(cb, "🖥 <b>حجم دلخواه نمایندگی روی کدام پنل ساخته شود؟</b>\nتا انتخاب نکنید، این امکان برای کاربر نشان داده نمی‌شود.", ikb(rows))
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("adm:vpn:cvq:"))
+async def cb_cv_panel_set(cb: CallbackQuery, shop: Shop):
+    pid = int(cb.data.split(":")[3])
+    if not await shop.db.get_vpn_panel(pid):
+        await cb.answer("پیدا نشد", show_alert=True)
+        return
+    await shop.set_setting("vpn_agent_cv_panel", str(pid), f"tg:{cb.from_user.id}")
+    await cb_cv_panel(cb, shop)
 
 
 @router.callback_query(F.data.startswith("adm:vpn:ss:"))
