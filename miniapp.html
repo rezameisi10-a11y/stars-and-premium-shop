@@ -1122,7 +1122,7 @@ VIEWS.agent = async () => {
 };
 VIEWS.agent_name = async (p) => {
   $app.innerHTML = `<h1>${esc(p.title)}</h1><div class="card">${esc(agLine(p))}<div><b>${esc(p.price.text)}</b></div></div>
-    <div class="lbl">${esc(t("نام کاربری دلخواه برای پنل (۳ تا ۲۴ حرف کوچک انگلیسی، عدد یا _)"))}</div><input id="vn" dir="ltr" autocapitalize="off" autocomplete="off" maxlength="24" placeholder="myagent">
+    <div class="lbl">${esc(t("نام کاربری پنل را به‌صورت انگلیسی بنویسید (حداقل ۴ حرف؛ حروف کوچک انگلیسی، عدد یا _)"))}</div><input id="vn" dir="ltr" autocapitalize="off" autocomplete="off" maxlength="24" placeholder="myagent">
     <button class="b" id="go">${esc(t("ادامه"))}</button>`;
   const g = $app.querySelector("#go");
   g.onclick = () => run(g, async () => { const o = await api("agent_order", p.cv ? {plan_id: 0, gb: p.cv, name: $app.querySelector("#vn").value} : {plan_id: p.id, name: $app.querySelector("#vn").value}); go("order", o.id, true); });

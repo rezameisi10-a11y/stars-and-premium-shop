@@ -126,8 +126,8 @@ class AgentSales:
         taken = "SELECT 1 x FROM vpn_agents WHERE panel_id=? AND username=? AND status!='deleted'"
         if asked:
             n = asked.strip().lower()
-            if not NAME_RE.match(n):
-                raise VpnError(N_("نام کاربری نامعتبر است (۳ تا ۲۴ حرف کوچک انگلیسی، عدد یا _)."))
+            if not NAME_RE.match(n) or len(n) < 4:
+                raise VpnError(N_("نام کاربری نامعتبر است (انگلیسی، حداقل ۴ و حداکثر ۲۴ حرف کوچک، عدد یا _)."))
             if await self.db.one(taken, (panel_id, n)):
                 raise VpnError(N_("این نام کاربری قبلاً استفاده شده است."))
             return n
@@ -137,13 +137,11 @@ class AgentSales:
                 return n
 
     def _rand_name(self, prefix: str) -> str:
-        """نام تصادفی: پیشوند + جداکننده + بخش تصادفی (hex / digits / letters / alnum) با طول تنظیم‌شده؛ در کل حداکثر ۲۴ نویسه."""
-        style = self.s.get("vpn_agent_name_style") or "hex"
-        sep = "" if self.s.get("vpn_agent_name_sep") == "none" else "_"
-        ln = min(max(self._int("vpn_agent_name_len", 6), 4), 16, 24 - len(prefix) - len(sep))
-        ln = max(ln, 3)
-        pool = {"digits": "0123456789", "letters": "abcdefghijklmnopqrstuvwxyz", "alnum": "abcdefghijklmnopqrstuvwxyz0123456789"}.get(style, "0123456789abcdef")
-        return prefix + sep + "".join(secrets.choice(pool) for _ in range(ln))
+        """نام تصادفی: حالت digits ← پیشوند_آیدی عددی ۱۰ رقمی؛ حالت random ← پیشوند_hex."""
+        if (self.s.get("vpn_agent_name_mode") or "random") == "digits":
+            n = max(min(10, 24 - len(prefix) - 1), 4)
+            return f"{prefix}_{secrets.randbelow(9) + 1}" + "".join(secrets.choice("0123456789") for _ in range(n - 1))
+        return f"{prefix}_{secrets.token_hex(3)}"
 
     async def _check_plan(self, plan, panel):
         if not plan or not plan["active"] or not panel or not panel["enabled"]:

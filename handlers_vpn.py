@@ -778,7 +778,7 @@ async def agent_cv_amount(m: Message, shop: Shop, state: FSMContext, tr):
     if (shop.s.get("vpn_agent_name_mode") or "random") == "ask":
         await state.set_state(VpnSt.agent_cv_name)
         await state.update_data(gb=gb)
-        await m.answer(tr("نام کاربری دلخواه برای ادمین پنل را بفرستید (۳ تا ۲۴ حرف کوچک انگلیسی، عدد یا _). برای انصراف /start:"))
+        await m.answer(tr("نام کاربری ادمین پنل را به‌صورت انگلیسی بفرستید (حداقل ۴ حرف؛ حروف کوچک انگلیسی، عدد یا _ ، حداکثر ۲۴). برای انصراف /start:"))
         return
     await _cv_finish(m, shop, state, tr, gb)
 
@@ -800,7 +800,7 @@ async def agent_pick(cb: CallbackQuery, shop: Shop, state: FSMContext, tr):
             await state.set_state(VpnSt.agent_name)
             await state.update_data(plan_id=plan_id)
             await cb.message.answer(_agent_plan_text(plan, tr, shop._personal(plan["price"], await shop.db.get_user(cb.from_user.id))) + "\n\n" +
-                                    tr("نام کاربری دلخواه برای ادمین پنل را بفرستید (۳ تا ۲۴ حرف کوچک انگلیسی، عدد یا _). برای انصراف /start:"))
+                                    tr("نام کاربری ادمین پنل را به‌صورت انگلیسی بفرستید (حداقل ۴ حرف؛ حروف کوچک انگلیسی، عدد یا _ ، حداکثر ۲۴). برای انصراف /start:"))
             await cb.answer()
             return
         oid = await shop.vpn.agents.create_order(cb.from_user.id, plan_id)
