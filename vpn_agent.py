@@ -131,10 +131,19 @@ class AgentSales:
             if await self.db.one(taken, (panel_id, n)):
                 raise VpnError(N_("این نام کاربری قبلاً استفاده شده است."))
             return n
-        n = f"{prefix}_{secrets.token_hex(3)}"
-        while await self.db.one(taken, (panel_id, n)):
-            n = f"{prefix}_{secrets.token_hex(3)}"
-        return n
+        while True:
+            n = self._rand_name(prefix)
+            if not await self.db.one(taken, (panel_id, n)):
+                return n
+
+    def _rand_name(self, prefix: str) -> str:
+        """نام تصادفی: پیشوند + جداکننده + بخش تصادفی (hex / digits / letters / alnum) با طول تنظیم‌شده؛ در کل حداکثر ۲۴ نویسه."""
+        style = self.s.get("vpn_agent_name_style") or "hex"
+        sep = "" if self.s.get("vpn_agent_name_sep") == "none" else "_"
+        ln = min(max(self._int("vpn_agent_name_len", 6), 4), 16, 24 - len(prefix) - len(sep))
+        ln = max(ln, 3)
+        pool = {"digits": "0123456789", "letters": "abcdefghijklmnopqrstuvwxyz", "alnum": "abcdefghijklmnopqrstuvwxyz0123456789"}.get(style, "0123456789abcdef")
+        return prefix + sep + "".join(secrets.choice(pool) for _ in range(ln))
 
     async def _check_plan(self, plan, panel):
         if not plan or not plan["active"] or not panel or not panel["enabled"]:
