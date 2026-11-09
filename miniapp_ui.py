@@ -31,6 +31,7 @@ ELEMENTS = [
     ("tab_products", N_("محصولات"), "🛍", False, N_("منوی پایین")),
     ("tab_wallet", N_("کیف پول"), "👛", False, N_("منوی پایین")),
     ("tab_invite", N_("دعوت"), "🎁", False, N_("منوی پایین")),
+    ("tab_buy", N_("خرید"), "🛍", False, N_("منوی پایین")),
     ("btn_more", N_("بیشتر"), "☰", False, N_("منوی پایین")),
 ]
 KEYS = {e[0] for e in ELEMENTS}
