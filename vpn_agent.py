@@ -6,6 +6,7 @@
     qty = تعداد روز پلن (۰ = بدون انقضا)
 انقضای نماینده را خود ربات اجرا می‌کند (غیرفعال‌کردن ادمین در پنل)؛ پنل‌ها برای ادمین زمان انقضا ندارند.
 """
+import asyncio
 import json
 import math
 import logging
@@ -96,12 +97,14 @@ class AgentSales:
         panel = await self.db.get_vpn_panel(pid) if pid else None
         if not panel or not panel["enabled"] or not getattr(vpn_panels.DRIVERS.get(panel["type"]), "ADMIN", False):
             return None
+        if panel["type"] == "pasarguard" and not (self.s.get("vpn_agent_cv_role") or "").strip():
+            return None                                        # پاسارگارد بدون «نقش» ادمین نمی‌سازد (HTTP 422)
         return {"price": price, "min": mn, "max": mx, "days": max(self._int("vpn_agent_cv_days", 30), 0), "users": max(self._int("vpn_agent_cv_users"), 0),
                 "panel": panel["id"], "cost": max(self._int("vpn_agent_cv_cost"), 0)}
 
     async def cv_plan(self, panel_id: int, gb: float, days: int, users: int) -> dict:
         """پلنِ مجازی برای حجم دلخواه: فقط از تنظیمات خودش (حجم، مدت، سقف کاربر)؛ از هیچ پلن نمایندگی چیزی به ارث نمی‌برد."""
-        base = {"id": None, "role_id": "", "service_ids": "", "modify_users": 1, "data_min_gb": 0, "data_max_gb": 0, "expire_min_days": 0, "expire_max_days": 0, "note": ""}
+        base = {"id": None, "role_id": (self.s.get("vpn_agent_cv_role") or "").strip(), "service_ids": "", "modify_users": 1, "data_min_gb": 0, "data_max_gb": 0, "expire_min_days": 0, "expire_max_days": 0, "note": ""}
         base.update(panel_id=panel_id, days=days, max_users=users, traffic_gb=gb, price=0, cost=0, active=1, title=f"{N_('پنل نمایندگی')} {gb:g} GB")
         return base
 
@@ -425,6 +428,34 @@ class AgentSales:
         await self.vpn._notify_admin(f"🔄 تمدید پنل نمایندگی\nسفارش #{o['id']} | {esc(ag['username'])} | {esc(plan['title'])}\nکاربر: <code>{o['user_id']}</code> | مبلغ: {fmt(o['amount'])} تومان")
         await self.shop.finish_order(o["id"], f"arenew #{aid}")
 
+    async def _fetch_ustats(self, drv, ag):
+        """آمار کاربران را از پنل می‌گیرد و در meta می‌گذارد (meta جدید یا None). خطا هم در meta.ustats_err ثبت می‌شود."""
+        m = json.loads(ag.get("meta") or "{}")
+        try:
+            us = await asyncio.wait_for(drv.admin_user_stats(ag["username"]), 15)
+            if us is None:
+                return None
+            m["ustats"], m["ustats_at"] = us, int(time.time())
+            m.pop("ustats_err", None)
+        except Exception as e:
+            m["ustats_err"] = str(e)[:150] or type(e).__name__
+            m["ustats_at"] = int(time.time())
+        return m
+
+    async def ensure_stats(self, ag):
+        """آمار کاربران را اگر کهنه (بیش از ۶۰ ثانیه) است تازه می‌کند و agent به‌روز را برمی‌گرداند."""
+        try:
+            m = json.loads(ag.get("meta") or "{}")
+            if time.time() - m.get("ustats_at", 0) < 60 or ag["status"] == "deleted":
+                return ag
+            m2 = await self._fetch_ustats(await self.vpn.driver(ag["panel_id"]), ag)
+            if m2 is not None:
+                await self.db.update_agent(ag["id"], meta=json.dumps(m2))
+                return await self.db.get_agent(ag["id"])
+        except Exception:
+            pass
+        return ag
+
     # ------------------------------------------------------------------ همگام‌سازی، انقضا، یادآوری
     async def sync(self, ag, force=True):
         if ag["status"] == "deleted":
@@ -443,14 +474,9 @@ class AgentSales:
             if st == "disabled" and ag["status"] == "limited":
                 st = "limited"
         f = dict(used_bytes=info.used, users_count=info.users, last_sync=int(time.time()), note="", status=st)
-        try:                                                  # آمار کاربران (فعال/آنلاین/محدود/منقضی) — اختیاری؛ خطا همگام‌سازی را خراب نمی‌کند
-            us = await drv.admin_user_stats(ag["username"])
-            if us:
-                m = json.loads(ag.get("meta") or "{}")
-                m["ustats"] = us
-                f["meta"] = json.dumps(m)
-        except Exception:
-            pass
+        m = await self._fetch_ustats(drv, ag)
+        if m is not None:
+            f["meta"] = json.dumps(m)
         if info.total:
             f["total_bytes"] = info.total
         if info.max_users:
@@ -932,6 +958,7 @@ class AgentSales:
         return base + "/dashboard/" if t in ("pasarguard", "marzban", "marzneshin") else base
 
     async def agent_text(self, ag, tr) -> str:
+        ag = await self.ensure_stats(ag)
         left = days_left(ag["expires_at"])
         total = ag["total_bytes"] or 0
         used = ag["used_bytes"] or 0
@@ -947,13 +974,17 @@ class AgentSales:
             lines.append(f"• {tr('ترافیک باقی‌مانده')}: {ltr(fmt_gb(max(total - used, 0)))}")
             lines.append(bar(used, total))
         try:
-            us = json.loads(ag.get("meta") or "{}").get("ustats")
+            _m = json.loads(ag.get("meta") or "{}")
         except ValueError:
-            us = None
+            _m = {}
+        us = _m.get("ustats")
         lines += [sep, f"• {tr('کل کاربران')}: " + ltr(f"{ag['users_count']} / {ag['max_users']}" if ag["max_users"] else str(ag["users_count"]))]
-        if us:
-            lines += [f"• {tr('کاربران فعال')}: {us.get('active', 0)}", f"• {tr('کاربران آنلاین')}: {us.get('online', 0)}",
-                      f"• {tr('کاربران محدود')}: {us.get('limited', 0)}", f"• {tr('کاربران منقضی')}: {us.get('expired', 0)}"]
+        if us or _m.get("ustats_err"):
+            g = lambda k: str((us or {}).get(k, "—"))
+            lines += [f"• {tr('کاربران فعال')}: {g('active')}", f"• {tr('کاربران آنلاین')}: {g('online')}",
+                      f"• {tr('کاربران محدود')}: {g('limited')}", f"• {tr('کاربران منقضی')}: {g('expired')}"]
+            if not us:
+                lines.append(f"⚠️ {tr('آمار کاربران از پنل دریافت نشد')}: {esc(_m['ustats_err'])}")
         lines += [sep,
                   f"• {tr('وضعیت')}: {tr(AGENT_STATUS_FA.get(ag['status'], ag['status']))}",
                   f"• {tr('زمان باقی‌مانده')}: " + (tr("نامحدود") if left is None else tr("{d} روز", d=left))]

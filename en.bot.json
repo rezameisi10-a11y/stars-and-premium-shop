@@ -431,6 +431,7 @@
  "📍 تغییر لوکیشن": "📍 Change location",
  "خطای پنل": "Panel error",
  "ساخت روی پنل جدید ناموفق بود": "Creating on the new panel failed",
+ "آمار کاربران از پنل دریافت نشد": "Couldn't get user stats from the panel",
  "🔁 تمدید خودکار: روشن ✅": "🔁 Auto-renewal: ON ✅",
  "🔁 تمدید خودکار: خاموش": "🔁 Auto-renewal: OFF",
  "⚡ تمدید همین حجم": "⚡ Renew same volume",
