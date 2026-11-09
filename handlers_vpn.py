@@ -973,11 +973,12 @@ async def agent_quick_renew(cb: CallbackQuery, shop: Shop, tr):
     ag = await _own_agent(cb, shop, tr, cb.data.split(":")[2])
     if not ag:
         return
-    if not ag["plan_id"] and not shop.vpn.agents.is_custom(ag):
+    custom = shop.vpn.agents.is_custom(ag)
+    if not ag["plan_id"] and not custom:
         await cb.answer(tr("پلنی برای تمدید موجود نیست."), show_alert=True)
         return
     try:
-        oid = await shop.vpn.agents.renew_order(cb.from_user.id, ag["id"], ag["plan_id"] or 0)
+        oid = await shop.vpn.agents.renew_order(cb.from_user.id, ag["id"], 0)
     except VpnError as e:
         await cb.answer(tr(str(e)), show_alert=True)
         return
@@ -1079,17 +1080,19 @@ async def agent_addon_pick(cb: CallbackQuery, shop: Shop, tr):
 
 @router.callback_query(F.data.startswith("vpn:agn:"))
 async def agent_renew(cb: CallbackQuery, shop: Shop, tr):
+    """تمدید: فقط یک پیام تأیید (بدون فهرست پلن)؛ همان حجم پایه‌ی پنل با مدت و قیمت فعلی."""
     ag = await _own_agent(cb, shop, tr, cb.data.split(":")[2])
     if not ag:
         return
-    u = await shop.db.get_user(cb.from_user.id)
-    plans = [p for p in await shop.vpn.agents.plans_for(u) if p["panel_id"] == ag["panel_id"]]
-    if not plans:
+    same = await shop.vpn.agents.renew_same(ag, await shop.db.get_user(cb.from_user.id))
+    if not same:
         await cb.answer(tr("پلنی برای تمدید موجود نیست."), show_alert=True)
         return
-    rows = [[btn(f"{p['title']} | {fmt(p['user_price'])} {tr('ت')}", f"vpn:agnp:{ag['id']}:{p['id']}", role="action")] for p in plans[:30]]
-    rows.append([btn(tr("🔙 بازگشت"), f"vpn:ag:{ag['id']}", role="back")])
-    await cb.message.answer(tr("🔄 تمدید پنل نمایندگی {n}", n=f"<code>{esc(ag['username'])}</code>") + "\n" + tr("پلن مورد نظر را انتخاب کنید:"), reply_markup=ikb(rows))
+    gb = ltr(f"{same['gb']:g} GB") if same["gb"] else tr("نامحدود")
+    days = tr("{d} روز", d=same["days"]) if same["days"] else tr("بدون انقضا")
+    await cb.message.answer(tr("🔄 <b>تمدید پنل نمایندگی</b> {n}\n\nآیا مایل به تمدید پنل خود هستید؟\n📦 حجم: {g}\n⏳ مدت: {d}\n💰 مبلغ: {p} تومان", n=f"<code>{esc(ag['username'])}</code>", g=gb, d=days, p=fmt(same["price"]))
+                            + ("\n\n" + tr("ℹ️ این حجم روی حجم فعلی پنل شما اضافه می‌شود و مصرف قبلی صفر نمی‌شود.") if same.get("stack") and same["gb"] else ""),
+                            reply_markup=ikb([[btn(tr("✅ تایید"), f"vpn:agnp:{ag['id']}:0", role="confirm"), btn(tr("🔙 بازگشت"), f"vpn:ag:{ag['id']}", role="back")]]))
     await cb.answer()
 
 

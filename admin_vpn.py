@@ -94,7 +94,7 @@ VPN_SECTIONS = [
     ("r", "🔔 یادآوری و تمدید", ["vpn_remind_days", "vpn_remind_usage", "vpn_autorenew_on", "vpn_autorenew_days"]),
     ("w", "🎁 بازگشت مشتری", ["vpn_winback_on", "vpn_winback_percent", "vpn_winback_after", "vpn_winback_valid"]),
     ("h", "🩺 پایش سلامت پنل‌ها", ["vpn_health_on", "vpn_health_min", "vpn_health_fails", "vpn_health_autoclose", "vpn_health_cpu", "vpn_health_mem", "vpn_health_disk", "vpn_health_cap"]),
-    ("a", "🧑‍💼 پنل نمایندگی", ["vpn_agent_enabled", "vpn_agent_cv_on", "vpn_agent_cv_price", "vpn_agent_cv_min", "vpn_agent_cv_max", "vpn_agent_cv_days", "vpn_agent_cv_users", "vpn_agent_cv_panel", "vpn_agent_cv_cost", "vpn_agent_cv_add_on", "vpn_agent_cv_add_price", "vpn_agent_cv_add_min", "vpn_agent_cv_add_max", "vpn_agent_name_mode", "vpn_agent_prefix", "vpn_agent_remind_days", "vpn_agent_autodelete_days", "vpn_agent_help_text"]),
+    ("a", "🧑‍💼 پنل نمایندگی", ["vpn_agent_enabled", "vpn_agent_cv_on", "vpn_agent_cv_price", "vpn_agent_cv_min", "vpn_agent_cv_max", "vpn_agent_cv_days", "vpn_agent_cv_users", "vpn_agent_cv_cost", "vpn_agent_cv_add_on", "vpn_agent_cv_add_price", "vpn_agent_cv_add_min", "vpn_agent_cv_add_max", "vpn_agent_name_mode", "vpn_agent_prefix", "vpn_agent_remind_days", "vpn_agent_autodelete_days", "vpn_agent_help_text"]),
 ]
 _SEC_BY_ID = {x[0]: x for x in VPN_SECTIONS}
 _placed = {k for _, _, ks in VPN_SECTIONS for k in ks} | {"vpn_allow_addon"}

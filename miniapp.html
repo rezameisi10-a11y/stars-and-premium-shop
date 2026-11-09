@@ -1161,11 +1161,18 @@ VIEWS.agent_view = async (id) => {
 };
 VIEWS.agent_renew = async (id) => {
   const r = await api("agent_renew_plans", {id});
-  let h = `<h1>🔄 ${esc(t("تمدید پنل {n}", {n: r.agent.username}))}</h1><p class="hint">${esc(t("پلن مورد نظر را انتخاب کنید:"))}</p>`;
-  if (!r.plans.length) h += `<div class="card hint">${esc(t("پلنی برای تمدید این پنل موجود نیست."))}</div>`;
-  h += r.plans.map(p => `<button class="row prod k-vpn" data-id="${p.id}"><i class="ri">🔄</i><span>${esc(p.title)}<div class="sub" style="direction:inherit">${esc(agLine(p))}</div></span><b>${esc(p.price.short)}</b></button>`).join("");
+  let h = `<h1>🔄 ${esc(t("تمدید پنل {n}", {n: r.agent.username}))}</h1>`;
+  if (!r.same) h += `<div class="card hint">${esc(t("پلنی برای تمدید این پنل موجود نیست."))}</div>`;
+  else h += `<div class="card"><h2>${esc(t("آیا مایل به تمدید پنل خود هستید؟"))}</h2>
+    <p style="display:flex;justify-content:space-between;margin:6px 0"><span>📦 ${esc(t("حجم"))}</span><b>${r.same.gb ? LTR(r.same.gb + " GB") : esc(t("نامحدود"))}</b></p>
+    <p style="display:flex;justify-content:space-between;margin:6px 0"><span>⏳ ${esc(t("مدت"))}</span><b>${r.same.days ? esc(t("{d} روز", {d: r.same.days})) : esc(t("بدون انقضا"))}</b></p>
+    <p style="display:flex;justify-content:space-between;margin:6px 0"><span>💰 ${esc(t("مبلغ"))}</span><b>${esc(r.same.price.text)}</b></p></div>
+    ${r.same.stack ? `<p class="hint">ℹ️ ${esc(t("این حجم روی حجم فعلی پنل شما اضافه می‌شود و مصرف قبلی صفر نمی‌شود."))}</p>` : ""}
+    <button class="b" id="rn-ok">${esc(t("✅ تایید"))}</button>`;
+  h += `<button class="b sec" id="rn-bk">${esc(t("🔙 بازگشت"))}</button>`;
   $app.innerHTML = h;
-  $app.querySelectorAll(".row.prod").forEach(b => b.onclick = () => run(b, async () => { const o = await api("agent_renew", {id, plan_id: +b.dataset.id}); go("order", o.id); }));
+  const ok = $app.querySelector("#rn-ok"); if (ok) ok.onclick = () => run(ok, async () => { const o = await api("agent_renew", {id, plan_id: 0}); go("order", o.id); });
+  $app.querySelector("#rn-bk").onclick = () => back();
 };
 
 VIEWS.orders = async () => {

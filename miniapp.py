@@ -778,10 +778,12 @@ async def a_agent_addon(ctx: Ctx, d: dict) -> dict:
 
 
 async def a_agent_renew_plans(ctx: Ctx, d: dict) -> dict:
+    """تمدید پنل نمایندگی: یک کارت تأیید (همان حجم پایه با مدت و قیمت فعلی)."""
     ag = await _own_agent(ctx, d.get("id"))
     u = await ctx.shop.db.get_user(ctx.uid)
-    plans = [p for p in await ctx.shop.vpn.agents.plans_for(u) if p["panel_id"] == ag["panel_id"]]
-    return {"agent": _agent_dict(ctx, ag), "plans": [_agent_plan_dict(ctx, p) for p in plans]}
+    same = await ctx.shop.vpn.agents.renew_same(ag, u)
+    return {"agent": _agent_dict(ctx, ag), "plans": [],
+            "same": ({"gb": same["gb"], "days": same["days"], "price": _money(ctx, same["price"]), "stack": bool(same.get("stack") and same["gb"])} if same else None)}
 
 
 async def a_agent_renew(ctx: Ctx, d: dict) -> dict:
