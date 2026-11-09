@@ -925,25 +925,33 @@ class AgentSales:
 
     async def agent_text(self, ag, tr) -> str:
         left = days_left(ag["expires_at"])
-        total = ag["total_bytes"]
-        lines = [f"🧑‍💼 <b>{esc(ag['title'] or tr('پنل نمایندگی'))}</b>",
-                 tr("وضعیت: {s}", s=tr(AGENT_STATUS_FA.get(ag["status"], ag["status"]))),
-                 tr("آدرس پنل: {u}", u=f"<code>{esc(self.panel_link(ag))}</code>"),
-                 tr("نام کاربری: {n}", n=f"<code>{esc(ag['username'])}</code>"),
-                 tr("رمز عبور: {p}", p=f"<code>{esc(ag['password'])}</code>")]
+        total = ag["total_bytes"] or 0
+        used = ag["used_bytes"] or 0
+        sep = "──────────────────"
+        cap = ltr(fmt_gb(total)) if total else tr("نامحدود")
+        lines = [f"📊 <b>{tr('مدیریت سرویس')}: {esc(ag['username'])}</b>", sep,
+                 f"• {tr('عنوان')}: {esc(ag['title'] or tr('پنل نمایندگی'))}",
+                 f"• {tr('نام کاربری')}: <code>{esc(ag['username'])}</code>",
+                 f"• {tr('رمز عبور')}: <code>{esc(ag['password'])}</code>",
+                 f"• {tr('سقف ترافیک')}: {cap}", sep,
+                 f"• {tr('مصرف')}: {ltr(fmt_gb(used))}"]
         if total:
-            lines.append(tr("مصرف: {u}", u=ltr(f"{fmt_gb(ag['used_bytes'])} / {fmt_gb(total)}")) + f"\n{bar(ag['used_bytes'], total)}")
-        else:
-            lines.append(tr("مصرف: {u}", u=ltr(f"{fmt_gb(ag['used_bytes'])} / ") + tr("نامحدود")))
-        lines.append(tr("تعداد کاربران: {n}", n=ltr(f"{ag['users_count']} / {ag['max_users']}" if ag["max_users"] else str(ag["users_count"]))))
-        lines.append(tr("زمان باقی‌مانده: {t}", t=tr("نامحدود") if left is None else tr("{d} روز", d=left)))
+            lines.append(f"• {tr('ترافیک باقی‌مانده')}: {ltr(fmt_gb(max(total - used, 0)))}")
+            lines.append(bar(used, total))
+        lines += [sep,
+                  f"• {tr('تعداد کاربران')}: " + ltr(f"{ag['users_count']} / {ag['max_users']}" if ag["max_users"] else str(ag["users_count"])),
+                  f"• {tr('وضعیت')}: {tr(AGENT_STATUS_FA.get(ag['status'], ag['status']))}",
+                  f"• {tr('زمان باقی‌مانده')}: " + (tr("نامحدود") if left is None else tr("{d} روز", d=left))]
         if self._can_auto(ag):
-            lines.append(tr("🔁 تمدید خودکار: {s}", s=tr("روشن") if self.is_auto(ag) else tr("خاموش")))
-        return "\n".join(lines)
+            lines.append(f"• {tr('🔁 تمدید خودکار: {s}', s=tr('روشن') if self.is_auto(ag) else tr('خاموش'))}")
+        lines += [sep, f"• {tr('ورود به وب‌پنل')}: <code>{esc(self.panel_link(ag))}</code>"]
+        return "<blockquote>" + "\n".join(lines) + "</blockquote>"
 
     async def agent_kb(self, ag, tr, back="vpn:agl"):
         i = ag["id"]
-        rows = [[btn(tr("🔄 تمدید"), f"vpn:agn:{i}", role="action"), btn(tr("♻️ بروزرسانی"), f"vpn:agr:{i}", role="action")]]
+        link = self.panel_link(ag)
+        rows = [[btn(tr("🌐 ورود به پنل"), url=link, role="link")]] if link.startswith(("http://", "https://")) else []
+        rows.append([btn(tr("🔄 تمدید"), f"vpn:agn:{i}", role="action"), btn(tr("♻️ بروزرسانی"), f"vpn:agr:{i}", role="action")])
         if await self.addons_for(ag):
             rows.append([btn(tr("➕ بسته‌ی حجم/زمان اضافه"), f"vpn:aga:{i}", role="action")])
         custom = await self.custom_for(ag)
