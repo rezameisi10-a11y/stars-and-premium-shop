@@ -96,14 +96,12 @@ class AgentSales:
         panel = await self.db.get_vpn_panel(pid) if pid else None
         if not panel or not panel["enabled"] or not getattr(vpn_panels.DRIVERS.get(panel["type"]), "ADMIN", False):
             return None
-        if panel["type"] == "pasarguard" and not (self.s.get("vpn_agent_cv_role") or "").strip():
-            return None                                        # پاسارگارد بدون «نقش» ادمین نمی‌سازد (HTTP 422)
         return {"price": price, "min": mn, "max": mx, "days": max(self._int("vpn_agent_cv_days", 30), 0), "users": max(self._int("vpn_agent_cv_users"), 0),
                 "panel": panel["id"], "cost": max(self._int("vpn_agent_cv_cost"), 0)}
 
     async def cv_plan(self, panel_id: int, gb: float, days: int, users: int) -> dict:
         """پلنِ مجازی برای حجم دلخواه: فقط از تنظیمات خودش (حجم، مدت، سقف کاربر)؛ از هیچ پلن نمایندگی چیزی به ارث نمی‌برد."""
-        base = {"id": None, "role_id": (self.s.get("vpn_agent_cv_role") or "").strip(), "service_ids": "", "modify_users": 1, "data_min_gb": 0, "data_max_gb": 0, "expire_min_days": 0, "expire_max_days": 0, "note": ""}
+        base = {"id": None, "role_id": "", "service_ids": "", "modify_users": 1, "data_min_gb": 0, "data_max_gb": 0, "expire_min_days": 0, "expire_max_days": 0, "note": ""}
         base.update(panel_id=panel_id, days=days, max_users=users, traffic_gb=gb, price=0, cost=0, active=1, title=f"{N_('پنل نمایندگی')} {gb:g} GB")
         return base
 
