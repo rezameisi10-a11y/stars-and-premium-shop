@@ -448,7 +448,7 @@ class Marzban(BasePanel):
         now = time.time()
         for i in range(40):                                   # حداکثر ۴۰×۲۰۰ کاربر
             prm = {self.OWNER_PARAM: username, **({"page": i + 1, "size": 200} if self.PAGED else {"offset": i * 200, "limit": 200})}
-            d = await self._call("GET", self.USER, params=prm)
+            d = await self._call("GET", "/users" if self.USER == "/user" else self.USER, params=prm)     # لیست کاربران: جمع (/users)؛ /user فقط برای ساخت/تک‌کاربر
             items = (d.get("items") or d.get("users") or []) if isinstance(d, dict) else (d or [])
             for it in items:
                 u = self._parse(it)
