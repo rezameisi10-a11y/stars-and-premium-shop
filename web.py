@@ -145,7 +145,7 @@ async def login_get(request):
     err = f"<div class='flash err'>{e(request.query['err'])}</div>" if request.query.get("err") else ""
     owner_pw = bool(shop.cfg.web_password)
     has_admin_login = bool(await shop.db.all("SELECT 1 FROM admins WHERE web_user IS NOT NULL LIMIT 1"))
-    if owner_pw or has_admin_login:
+    if True:
         form = (f"<form method='post' action='/login'><label class='f'>{e(_('نام کاربری'))}</label><input class='w' name='u' autocomplete='username'>"
                 f"<label class='f'>{e(_('رمز عبور'))}</label><input class='w' type='password' name='p' autocomplete='current-password'>"
                 f"<p><button class='b pri' style='width:100%'>{e(_('ورود'))}</button></p></form>")
@@ -169,6 +169,8 @@ async def login_post(request):
     pw = shop.cfg.web_password
     if pw and hmac.compare_digest(p.encode(), pw.encode()) and hmac.compare_digest(u.encode(), shop.cfg.web_user.encode()):
         uid = 0
+    elif u.isdigit() and (otp_uid := shop.consume_login_otp(u, p)) is not None:      # رمز یک‌بارمصرفِ دکمه‌ی «پنل وب» ربات
+        uid = otp_uid
     elif u:
         a = await shop.db.get_admin_by_web_user(u)
         if a and a["web_pw"] and check_pw(p, a["web_pw"]) and a["user_id"] in shop.admin_perms:

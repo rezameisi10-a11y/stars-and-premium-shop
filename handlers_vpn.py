@@ -927,7 +927,7 @@ async def agent_refresh(cb: CallbackQuery, shop: Shop, tr):
 
 @router.callback_query(F.data.startswith("vpn:agl:"))
 async def agent_web_login(cb: CallbackQuery, shop: Shop, tr):
-    """ورود به وب‌پنل: لینک + نام کاربری + رمز تازه (هر بار جدید؛ رمز قبلی باطل می‌شود)، با دکمه‌ی کپی."""
+    """ورود به وب‌پنل: لینک + نام کاربری + رمز ثبت‌شده (بدون تغییر رمز)، با دکمه‌ی کپی."""
     ag = await _own_agent(cb, shop, tr, cb.data.split(":")[2])
     if not ag:
         return
@@ -939,8 +939,7 @@ async def agent_web_login(cb: CallbackQuery, shop: Shop, tr):
     text = (f"🌐 <b>{tr('ورود به وب‌پنل')}</b>\n\n"
             f"• {tr('لینک')}: <code>{esc(link)}</code>\n"
             f"• {tr('نام کاربری')}: <code>{esc(user)}</code>\n"
-            f"• {tr('رمز یک‌بار مصرف')}: <code>{esc(pw)}</code>\n\n"
-            f"⚠️ {tr('هر بار که این دکمه را بزنید رمز جدید ساخته می‌شود و رمز قبلی از کار می‌افتد.')}")
+            f"• {tr('رمز عبور')}: <code>{esc(pw)}</code>")
     rows = [[InlineKeyboardButton(text=tr("🌐 باز کردن پنل"), url=link)] if link.startswith(("http://", "https://")) else [],
             [InlineKeyboardButton(text=tr("📋 کپی نام کاربری"), copy_text=CopyTextButton(text=user)),
              InlineKeyboardButton(text=tr("📋 کپی رمز"), copy_text=CopyTextButton(text=pw))],

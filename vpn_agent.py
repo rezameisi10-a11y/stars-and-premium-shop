@@ -987,12 +987,8 @@ class AgentSales:
 
     # ------------------------------------------------------------------ نمایش برای کاربر
     async def web_login(self, ag):
-        """هر بار رمز تازه روی پنل می‌گذارد (رمز قبلی باطل می‌شود) و (لینک، نام کاربری، رمز) را برمی‌گرداند."""
-        drv = await self.vpn.driver(ag["panel_id"])
-        pw = gen_password()
-        await drv.admin_set_password(ag["username"], pw)
-        await self.db.update_agent(ag["id"], password=pw)
-        return self.panel_link(ag), ag["username"], pw
+        """(لینک، نام کاربری، رمز) ادمین نماینده روی پنل؛ رمز همان رمز ثبت‌شده است و عوض نمی‌شود."""
+        return self.panel_link(ag), ag["username"], ag["password"]
 
     def panel_link(self, ag) -> str:
         try:

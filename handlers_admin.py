@@ -10,7 +10,7 @@ from aiogram import F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import BufferedInputFile, CallbackQuery, LabeledPrice, Message, PreCheckoutQuery
+from aiogram.types import BufferedInputFile, CallbackQuery, CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, Message, PreCheckoutQuery
 
 import backup as bk
 import provider
@@ -98,11 +98,18 @@ async def send_web_link(t, shop: Shop):
     if not link:
         txt = "🌐 برای فعال‌سازی پنل وب، مقدار <code>PUBLIC_URL</code> را در فایل .env تنظیم کنید (مثلاً https://panel.example.com) و ربات را ریستارت کنید."
     else:
-        txt = (f"🌐 <b>ورود به پنل وب</b>\nلینک یک‌بارمصرف (۵ دقیقه اعتبار):\n{esc(link)}\n\n"
-               "این لینک را به کسی ندهید." + ("" if shop.cfg.public_url.startswith("https") else
-                                              "\n⚠️ آدرس شما HTTPS نیست؛ برای امنیت بیشتر پشت SSL قرار دهید."))
+        pw = shop.make_login_otp(uid)
+        base = shop.cfg.public_url.rstrip("/")
+        txt = (f"🌐 <b>ورود به پنل وب</b>\n\n• لینک ورود سریع (۵ دقیقه، یک‌بارمصرف):\n{esc(link)}\n\n"
+               f"یا با نام کاربری و رمز:\n• آدرس: <code>{esc(base)}/login</code>\n• نام کاربری: <code>{uid}</code>\n• رمز یک‌بارمصرف: <code>{esc(pw)}</code>\n\n"
+               "⚠️ رمز ۱۰ دقیقه اعتبار دارد و بعد از یک بار ورود باطل می‌شود؛ با هر بار زدن «پنل وب» رمز جدید ساخته می‌شود. این اطلاعات را به کسی ندهید."
+               + ("" if shop.cfg.public_url.startswith("https") else "\n⚠️ آدرس شما HTTPS نیست؛ برای امنیت بیشتر پشت SSL قرار دهید."))
+        otp_rows = [[InlineKeyboardButton(text="🌐 باز کردن پنل", url=link)] if link.startswith(("http://", "https://")) else [],
+                    [InlineKeyboardButton(text="📋 کپی نام کاربری", copy_text=CopyTextButton(text=str(uid))), InlineKeyboardButton(text="📋 کپی رمز", copy_text=CopyTextButton(text=pw))],
+                    back_row()]
     msg = t.message if isinstance(t, CallbackQuery) else t
-    await msg.answer(txt, reply_markup=ikb([back_row()]), disable_web_page_preview=True)
+    kb = InlineKeyboardMarkup(inline_keyboard=[r for r in otp_rows if r]) if link else ikb([back_row()])
+    await msg.answer(txt, reply_markup=kb, disable_web_page_preview=True)
     if isinstance(t, CallbackQuery):
         await t.answer()
 

@@ -1611,6 +1611,25 @@ class Shop:
         base = self.cfg.public_url
         return f"{base}/auth?token={token}" if base else None
 
+    def make_login_otp(self, uid) -> str:
+        """رمز یک‌بارمصرف ورود به پنل وب (نام کاربری = آیدی عددی ادمین)؛ هر بار ساخت، رمز قبلی باطل می‌شود. ۱۰ دقیقه اعتبار."""
+        now = time.time()
+        self.login_otps = {u: v for u, v in getattr(self, "login_otps", {}).items() if v[1] > now}
+        pw = "".join(secrets.choice("abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(10))
+        self.login_otps[int(uid)] = (pw, now + 600)
+        return pw
+
+    def consume_login_otp(self, user: str, pw: str):
+        """اگر (آیدی عددی، رمز) درست و منقضی‌نشده باشد، رمز مصرف می‌شود و uid برمی‌گردد."""
+        otps = getattr(self, "login_otps", {})
+        if not str(user).isdigit():
+            return None
+        v = otps.get(int(user))
+        if v and v[1] > time.time() and hmac.compare_digest(v[0].encode(), str(pw).encode()) and self.is_admin(int(user)):
+            otps.pop(int(user), None)
+            return int(user)
+        return None
+
     def consume_login_token(self, token):
         v = self.login_tokens.pop(token, None)
         if v and v[1] > time.time() and self.is_admin(v[0]):
