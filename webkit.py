@@ -152,30 +152,6 @@ th{border-bottom-color:var(--edge)}td{border-bottom-color:var(--line)}
 .top h1{font-size:19px;letter-spacing:-.2px}
 .side::-webkit-scrollbar,.tw::-webkit-scrollbar{height:8px;width:8px}.side::-webkit-scrollbar-thumb,.tw::-webkit-scrollbar-thumb{background:var(--line);border-radius:9px}
 @media(max-width:900px){.side{background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none}.rt tr{background:var(--panel2)}}
-/* ---- منوی گروه‌بندی‌شده ---- */
-.side{display:flex;flex-direction:column;padding:14px 10px 10px}
-.nav-wrap{flex:1;overflow:auto;margin:0 -4px;padding:2px 4px}
-.nsearch{padding:0 4px 10px}.nsearch input{width:100%;padding:8px 12px;font-size:13px;border-radius:10px}
-.ng{margin:0 0 4px}.ng.hid,.side a.nav.hid{display:none}
-.nh{width:100%;display:flex;align-items:center;justify-content:space-between;background:none;border:0;color:var(--mut);font:inherit;font-size:11.5px;font-weight:600;letter-spacing:.3px;padding:10px 10px 5px;cursor:pointer}
-.nh:hover{color:var(--tx)}.chev{width:7px;height:7px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);transition:transform .18s;margin-top:-3px}
-.ng.shut .chev{transform:rotate(-45deg)}.ng.shut .nl{display:none}
-.nl{display:flex;flex-direction:column}
-.side a.nav{padding:8px 11px;margin:1px 0;font-size:13.5px;gap:11px;color:var(--tx)}
-.side a.nav .ni{display:grid;place-items:center;color:var(--mut);flex-shrink:0}.side a.nav:hover .ni,.side a.nav.on .ni{color:var(--acc)}
-.side a.nav.on{font-weight:700}
-.nfoot{margin-top:8px;border-top:1px solid var(--line);padding-top:8px}
-.crumb{display:inline-block;font-size:11.5px;font-weight:500;color:var(--mut);background:var(--panel2);border:1px solid var(--line);border-radius:99px;padding:1px 10px;margin-inline-end:10px;vertical-align:middle}
-/* ---- تب‌های هر بخش ---- */
-.stabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:16px;padding:6px;border:1px solid var(--line);border-radius:14px;background:var(--panel)}
-.stabs .sg{font-size:11px;color:var(--mut);padding:0 8px 0 4px}.stabs .sep{width:1px;align-self:stretch;background:var(--line);margin:3px 4px}
-.stabs a{padding:6px 14px;border-radius:10px;font-size:13px;color:var(--tx);border:1px solid transparent}
-.stabs a:hover{background:var(--panel2);text-decoration:none}
-.stabs a.on{background:linear-gradient(135deg,var(--acc),var(--g1,var(--pri)));color:#fff;box-shadow:0 6px 16px color-mix(in srgb,var(--acc) 30%,transparent)}
-/* ---- کارت‌ها: عنوان با نوار رنگی و فاصله‌ی بهتر ---- */
-.card h2{display:flex;align-items:center;gap:8px;padding-bottom:10px;margin-bottom:14px;border-bottom:1px solid var(--line);font-size:15px}
-.card h2::before{content:"";width:4px;height:16px;border-radius:4px;background:linear-gradient(var(--acc),var(--g1,var(--pri)));flex-shrink:0}
-.wrap{padding:22px 26px}
 """
 
 THEME_JS = """
@@ -196,9 +172,6 @@ document.addEventListener('DOMContentLoaded',function(){ssSwatches();mark()});})
 """
 
 BASE_JS = """
-function ngTog(b){var g=b.parentNode;g.classList.toggle('shut');try{var m=JSON.parse(localStorage.getItem('ss_ng')||'{}');m[g.getAttribute('data-g')]=g.classList.contains('shut')?1:0;localStorage.setItem('ss_ng',JSON.stringify(m))}catch(e){}}
-function ngFilter(q){q=(q||'').trim().toLowerCase();document.querySelectorAll('#navw .ng').forEach(function(g){var any=false;g.querySelectorAll('a.nav').forEach(function(a){var ok=!q||(a.getAttribute('data-q')||a.textContent).toLowerCase().indexOf(q)>-1;a.classList.toggle('hid',!ok);if(ok)any=true});g.classList.toggle('hid',!any);if(q&&any)g.classList.remove('shut')})}
-(function(){try{var m=JSON.parse(localStorage.getItem('ss_ng')||'{}');document.querySelectorAll('#navw .ng[data-g]').forEach(function(g){if(m[g.getAttribute('data-g')]&&!g.classList.contains('hasact'))g.classList.add('shut')})}catch(e){}})();
 function navToggle(f){var sd=document.getElementById('side');if(!sd)return;var o=(f===undefined)?!sd.classList.contains('open'):f;sd.classList.toggle('open',o);document.body.classList.toggle('nav-open',o)}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')navToggle(false)});
 document.addEventListener('click',function(e){var a=e.target.closest('#side a.nav');if(a)navToggle(false)});
@@ -453,72 +426,6 @@ NAV = [
 ]
 
 
-# گروه‌بندی منو: (عنوان گروه, [آدرس‌ها]) — هیچ صفحه‌ای حذف نشده؛ فقط مرتب و جدا شده است
-NAV_GROUPS = [
-    (N_("عمومی"), ["/", "/users", "/orders", "/reports"]),
-    (N_("مالی"), ["/payments", "/wallet", "/referrals"]),
-    (N_("فروشگاه"), ["/products", "/rates", "/stars", "/marketapp", "/discounts"]),
-    (N_("VPN و نمایندگی"), ["/vpn"]),
-    (N_("ظاهر و پیام"), ["/keyboard", "/languages", "/broadcast"]),
-    (N_("سیستم"), ["/settings", "/admins", "/logs", "/backup"]),
-]
-
-_I = lambda d: f"<svg viewBox='0 0 24 24' width='18' height='18' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>{d}</svg>"
-NAV_ICONS = {
-    "/": _I("<rect x='3' y='3' width='7' height='9' rx='1.5'/><rect x='14' y='3' width='7' height='5' rx='1.5'/><rect x='14' y='12' width='7' height='9' rx='1.5'/><rect x='3' y='16' width='7' height='5' rx='1.5'/>"),
-    "/users": _I("<circle cx='9' cy='8' r='3.5'/><path d='M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5'/><path d='M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.7c2 .6 3.2 2.3 3.5 5.3'/>"),
-    "/orders": _I("<path d='M6 3h12v18l-3-2-3 2-3-2-3 2z'/><path d='M9 8h6M9 12h6'/>"),
-    "/reports": _I("<path d='M3 20h18'/><path d='M6 16V9M11 16V5M16 16v-6M21 16V8'/>"),
-    "/payments": _I("<rect x='2.5' y='5' width='19' height='14' rx='2.5'/><path d='M2.5 10h19M6 15h4'/>"),
-    "/wallet": _I("<path d='M3 7.5A2.5 2.5 0 0 1 5.5 5H19v4'/><path d='M3 7.5V18a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1H5.5A2.5 2.5 0 0 1 3 7.5z'/><circle cx='16.5' cy='14.5' r='1.2'/>"),
-    "/referrals": _I("<circle cx='6' cy='12' r='2.5'/><circle cx='18' cy='6' r='2.5'/><circle cx='18' cy='18' r='2.5'/><path d='M8.2 10.8l7.6-3.6M8.2 13.2l7.6 3.6'/>"),
-    "/products": _I("<path d='M21 8l-9-5-9 5 9 5z'/><path d='M3 8v8l9 5 9-5V8M12 13v8'/>"),
-    "/rates": _I("<path d='M3 17l6-6 4 4 8-8'/><path d='M15 7h6v6'/>"),
-    "/stars": _I("<path d='M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z'/>"),
-    "/marketapp": _I("<circle cx='12' cy='12' r='9'/><path d='M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9S14.500 18.300 12 21c-2.500-2.700-3.800-5.700-3.800-9S9.500 5.700 12 3z'/>"),
-    "/discounts": _I("<path d='M20.5 13.5l-7 7a2 2 0 0 1-2.8 0L3 12.8V4h8.8l8.700 8.700a2 2 0 0 1 0 .8z'/><circle cx='7.500' cy='8.500' r='1.300'/>"),
-    "/vpn": _I("<path d='M12 3l8 3v6c0 4.500-3.300 8-8 9-4.700-1-8-4.500-8-9V6z'/><path d='M9 12l2 2 4-4'/>"),
-    "/keyboard": _I("<rect x='2.500' y='6' width='19' height='12' rx='2.500'/><path d='M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10'/>"),
-    "/languages": _I("<path d='M4 5h9M8.500 3v2M5.500 5c.5 3.500 3 6.500 6.500 8M11.500 5c-.5 3.500-3 6.500-6.500 8'/><path d='M13 20l4-9 4 9M14.500 17h5'/>"),
-    "/broadcast": _I("<path d='M3 11v2a1 1 0 0 0 1 1h3l8 4V6L7 10H4a1 1 0 0 0-1 1z'/><path d='M18.500 9a4 4 0 0 1 0 6'/>"),
-    "/settings": _I("<circle cx='12' cy='12' r='3'/><path d='M19.400 15a1.700 1.700 0 0 0 .3 1.800l.1.1a2 2 0 1 1-2.800 2.800l-.1-.1a1.700 1.700 0 0 0-1.800-.3 1.700 1.700 0 0 0-1 1.500V21a2 2 0 1 1-4 0v-.1a1.700 1.700 0 0 0-1.100-1.500 1.700 1.700 0 0 0-1.800.3l-.1.1a2 2 0 1 1-2.800-2.800l.1-.1a1.700 1.700 0 0 0 .3-1.800 1.700 1.700 0 0 0-1.500-1H3a2 2 0 1 1 0-4h.1a1.700 1.700 0 0 0 1.500-1.100 1.700 1.700 0 0 0-.3-1.800l-.1-.1a2 2 0 1 1 2.800-2.800l.1.1a1.700 1.700 0 0 0 1.800.3h0a1.700 1.700 0 0 0 1-1.500V3a2 2 0 1 1 4 0v.1a1.700 1.700 0 0 0 1 1.500h0a1.700 1.700 0 0 0 1.800-.3l.1-.1a2 2 0 1 1 2.800 2.800l-.1.1a1.700 1.700 0 0 0-.3 1.800v0a1.700 1.700 0 0 0 1.500 1H21a2 2 0 1 1 0 4h-.1a1.700 1.700 0 0 0-1.500 1z'/>"),
-    "/admins": _I("<path d='M12 3l8 3v6c0 4.500-3.300 8-8 9-4.700-1-8-4.500-8-9V6z'/><circle cx='12' cy='10' r='2.200'/><path d='M8 16c.700-1.800 2.200-2.600 4-2.600s3.300.8 4 2.600'/>"),
-    "/logs": _I("<path d='M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z'/><path d='M14 3v6h6M8 13h8M8 17h6'/>"),
-    "/backup": _I("<ellipse cx='12' cy='5.500' rx='8' ry='3'/><path d='M4 5.500v13c0 1.700 3.600 3 8 3s8-1.300 8-3v-13M4 12c0 1.700 3.600 3 8 3s8-1.300 8-3'/>"),
-    "/app": _I("<path d='M4 7h16l-1.500 12a2 2 0 0 1-2 1.700H7.500a2 2 0 0 1-2-1.700z'/><path d='M8.500 10V6.500a3.500 3.500 0 0 1 7 0V10'/>"),
-}
-_I_LOGOUT = _I("<path d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4'/><path d='M16 17l5-5-5-5M21 12H9'/>")
-
-
-def render_nav(req, active: str, shop) -> str:
-    """منوی گروه‌بندی‌شده: هر گروه هدر جدا و قابل بستن دارد؛ هر آیتمی که در هیچ گروهی نباشد در «سایر» می‌آید."""
-    allowed = {href: (label, perm) for href, label, _ic, perm in NAV if nav_allowed(req, perm)}
-    done, out = set(), ""
-    groups = list(NAV_GROUPS)
-    rest = [h for h in allowed if not any(h in g[1] for g in groups)]
-    if rest:
-        groups.append((N_("سایر"), rest))
-    for title, hrefs in groups:
-        items = [h for h in hrefs if h in allowed and h not in done]
-        if not items:
-            continue
-        done.update(items)
-        links = "".join(f"<a class='nav {'on' if h == active else ''}' href='{h}' data-q='{e(_(allowed[h][0]))}'>"
-                        f"<span class='ni'>{NAV_ICONS.get(h, '')}</span><span class='nt'>{e(_(allowed[h][0]))}</span></a>" for h in items)
-        out += (f"<div class='ng{' hasact' if active in items else ''}' data-g='{e(title)}'><button type='button' class='nh' onclick='ngTog(this)'>"
-                f"<span>{e(_(title))}</span><i class='chev'></i></button><div class='nl'>{links}</div></div>")
-    if shop.miniapp_url():     # بازگشت به فروشگاه (مینی‌اپ) برای ادمینی که از داخل تلگرام آمده
-        out += (f"<div class='ng'><a class='nav' href='/app'><span class='ni'>{NAV_ICONS['/app']}</span><span class='nt'>{e(_('فروشگاه (مینی‌اپ)'))}</span></a></div>")
-    return out
-
-
-def nav_crumb(active: str) -> str:
-    for title, hrefs in NAV_GROUPS:
-        if active in hrefs:
-            return f"<span class='crumb'>{e(_(title))}</span>"
-    return ""
-
-
 def nav_allowed(req, perm) -> bool:
     if perm == "*any_settings":
         return can(req, "settings") or can(req, "pricing")
@@ -545,7 +452,10 @@ def theme_ctrl(extra_cls=""):
 async def layout(req, title, body, active="", head=""):
     shop: Shop = req.app["shop"]
     s = await shop.settings()
-    nav = render_nav(req, active, shop)
+    nav = "".join(f"<a class='nav {'on' if href == active else ''}' href='{href}'><span>{ic}</span>{e(_(label))}</a>"
+                  for href, label, ic, perm in NAV if nav_allowed(req, perm))
+    if shop.miniapp_url():     # بازگشت به فروشگاه (مینی‌اپ) برای ادمینی که از داخل تلگرام آمده
+        nav += f"<a class='nav' href='/app'><span>🛍</span>{e(_('فروشگاه (مینی‌اپ)'))}</a>"
     flash = ""
     if req.query.get("ok"):
         flash += f"<div class='flash ok'>{e(req.query['ok'])}</div>"
@@ -555,13 +465,11 @@ async def layout(req, title, body, active="", head=""):
     html = f"""<!doctype html><html lang="{e(req['lang'])}" dir="{'rtl' if req['rtl'] else 'ltr'}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{e(title)} · {shop_name}</title>
 <style>{CSS}</style><script>{THEME_JS}</script>{head}</head><body><div class="shell">
-<aside class="side" id="side"><button type="button" class="side-close" onclick="navToggle(false)" aria-label="close">✕</button><div class="brand"><i>★</i><span>{shop_name}</span></div>
-<div class="nsearch"><input type="search" id="nq" placeholder="{e(_('جستجو در منو…'))}" autocomplete="off" oninput="ngFilter(this.value)"></div>
-<nav class="nav-wrap" id="navw">{nav}</nav>
-<div class="nfoot"><a class="nav" href="/logout"><span class="ni">{_I_LOGOUT}</span><span class="nt">{e(_('خروج'))}</span></a>{theme_ctrl()}</div></aside>
+<aside class="side" id="side"><button type="button" class="side-close" onclick="navToggle(false)" aria-label="close">✕</button><div class="brand"><i>★</i><span>{shop_name}</span></div>{nav}
+<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px"><a class="nav" href="/logout"><span>🚪</span>{e(_('خروج'))}</a>{theme_ctrl()}</div></aside>
 <div class="side-bd" onclick="navToggle(false)"></div>
 <div class="main"><div class="top"><button type="button" class="burger" onclick="navToggle()">☰</button>
-<h1>{nav_crumb(active)}{e(title)}</h1>{lang_switcher(req)}<span class="hint">{e(req['who'])}</span></div><div class="wrap">{flash}{body}</div></div></div>
+<h1>{e(title)}</h1>{lang_switcher(req)}<span class="hint">{e(req['who'])}</span></div><div class="wrap">{flash}{body}</div></div></div>
 <script>{BASE_JS}</script></body></html>"""
     return web.Response(text=html, content_type="text/html")
 

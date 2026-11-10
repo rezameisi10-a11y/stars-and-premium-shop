@@ -5,7 +5,7 @@ import time
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from handlers_user import order_text
 from i18n import N_
@@ -923,6 +923,30 @@ async def agent_refresh(cb: CallbackQuery, shop: Shop, tr):
     except Exception:
         pass
     await cb.answer(tr("بروزرسانی شد."))
+
+
+@router.callback_query(F.data.startswith("vpn:agl:"))
+async def agent_web_login(cb: CallbackQuery, shop: Shop, tr):
+    """ورود به وب‌پنل: لینک + نام کاربری + رمز تازه (هر بار جدید؛ رمز قبلی باطل می‌شود)، با دکمه‌ی کپی."""
+    ag = await _own_agent(cb, shop, tr, cb.data.split(":")[2])
+    if not ag:
+        return
+    try:
+        link, user, pw = await shop.vpn.agents.web_login(ag)
+    except Exception:
+        await cb.answer(tr("ارتباط با سرور برقرار نشد؛ کمی بعد دوباره تلاش کنید."), show_alert=True)
+        return
+    text = (f"🌐 <b>{tr('ورود به وب‌پنل')}</b>\n\n"
+            f"• {tr('لینک')}: <code>{esc(link)}</code>\n"
+            f"• {tr('نام کاربری')}: <code>{esc(user)}</code>\n"
+            f"• {tr('رمز یک‌بار مصرف')}: <code>{esc(pw)}</code>\n\n"
+            f"⚠️ {tr('هر بار که این دکمه را بزنید رمز جدید ساخته می‌شود و رمز قبلی از کار می‌افتد.')}")
+    rows = [[InlineKeyboardButton(text=tr("🌐 باز کردن پنل"), url=link)] if link.startswith(("http://", "https://")) else [],
+            [InlineKeyboardButton(text=tr("📋 کپی نام کاربری"), copy_text=CopyTextButton(text=user)),
+             InlineKeyboardButton(text=tr("📋 کپی رمز"), copy_text=CopyTextButton(text=pw))],
+            [btn(tr("🔙 بازگشت"), f"vpn:ag:{ag['id']}", role="back")]]
+    await cb.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[r for r in rows if r]), disable_web_page_preview=True)
+    await cb.answer()
 
 
 @router.callback_query(F.data.startswith("vpn:agw:"))

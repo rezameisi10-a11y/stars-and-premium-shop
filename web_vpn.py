@@ -29,14 +29,10 @@ def gb_txt(v) -> str:
 
 
 def tabs(active: str) -> str:
-    """تب‌های بخش VPN؛ دو گروه جدا: فروش عادی و نمایندگی (هیچ صفحه‌ای حذف نشده)."""
-    def a(h, l, k):
-        return f"<a class='{'on' if k == active else ''}' href='{h}'>{e(_(l))}</a>"
-    return ("<div class='stabs'><span class='sg'>" + e(_(NW_("فروش VPN"))) + "</span>"
-            + a("/vpn", NW_("پنل‌ها"), "panels") + a("/vpn/plans", NW_("پلن‌ها و بسته‌ها"), "plans") + a("/vpn/services", NW_("سرویس‌ها"), "services")
-            + "<span class='sep'></span><span class='sg'>" + e(_(NW_("نمایندگی"))) + "</span>"
-            + a("/vpn/agent-plans", NW_("پلن‌های نمایندگی"), "aplans") + a("/vpn/agents", NW_("نماینده‌ها"), "agents")
-            + "<span class='sep'></span>" + a("/settings?g=vpn", NW_("تنظیمات VPN"), "settings") + "</div>")
+    items = [("/vpn", NW_("پنل‌ها"), "panels"), ("/vpn/plans", NW_("پلن‌ها و بسته‌ها"), "plans"), ("/vpn/services", NW_("سرویس‌ها"), "services"),
+             ("/vpn/agent-plans", NW_("پلن‌های نمایندگی"), "aplans"), ("/vpn/agents", NW_("نماینده‌ها"), "agents"), ("/settings?g=vpn", NW_("تنظیمات VPN"), "settings")]
+    return "<div class='row' style='margin-bottom:14px'>" + " ".join(
+        f"<a class='b sm {'pri' if k == active else ''}' href='{h}'>{e(_(l))}</a>" for h, l, k in items) + "</div>"
 
 
 def st_badge(s):

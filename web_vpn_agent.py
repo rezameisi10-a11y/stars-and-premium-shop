@@ -16,38 +16,52 @@ def _admin_panels(panels):
     return [p for p in panels if getattr(vpn_panels.DRIVERS.get(p["type"]), "ADMIN", False)]
 
 
-def plan_inputs(p=None) -> str:
+def _lab(txt, field, cls=""):
+    return f"<label class='mini {cls}'>{T(txt)}{field}</label> "
+
+
+def plan_basic(p=None, ptype=None) -> str:
+    """فیلدهای اصلی پلن؛ عین مراحل ساخت پلن در ربات (نقش فقط پاسارگارد، سرویس‌ها فقط مرزنشین)."""
     p = p or {}
-    return (f"<label class='mini'>{T('عنوان')}{inp('title', p.get('title', ''), '', 'm', required=True)}</label> "
-            f"<label class='mini'>{T('مدت (روز، ۰=بدون انقضا)')}{inp('days', p.get('days', 30), '', 's', 'number')}</label> "
-            f"<label class='mini'>{T('سقف حجم کل (GB، ۰=نامحدود)')}{inp('traffic_gb', gb_txt(p.get('traffic_gb', 0)), '', 's', 'text')}</label> "
-            f"<label class='mini'>{T('سقف تعداد کاربر (۰=نامحدود)')}{inp('max_users', p.get('max_users', 0), '', 's', 'number')}</label> "
-            f"<label class='mini'>{T('شناسه‌ی نقش (پاسارگارد)')}{inp('role_id', p.get('role_id', ''), '', 's')}</label> "
-            f"<label class='mini'>{T('شناسه‌ی سرویس‌ها (مرزنشین؛ خالی=همه)')}{inp('service_ids', p.get('service_ids', ''), '', 'm')}</label> "
-            f"<label class='mini'>{T('اجازه‌ی ویرایش کاربران (مرزنشین)')}<select name='modify_users'><option value='1' {'selected' if p.get('modify_users', 1) else ''}>{T('بله')}</option>"
-            f"<option value='0' {'' if p.get('modify_users', 1) else 'selected'}>{T('خیر')}</option></select></label> "
-            f"<label class='mini'>{T('حداقل حجم هر کاربر (GB)')}{inp('data_min_gb', gb_txt(p.get('data_min_gb', 0)), '', 's')}</label> "
-            f"<label class='mini'>{T('حداکثر حجم هر کاربر (GB)')}{inp('data_max_gb', gb_txt(p.get('data_max_gb', 0)), '', 's')}</label> "
-            f"<label class='mini'>{T('حداقل مدت کاربر (روز)')}{inp('expire_min_days', p.get('expire_min_days', 0), '', 's', 'number')}</label> "
-            f"<label class='mini'>{T('حداکثر مدت کاربر (روز)')}{inp('expire_max_days', p.get('expire_max_days', 0), '', 's', 'number')}</label> "
-            f"<label class='mini'>{T('قیمت (ت)')}{inp('price', p.get('price', ''), '', 'm', 'number')}</label> "
-            f"<label class='mini'>{T('ترتیب')}{inp('sort', p.get('sort', 100), '', 's', 'number')}</label> "
-            f"<label class='mini'>{T('حجم/زمان اضافه')}{sel('addon_on', [('1', _('روشن')), ('0', _('خاموش'))], str(p.get('addon_on', 1)))}</label> "
+    show = lambda t: "" if (ptype is None or ptype == t) else " style='display:none'"
+    return (_lab("عنوان (خریدار می‌بیند)", inp("title", p.get("title", ""), "", "m", required=True))
+            + _lab("مدت (روز، ۰=بدون انقضا)", inp("days", p.get("days", 30), "", "s", "number"))
+            + f"<span class='pg' data-t='pasarguard'{show('pasarguard')}>"
+            + _lab("سقف حجم کل (GB، ۰=نامحدود)", inp("traffic_gb", gb_txt(p.get("traffic_gb", 0)), "", "s", "text"))
+            + _lab("سقف تعداد کاربر (۰=نامحدود)", inp("max_users", p.get("max_users", 0), "", "s", "number"))
+            + _lab("شناسه‌ی نقش (پاسارگارد)", inp("role_id", p.get("role_id", ""), "", "s")) + "</span>"
+            + f"<span class='pg' data-t='marzneshin'{show('marzneshin')}>"
+            + _lab("شناسه‌ی سرویس‌ها (مرزنشین؛ خالی=همه)", inp("service_ids", p.get("service_ids", ""), "", "m")) + "</span>"
+            + _lab("قیمت (ت)", inp("price", p.get("price", ""), "", "m", "number")))
+
+
+def plan_adv(p=None) -> str:
+    """تنظیمات خاص پلن (محدودیت‌های کاربرِ نماینده، ترتیب، بسته‌ی افزودنی، حجم/زمان دلخواه، توضیح)."""
+    p = p or {}
+    yn = lambda k, d: sel(k, [("1", _("روشن")), ("0", _("خاموش"))], str(p.get(k, d)))
+    return (_lab("حداقل حجم هر کاربر (GB)", inp("data_min_gb", gb_txt(p.get("data_min_gb", 0)), "", "s"))
+            + _lab("حداکثر حجم هر کاربر (GB)", inp("data_max_gb", gb_txt(p.get("data_max_gb", 0)), "", "s"))
+            + _lab("حداقل مدت کاربر (روز)", inp("expire_min_days", p.get("expire_min_days", 0), "", "s", "number"))
+            + _lab("حداکثر مدت کاربر (روز)", inp("expire_max_days", p.get("expire_max_days", 0), "", "s", "number"))
+            + _lab("اجازه‌ی ویرایش کاربران (مرزنشین)", f"<select name='modify_users'><option value='1' {'selected' if p.get('modify_users', 1) else ''}>{T('بله')}</option>"
+                   f"<option value='0' {'' if p.get('modify_users', 1) else 'selected'}>{T('خیر')}</option></select>")
+            + _lab("ترتیب نمایش", inp("sort", p.get("sort", 100), "", "s", "number"))
+            + _lab("حجم/زمان اضافه", yn("addon_on", 1))
             + "".join(
-                f"<label class='mini'>{T(nm + ' دلخواه')}{sel('custom_%s_on' % k, [('1', _('روشن')), ('0', _('خاموش'))], str(p.get('custom_%s_on' % k, 0)))}</label> "
-                f"<label class='mini'>{T('قیمت هر ' + un + ' (ت)')}{inp('custom_%s_price' % k, p.get('custom_%s_price' % k, 0), '', 's', 'number')}</label> "
-                f"<label class='mini'>{T('حداقل ' + nm)}{inp('custom_%s_min' % k, p.get('custom_%s_min' % k, 0), '', 's', 'text')}</label> "
-                f"<label class='mini'>{T('حداکثر ' + nm)}{inp('custom_%s_max' % k, p.get('custom_%s_max' % k, 0), '', 's', 'text')}</label> "
+                _lab(nm + " دلخواه", yn("custom_%s_on" % k, 0))
+                + _lab("قیمت هر " + un + " (ت)", inp("custom_%s_price" % k, p.get("custom_%s_price" % k, 0), "", "s", "number"))
+                + _lab("حداقل " + nm, inp("custom_%s_min" % k, p.get("custom_%s_min" % k, 0), "", "s", "text"))
+                + _lab("حداکثر " + nm, inp("custom_%s_max" % k, p.get("custom_%s_max" % k, 0), "", "s", "text"))
                 for k, nm, un in (("gb", "حجم", "گیگابایت"), ("days", "زمان", "روز")))
-            + f"<label class='mini'>{T('توضیح برای خریدار')}{inp('note', p.get('note', ''), '', 'l')}</label>")
+            + _lab("توضیح برای خریدار", inp("note", p.get("note", ""), "", "l")))
 
 
 def _ids(v) -> str:
     return ",".join(x for x in str(v or "").replace(" ", "").split(",") if x.isdigit())
 
 
-def _read_plan(d) -> dict:
-    return {"title": str(d.get("title", "")).strip()[:80], "days": max(to_int(d.get("days"), 0) or 0, 0),
+def _read_plan(d, partial=False) -> dict:
+    full = {"title": str(d.get("title", "")).strip()[:80], "days": max(to_int(d.get("days"), 0) or 0, 0),
             "traffic_gb": max(to_float(d.get("traffic_gb"), 0) or 0, 0), "max_users": max(to_int(d.get("max_users"), 0) or 0, 0),
             "role_id": "".join(c for c in str(d.get("role_id", "")) if c.isdigit())[:6], "service_ids": _ids(d.get("service_ids")),
             "modify_users": 0 if str(d.get("modify_users", "1")) == "0" else 1,
@@ -59,6 +73,8 @@ def _read_plan(d) -> dict:
                for k in ("gb", "days") for f in ("price", "min", "max")},
             "custom_gb_on": 1 if str(d.get("custom_gb_on", "0")) == "1" else 0, "custom_days_on": 1 if str(d.get("custom_days_on", "0")) == "1" else 0,
             "note": str(d.get("note", "")).strip()[:200]}
+    # فرم اصلی و فرم «تنظیمات» جدا هستند؛ فقط فیلدهایی که در فرم آمده‌اند عوض می‌شوند
+    return {k: v for k, v in full.items() if not partial or k in d}
 
 
 # ============================================================ پلن‌های نمایندگی
@@ -68,7 +84,8 @@ async def plans_page(request):
     panels = _admin_panels(await shop.db.list_vpn_panels())
     rows = []
     for p in await shop.db.list_agent_plans():
-        edit = pform(request, f"/vpn/agent-plans/{p['id']}/edit", plan_inputs(p) + f"<button class='b sm pri'>{T('ذخیره')}</button>", cls="")
+        edit = pform(request, f"/vpn/agent-plans/{p['id']}/edit", plan_basic(p, p["panel_type"]) + f"<button class='b sm pri'>{T('ذخیره')}</button>", cls="")
+        adv = pform(request, f"/vpn/agent-plans/{p['id']}/edit", hidden("title", p["title"]) + plan_adv(p) + f"<button class='b sm pri'>{T('ذخیره')}</button>", cls="")
         acts = (pform(request, f"/vpn/agent-plans/{p['id']}/toggle", f"<button class='b sm'>{T('غیرفعال') if p['active'] else T('فعال')}</button>")
                 + pform(request, f"/vpn/agent-plans/{p['id']}/delete", f"<button class='b sm err'>{T('حذف')}</button>", confirm=_("پلن حذف شود؟")))
         adds = await shop.db.list_agent_addons(p["id"])
@@ -88,9 +105,13 @@ async def plans_page(request):
                  f" · {T('سقف کاربر')}: {p['max_users'] or '∞'}")
         rows.append([p["id"], f"<b>{e(p['title'])}</b><br><span class='hint'>{e(p['panel_name'])} · {e(p['panel_type'])}</span>", feats,
                      fmt(p['price']),
-                     badge(_("فعال"), "ok") if p["active"] else badge(_("غیرفعال"), ""), f"<details><summary>{T('ویرایش')}</summary>{edit}</details>" + packs, acts])
-    add = (pform(request, "/vpn/agent-plans/add", f"<label class='mini'>{T('پنل')}{sel('panel_id', [(p['id'], p['name'] + ' · ' + p['type']) for p in panels])}</label> " + plan_inputs()
+                     badge(_("فعال"), "ok") if p["active"] else badge(_("غیرفعال"), ""), f"<details><summary>{T('ویرایش')}</summary>{edit}</details>"
+                     f"<details><summary>⚙️ {T('تنظیمات')}</summary>{adv}</details>" + packs, acts])
+    popts = "".join(f"<option value='{p['id']}' data-t='{e(p['type'])}'>{e(p['name'])} · {e(p['type'])}</option>" for p in panels)
+    add = (pform(request, "/vpn/agent-plans/add", f"<label class='mini'>{T('پنل')}<select name='panel_id' id='apn'>{popts}</select></label> " + plan_basic()
                  + f"<button class='b pri'>➕ {T('افزودن پلن نمایندگی')}</button>", cls="")
+           + "<script>(function(){var s=document.getElementById('apn');if(!s)return;function f(){var t=s.options[s.selectedIndex].getAttribute('data-t');"
+             "document.querySelectorAll('form .pg').forEach(function(x){if(x.closest('details'))return;x.style.display=(x.getAttribute('data-t')===t)?'':'none'})}s.onchange=f;f()})()</script>"
            if panels else f"<p class='hint'>{T('ابتدا یک پنل پاسارگارد، مرزبان یا مرزنشین اضافه کنید.')}</p>")
     probe = (pform(request, "/vpn/agent-plans/options", f"<label class='mini'>{T('پنل')}{sel('panel_id', [(p['id'], p['name']) for p in panels])}</label>"
                    f"<button class='b'>🔎 {T('نمایش نقش‌ها / سرویس‌های پنل')}</button>", cls="") if panels else "")
@@ -125,7 +146,7 @@ async def plan_options(request):
 async def plan_add(request):
     shop: Shop = request.app["shop"]
     d = await request.post()
-    f = _read_plan(d)
+    f = _read_plan(d, partial=True)
     pid = to_int(d.get("panel_id"))
     panel = await shop.db.get_vpn_panel(pid)
     if not f["title"] or not f["price"] or not panel or not getattr(vpn_panels.DRIVERS.get(panel["type"]), "ADMIN", False):
@@ -138,7 +159,7 @@ async def plan_add(request):
 @post("/vpn/agent-plans/{pid}/edit", "vpn")
 async def plan_edit(request):
     shop: Shop = request.app["shop"]
-    f = _read_plan(await request.post())
+    f = _read_plan(await request.post(), partial=True)
     if not f["title"]:
         raise redirect("/vpn/agent-plans", err=_("عنوان را وارد کنید."))
     await shop.db.update_agent_plan(to_int(request.match_info["pid"]), **f)

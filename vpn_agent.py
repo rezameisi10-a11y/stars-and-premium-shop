@@ -143,6 +143,13 @@ class AgentSales:
                 if await self.db.one(taken, (panel_id, n)):
                     raise VpnError(N_("این نام کاربری قبلاً استفاده شده است."))
                 return n
+        elif (self.s.get("vpn_agent_name_mode") or "random") == "userid":      # نام کاربری = آیدی عددی کاربر (اگر پنل قبلاً داشت: _2، _3 ...)
+            base = str(user_id)
+            for i in range(1, 100):
+                n = base if i == 1 else f"{base}_{i}"
+                if not await self.db.one(taken, (panel_id, n)):
+                    return n
+            raise VpnError(N_("ساخت نام کاربری ممکن نشد."))
         elif (self.s.get("vpn_agent_prefix_mode") or "text") == "digits":
             prefix = "".join(secrets.choice("0123456789") for _ in range(5))
         while True:
@@ -979,6 +986,14 @@ class AgentSales:
         return True, N_("نماینده ساخته و برای کاربر ارسال شد."), aid
 
     # ------------------------------------------------------------------ نمایش برای کاربر
+    async def web_login(self, ag):
+        """هر بار رمز تازه روی پنل می‌گذارد (رمز قبلی باطل می‌شود) و (لینک، نام کاربری، رمز) را برمی‌گرداند."""
+        drv = await self.vpn.driver(ag["panel_id"])
+        pw = gen_password()
+        await drv.admin_set_password(ag["username"], pw)
+        await self.db.update_agent(ag["id"], password=pw)
+        return self.panel_link(ag), ag["username"], pw
+
     def panel_link(self, ag) -> str:
         try:
             pub = str(json.loads(ag.get("panel_extra") or "{}").get("public_url") or "").strip()    # آدرس عمومی پنل (اختیاری) در «extra» پنل
@@ -1029,7 +1044,7 @@ class AgentSales:
     async def agent_kb(self, ag, tr, back="vpn:agl"):
         i = ag["id"]
         link = self.panel_link(ag)
-        rows = [[btn(tr("🌐 ورود به پنل"), url=link, role="link")]] if link.startswith(("http://", "https://")) else []
+        rows = [[btn(tr("🌐 ورود به پنل"), f"vpn:agl:{i}", role="link")]] if link.startswith(("http://", "https://")) else []
         rows.append([btn(tr("🔄 تمدید"), f"vpn:agn:{i}", role="action"), btn(tr("♻️ بروزرسانی"), f"vpn:agr:{i}", role="action")])
         if await self.addons_for(ag):
             rows.append([btn(tr("➕ بسته‌ی حجم/زمان اضافه"), f"vpn:aga:{i}", role="action")])
