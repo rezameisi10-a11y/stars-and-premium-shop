@@ -46,6 +46,9 @@ def plan_features(plan: dict, tr) -> list[str]:
     return out
 
 
+AGENT_NAME_RE = re.compile(r"^[a-z0-9_]{4,40}$")        # نام کاربری ادمین نماینده: ۴ تا ۴۰ نویسه
+
+
 class AgentSales:
     def __init__(self, vpn):
         self.vpn = vpn
@@ -128,16 +131,16 @@ class AgentSales:
         return "prefix" if (self.s.get("vpn_agent_prefix_mode") or "text") == "ask" else ""
 
     async def make_name(self, panel_id: int, user_id: int, asked: str | None = None) -> str:
-        prefix = re.sub(r"[^a-z0-9_]", "", (self.s.get("vpn_agent_prefix") or "agent").lower())[:10] or "agent"
+        prefix = re.sub(r"[^a-z0-9_]", "", (self.s.get("vpn_agent_prefix") or "agent").lower())[:30] or "agent"
         taken = "SELECT 1 x FROM vpn_agents WHERE panel_id=? AND username=? AND status!='deleted'"
         kind = self.ask_kind()
         if asked:
             n = asked.strip().lower()
-            if not NAME_RE.match(n) or len(n) < 4:
-                raise VpnError(N_("نام کاربری نامعتبر است (انگلیسی، حداقل ۴ و حداکثر ۲۴ حرف کوچک، عدد یا _)."))
+            if not AGENT_NAME_RE.match(n):
+                raise VpnError(N_("نام کاربری نامعتبر است (انگلیسی، حداقل ۴ و حداکثر ۴۰ حرف کوچک، عدد یا _)."))
             if kind == "prefix":
-                if len(n) > 14:
-                    raise VpnError(N_("پیشوند حداکثر ۱۴ نویسه می‌تواند باشد."))
+                if len(n) > 30:
+                    raise VpnError(N_("پیشوند حداکثر ۳۰ نویسه می‌تواند باشد."))
                 prefix, asked = n, None
             else:
                 if await self.db.one(taken, (panel_id, n)):
@@ -160,7 +163,7 @@ class AgentSales:
     def _rand_name(self, prefix: str) -> str:
         """نام تصادفی: حالت digits ← پیشوند_آیدی عددی؛ حالت random ← پیشوند_hex (حداکثر ۲۴ نویسه)."""
         if (self.s.get("vpn_agent_name_mode") or "random") == "digits":
-            n = max(min(10, 24 - len(prefix) - 1), 4)
+            n = max(min(10, 40 - len(prefix) - 1), 4)
             return f"{prefix}_{secrets.randbelow(9) + 1}" + "".join(secrets.choice("0123456789") for _ in range(n - 1))
         return f"{prefix}_{secrets.token_hex(3)}"
 
