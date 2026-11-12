@@ -368,7 +368,7 @@ async def wiz_text(m: Message, shop: Shop, state: FSMContext):
     if flow == "val":
         act = d["act"]
         try:
-            v = _num("float" if act == "set_traffic" else "int" if act == "add_days" else "text", m.text) if act != "note" else (m.text.strip()[:300] if m.text.strip() != "-" else "")
+            v = _num("float" if act in ("set_traffic", "add_gb", "sub_gb") else "int" if act in ("add_days", "sub_days") else "text", m.text) if act != "note" else (m.text.strip()[:300] if m.text.strip() != "-" else "")
         except ValueError as e:
             await m.answer(f"❌ {e}")
             return
@@ -457,7 +457,9 @@ async def agent_card(shop: Shop, ag):
            f"کاربران: {ag['users_count']}" + (f" / {ag['max_users']}" if ag["max_users"] else "") + f" | زمان باقی‌مانده: {'نامحدود' if left is None else f'{left} روز'}"
            + (f"\n📝 {esc(ag['note'])}" if ag["note"] else "") + f"\nآخرین همگام‌سازی: {time.strftime('%m-%d %H:%M', time.localtime(ag['last_sync'])) if ag['last_sync'] else '-'}")
     aid = ag["id"]
-    rows = [[btn("➕ روز", f"adm:vpn:agv:{aid}:add_days", role="admin"), btn("📦 سقف حجم", f"adm:vpn:agv:{aid}:set_traffic", role="admin")],
+    rows = [[btn("➕ روز", f"adm:vpn:agv:{aid}:add_days", role="admin"), btn("➕ حجم", f"adm:vpn:agv:{aid}:add_gb", role="admin")],
+            [btn("➖ روز", f"adm:vpn:agv:{aid}:sub_days", role="admin"), btn("➖ حجم", f"adm:vpn:agv:{aid}:sub_gb", role="admin")],
+            [btn("📦 سقف حجم", f"adm:vpn:agv:{aid}:set_traffic", role="admin")],
             [btn("♻️ ریست مصرف", f"adm:vpn:aga:{aid}:reset", role="action"), btn("🔄 همگام‌سازی", f"adm:vpn:aga:{aid}:sync", role="action")],
             [btn("▶️ فعال" if ag["status"] in ("disabled", "expired") else "⏸ غیرفعال", f"adm:vpn:aga:{aid}:{'enable' if ag['status'] in ('disabled', 'expired') else 'disable'}", role="action"),
              btn("🔑 رمز جدید", f"adm:vpn:aga:{aid}:password", role="action")],
@@ -518,7 +520,7 @@ async def cb_action(cb: CallbackQuery, shop: Shop):
         await view(cb, text, kb)
 
 
-PROMPT = {"add_days": "چند روز اضافه شود؟", "set_traffic": "سقف حجم جدید (GB؛ ۰ = نامحدود):", "note": "متن یادداشت (برای پاک کردن «-»):"}
+PROMPT = {"add_days": "چند روز اضافه شود؟", "sub_days": "چند روز کم شود؟", "add_gb": "چند گیگابایت اضافه شود؟", "sub_gb": "چند گیگابایت کم شود؟", "set_traffic": "سقف حجم جدید (GB؛ ۰ = نامحدود):", "note": "متن یادداشت (برای پاک کردن «-»):"}
 
 
 @router.callback_query(F.data.startswith("adm:vpn:agv:"))

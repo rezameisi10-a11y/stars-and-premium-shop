@@ -606,8 +606,13 @@ class AgentSales:
             meta.pop("auto", None)
         await self.db.update_agent(ag["id"], meta=meta)
 
-    async def quick_kb(self, ag, tr):
+    async def quick_kb(self, ag, tr, usage=False):
         rows = []
+        if usage:                                           # یادآوری مصرف: خرید حجم اضافه
+            if await self.addons_for(ag):
+                rows.append([btn(tr("➕ خرید حجم اضافه"), f"vpn:aga:{ag['id']}", role="action")])
+            if "gb" in await self.custom_for(ag):
+                rows.append([btn(tr("✏️ حجم اضافه دلخواه"), f"vpn:agc:{ag['id']}:gb", role="action")])
         plan = await self.db.get_agent_plan(ag["plan_id"]) if ag["plan_id"] else None
         if self.is_custom(ag):
             cfg = await self.cv_cfg()
@@ -672,7 +677,7 @@ class AgentSales:
                 notified.add("time")
             pct = min(max(self._int("vpn_remind_usage", 90), 0), 100)
             if pct and ag["total_bytes"] and ag["used_bytes"] * 100 >= ag["total_bytes"] * pct and "usage" not in notified:
-                await self.shop.say(ag["user_id"], "📉 مصرف پنل نمایندگی <code>{n}</code> به {p}٪ رسید ({u}). برای جلوگیری از قطع شدن، تمدید کنید.", kb,
+                await self.shop.say(ag["user_id"], "📉 مصرف پنل نمایندگی <code>{n}</code> به {p}٪ رسید ({u}). برای جلوگیری از قطع شدن، تمدید کنید.", await self.quick_kb(ag, tr, usage=True),
                                     n=esc(ag["username"]), p=pct, u=ltr(f"{fmt_gb(ag['used_bytes'])} / {fmt_gb(ag['total_bytes'])}"))
                 notified.add("usage")
         if notified != before:
@@ -717,6 +722,13 @@ class AgentSales:
                 if ag["status"] == "expired" and base + d * 86400 > time.time():
                     await drv.admin_set_enabled(ag["username"], True, ag["password"])
                     await self.db.update_agent(aid, status="active")
+            elif act in ("add_gb", "sub_gb"):
+                if not ag["total_bytes"]:
+                    return False, N_("حجم نامحدود است.")
+                cur = ag["total_bytes"] / GB
+                g = cur + float(value) if act == "add_gb" else max(cur - float(value), (ag["used_bytes"] or 0) / GB, 0.01)
+                await drv.admin_set_traffic(ag["username"], g)
+                await self.db.update_agent(aid, total_bytes=vpn_panels.gb_bytes(g))
             elif act == "set_traffic":
                 g = float(value)
                 await drv.admin_set_traffic(ag["username"], g)
