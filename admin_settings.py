@@ -530,6 +530,13 @@ async def cb_rates_test(cb: CallbackQuery, shop: Shop):
             return
         r = await pr.probe(s[f"{what}_api_url"], s.get(f"{what}_api_method", "GET"), s.get(f"{what}_api_headers", ""), s.get(f"{what}_api_body", ""), s.get(f"{what}_api_path", ""))
         title = "دلار" if what == "usd" else "تون"
+        if r["ok"]:
+            try:
+                raw = D(r["value"])
+                unit = pr.resolve_unit(what, raw, s.get(f"{what}_api_unit", "auto"), s[f"{what}_api_url"], s.get(f"{what}_api_body", ""), s.get(f"{what}_api_path", ""))
+                r["value"] += f" ← واحد تشخیص‌داده‌شده: {unit} ≈ {fmt(pr._rate_toman(what, raw, unit))} تومان"
+            except Exception:  # noqa: BLE001
+                pass
     elif what in ("fs", "fp"):
         kind = "stars" if what == "fs" else "premium"
         p = f"frag_{kind}_"

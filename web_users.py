@@ -359,6 +359,8 @@ async def orders_list(request):
                     continue
                 if a == "retry" and o["kind"] == "stars" and not shop.s.get("prov_stars_url"):
                     continue
+                if a == "retry" and (o.get("note") or "").startswith("UNKNOWN:"):     # نتیجه‌ی ارسال نامشخص: تأیید اجباری
+                    a, lab, cls, conf = "retryf", _("⚠️ تلاش مجدد (مطمئنم ارسال نشده)"), "err", _("نتیجه‌ی ارسال قبلی نامشخص بود و ممکن است قبلاً ارسال شده باشد. مطمئنید ارسال نشده؟")
                 act += pform(request, f"/orders/{o['id']}/action", hidden("act", a) + hidden("next", request.path_qs) + f"<button class='b sm {cls}'>{e(lab)}</button>", confirm=conf)
         tgt = "-" if o["kind"] == "vpn" else ("@" + e(o["target_username"])) if o["target_username"] else (str(o["target_id"]) if o["target_id"] else "-")
         profit = fmt(o["amount"] - o["cost"]) if o.get("cost") else "—"

@@ -36,6 +36,11 @@ CREATE TABLE IF NOT EXISTS orders(
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS ix_orders_user ON orders(user_id);
 CREATE INDEX IF NOT EXISTS ix_orders_status ON orders(status);
+CREATE TABLE IF NOT EXISTS delivery_log(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER NOT NULL, kind TEXT NOT NULL, method TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL, info TEXT, ref TEXT, started INTEGER NOT NULL, finished INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS ix_dl_order ON delivery_log(order_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_dl_active ON delivery_log(order_id) WHERE status IN ('sending','ok');
 CREATE TABLE IF NOT EXISTS payments(
   id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, order_id INTEGER,
   method TEXT NOT NULL, amount INTEGER NOT NULL, crypto_amount REAL,
@@ -226,6 +231,10 @@ class DB(VpnDB, TicketDB):
                 await self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
         for k, v in DEFAULT_SETTINGS.items():
             await self.conn.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
+        # یک‌بار: واحد API نرخ از «تومان» (پیش‌فرض قدیمی) به «خودکار» تا نرخ ریالی ×۱۰ نشود
+        if not await self.one("SELECT 1 FROM settings WHERE key='rate_unit_auto_done'"):
+            await self.conn.execute("UPDATE settings SET value='auto' WHERE key IN ('usd_api_unit','ton_api_unit') AND value='toman'")
+            await self.conn.execute("INSERT OR IGNORE INTO settings(key,value) VALUES('rate_unit_auto_done','1')")
         for q in STARS_PACKS:
             await self.conn.execute("INSERT OR IGNORE INTO products(kind,title,qty) VALUES('stars',?,?)", (default_title("stars", q), q))
         for m in PREMIUM_MONTHS:
@@ -718,6 +727,60 @@ class DB(VpnDB, TicketDB):
     async def count_orders(self, status=None, user_id=None):
         w, a = self._order_where(status, user_id)
         return (await self.one(f"SELECT COUNT(*) c FROM orders o{w}", a))["c"]
+
+    # ---------- گزارش ارسال (ضد ارسال تکراری استارز/پریمیوم/گیفت) ----------
+    async def dl_claim(self, oid, kind, method, max_attempts=0):
+        """قبل از هر ارسال خارجی. خروجی (log_id, "") یا (None, دلیل): sent | busy | unknown | attempts.
+        ایندکس یکتای جزئی روی (order_id) برای وضعیت sending/ok تضمین سطح دیتابیس می‌دهد که دو ارسال هم‌زمان/موفق برای یک سفارش ثبت نشود."""
+        st = [r["status"] for r in await self.all("SELECT status FROM delivery_log WHERE order_id=?", (oid,))]
+        if "ok" in st:
+            return None, "sent"
+        if "sending" in st:
+            return None, "busy"
+        if "unknown" in st:
+            return None, "unknown"
+        if max_attempts > 0 and st.count("fail") >= max_attempts:
+            return None, "attempts"
+        try:
+            cur = await self.run("INSERT INTO delivery_log(order_id,kind,method,status,started) VALUES(?,?,?,'sending',?)", (oid, kind, method, int(time.time())))
+        except sqlite3.IntegrityError:
+            return None, "busy"
+        return cur.lastrowid, ""
+
+    async def dl_finish(self, lid, status, info="", ref=""):
+        await self.run("UPDATE delivery_log SET status=?, info=?, ref=?, finished=? WHERE id=?", (status, str(info or "")[:300], str(ref or "")[:200], int(time.time()), lid))
+
+    async def dl_last(self, oid):
+        return await self.one("SELECT * FROM delivery_log WHERE order_id=? ORDER BY id DESC LIMIT 1", (oid,))
+
+    async def dl_void(self, oid):
+        """ادمین تأیید کرده که ارسال قبلی (نامشخص) واقعاً انجام نشده؛ اجازه‌ی ارسال دوباره."""
+        cur = await self.run("UPDATE delivery_log SET status='void', finished=? WHERE order_id=? AND status IN ('unknown','sending')", (int(time.time()), oid))
+        return cur.rowcount
+
+    async def dl_mark_unknown(self, oid):
+        await self.run("UPDATE delivery_log SET status='unknown', finished=? WHERE order_id=? AND status='sending'", (int(time.time()), oid))
+
+    async def dl_user_count(self, uid, since):
+        r = await self.one("SELECT COUNT(DISTINCT d.order_id) c FROM delivery_log d JOIN orders o ON o.id=d.order_id "
+                           "WHERE o.user_id=? AND d.started>=? AND d.status IN ('ok','sending','unknown')", (uid, since))
+        return r["c"] if r else 0
+
+    async def dl_sum_stars(self, since):
+        r = await self.one("SELECT COALESCE(SUM(o.qty),0) q FROM delivery_log d JOIN orders o ON o.id=d.order_id "
+                           "WHERE d.kind='stars' AND d.started>=? AND d.status IN ('ok','sending','unknown')", (since,))
+        return r["q"] if r else 0
+
+    async def dl_dup(self, o, since):
+        """سفارش دیگری با همان گیرنده/نوع/تعداد که اخیراً ارسال شده یا در حال ارسال است."""
+        r = await self.one("SELECT o2.id FROM delivery_log d JOIN orders o2 ON o2.id=d.order_id WHERE o2.id<>? AND o2.kind=? AND o2.qty=? "
+                           "AND COALESCE(o2.target_id,0)=COALESCE(?,0) AND COALESCE(LOWER(o2.target_username),'')=COALESCE(LOWER(?),'') "
+                           "AND d.started>=? AND d.status IN ('ok','sending','unknown') LIMIT 1",
+                           (o["id"], o["kind"], o["qty"], o.get("target_id"), o.get("target_username"), since))
+        return r["id"] if r else 0
+
+    async def stuck_delivering(self, older_than):
+        return await self.all("SELECT * FROM orders WHERE status='delivering' AND kind IN ('stars','premium','gift') AND updated_at<?", (older_than,))
 
     async def queue_orders(self, limit=20):
         return await self.all("SELECT * FROM orders WHERE status IN ('manual_pending','failed') ORDER BY id LIMIT ?", (limit,))

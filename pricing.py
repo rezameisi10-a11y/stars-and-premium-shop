@@ -69,6 +69,43 @@ class Pricing:
         r = self.rates.get(key)
         return "auto" if r and r["ok"] and self._age_ok(r["ts"], self._max_age()) else "stale"
 
+    _RIAL_HINT = ("rls", "irr", "rial", "ریال")
+    _TOMAN_HINT = ("irt", "tmn", "toman", "تومان")
+
+    def resolve_unit(self, key: str, raw: Decimal, configured: str = "auto", url: str = "", body: str = "", path: str = "") -> str:
+        """تشخیص واحد قیمت API: toman | rial | usd.
+        ۱) نشانه‌ی صریح در آدرس/بدنه/مسیر (مثل rls یا IRT)؛ ۲) انتخاب صریح ادمین (usd برای تون محترم است)؛
+        ۳) اگر «خودکار» بود از بزرگی عدد (و نسبت به نرخ دلار برای تون) حدس می‌زند."""
+        cfg = (configured or "auto").lower()
+        text = f"{url} {body} {path}".lower()
+        r = any(h in text for h in self._RIAL_HINT)
+        t = any(h in text for h in self._TOMAN_HINT)
+        hint = "rial" if r and not t else "toman" if t and not r else None
+        raw = Decimal(raw)
+        if key == "ton" and cfg == "usd":
+            return "usd"
+        if hint:
+            return hint
+        if cfg in ("toman", "rial") and not (key == "ton" and raw < 1000):
+            return cfg
+        if key == "usd":
+            return "rial" if raw >= 1_000_000 else "toman"
+        usd = self.usd_toman()
+        if raw < 1000:                       # قیمت تون به دلار (مثل CoinGecko/Binance)
+            return "usd"
+        if usd > 0:
+            q = raw / usd                    # قیمت تون به دلار اگر عدد «تومان» باشد
+            if Decimal("0.3") <= q <= 12:
+                return "toman"
+            if Decimal("0.3") <= q / 10 <= 30:
+                return "rial"
+        return "rial" if raw >= 10_000_000 else "toman"
+
+    def _rate_toman(self, key: str, raw: Decimal, unit: str) -> Decimal:
+        if unit == "usd":
+            return raw * self.usd_toman()
+        return raw / (10 if unit == "rial" else 1)
+
     async def _fetch_rate(self, key: str, memo: dict):
         s = self.s
         url = s.get(f"{key}_api_url", "")
@@ -85,10 +122,18 @@ class Pricing:
             val = D(jpath(parsed, s.get(f"{key}_api_path", "")), -1)
             if val <= 0:
                 raise ValueError("value not positive/number")
-            self.rates[key] = {"raw": val, "unit": s.get(f"{key}_api_unit", "toman"), "ts": time.time(), "ok": True, "err": ""}
+            unit = self.resolve_unit(key, val, s.get(f"{key}_api_unit", "auto"), url, body, s.get(f"{key}_api_path", ""))
+            old = self.rates.get(key)
+            new_t, old_t = self._rate_toman(key, val, unit), (self._rate_toman(key, old["raw"], old["unit"]) if old and old.get("ok") else Decimal(0))
+            if old_t > 0 and new_t > 0 and not (old_t / 3 <= new_t <= old_t * 3):
+                # جهش بیش از ۳ برابر نسبت به نرخ قبلی = احتمالاً واحد/مسیر اشتباه؛ نرخ قبلی حفظ می‌شود تا قیمت‌ها منفجر نشوند
+                self.rates[key] = {**old, "err": f"jump x{float(new_t / old_t):.2f} ignored"}
+                log.warning("rate %s jump ignored: %s -> %s (unit %s)", key, old_t, new_t, unit)
+                return
+            self.rates[key] = {"raw": val, "unit": unit, "ts": time.time(), "ok": True, "err": ""}
         except Exception as e:  # noqa: BLE001
             old = self.rates.get(key, {})
-            self.rates[key] = {"raw": old.get("raw", Decimal(0)), "unit": s.get(f"{key}_api_unit", "toman"),
+            self.rates[key] = {"raw": old.get("raw", Decimal(0)), "unit": old.get("unit", "toman"),
                                "ts": old.get("ts", 0), "ok": False, "err": str(e)[:200]}
             log.warning("rate %s failed: %s", key, e)
 

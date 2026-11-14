@@ -232,9 +232,21 @@ async def cb_order(cb: CallbackQuery, shop: Shop):
     await cb.answer()
 
 
+@router.callback_query(F.data == "adm:dlresume")
+async def cb_dl_resume(cb: CallbackQuery, shop: Shop):
+    await shop.resume_delivery()
+    await cb.answer("▶️ تحویل خودکار از سر گرفته شد.", show_alert=True)
+
+
 @router.callback_query(F.data.startswith("oadm:"))
 async def cb_order_action(cb: CallbackQuery, shop: Shop):
     _, act, oid = cb.data.split(":")
+    if act == "retryfc":      # تأیید دومرحله‌ای برای تلاش مجدد بعد از نتیجه‌ی نامشخص
+        await cb.message.answer("⚠️ <b>هشدار</b>: نتیجه‌ی ارسال قبلی نامشخص بود و ممکن است محصول <b>قبلاً ارسال شده</b> باشد. "
+                                "اگر دوباره ارسال شود ممکن است دوبار برای کاربر ارسال شود. آیا در سرویس‌دهنده/کیف پول مطمئن شدید که ارسال نشده؟",
+                                reply_markup=ikb([[btn("✅ مطمئنم، ارسال کن", f"oadm:retryf:{oid}", role="reject"), btn("❌ انصراف", f"adm:ord:{oid}", role="back")]]))
+        await cb.answer()
+        return
     res = await shop.admin_order_action(act, int(oid), actor=f"tg:{cb.from_user.id}")
     await cb.answer(res, show_alert=True)
     o = await shop.db.get_order(int(oid))

@@ -530,7 +530,7 @@ class VPN:
 
     async def user_transfer(self, uid, sid, target):
         svc = await self.db.get_vpn_service(sid)
-        if not svc or svc["user_id"] != uid or not pflag(svc, "transfer"):
+        if not svc or svc["user_id"] != uid or not pflag(svc, "transfer") or not self._flag("vpn_allow_transfer", "1"):
             return False, "سرویس پیدا نشد."
         if target == uid or not await self.db.get_user(target):
             return False, "کاربر مقصد پیدا نشد (او باید قبلاً ربات را استارت کرده باشد)."
@@ -1542,7 +1542,7 @@ class VPN:
             if row:
                 rows.append(row)
             row = []
-            if pflag(svc, "transfer"):
+            if pflag(svc, "transfer") and self._flag("vpn_allow_transfer", "1"):
                 row.append(btn(tr("🚚 انتقال به کاربر دیگر"), f"vpn:tf:{sid}", role="action"))
             if pflag(svc, "refund") and self.refund_info(svc)[0]:
                 row.append(btn(tr("💸 بازگشت وجه"), f"vpn:rfd:{sid}", role="reject"))

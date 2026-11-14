@@ -184,6 +184,7 @@ async def test_order_flows(tmp):
     ok("خرید گیفت و تحویل خودکار")
 
     # --- کمبود ستاره ربات → صف دستی، سپس تلاش مجدد
+    await shop.set_setting("deliver_dup_min", "0")      # (قانون ضد تکراری جداگانه در test_delivery_safety تست می‌شود)
     sess.star_balance = 10
     oid3 = await db.create_order(20, prem, 20, None, 1000)
     assert await shop.pay_with_wallet(oid3, 20)

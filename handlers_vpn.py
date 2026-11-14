@@ -24,6 +24,7 @@ PER_PAGE = 8
 class VpnSt(StatesGroup):
     note = State()
     transfer = State()
+    agent_transfer = State()
     report = State()
     name = State()
     agent_name = State()
@@ -859,6 +860,49 @@ async def agent_show(cb: CallbackQuery, shop: Shop, tr):
             pass
     await cb.message.answer(await shop.vpn.agents.agent_text(ag, tr), reply_markup=await shop.vpn.agents.agent_kb(ag, tr), disable_web_page_preview=True)
     await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^vpn:agx:\d+$"))
+async def agent_transfer_ask(cb: CallbackQuery, shop: Shop, state: FSMContext, tr):
+    ag = await _own_agent(cb, shop, tr, cb.data.split(":")[2])
+    if not ag:
+        return
+    if not shop.vpn.agents.can_user_transfer(ag):
+        await cb.answer(tr("انتقال این پنل نمایندگی ممکن نیست."), show_alert=True)
+        return
+    await state.set_state(VpnSt.agent_transfer)
+    await state.update_data(aid=ag["id"])
+    await cb.message.answer(tr("🚚 آیدی عددی تلگرام کاربر مقصد را بفرستید (او باید قبلاً ربات را استارت کرده باشد). برای انصراف /start"))
+    await cb.answer()
+
+
+@router.message(VpnSt.agent_transfer, F.text)
+async def agent_transfer_target(m: Message, shop: Shop, state: FSMContext, tr):
+    t = m.text.strip().translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789"))
+    d = await state.get_data()
+    if not t.isdigit():
+        await m.answer(tr("فقط آیدی عددی بفرستید."))
+        return
+    await state.clear()
+    ag = await shop.db.get_agent(d["aid"])
+    if not ag or ag["user_id"] != m.from_user.id or int(t) == m.from_user.id or not await shop.db.get_user(int(t)):
+        await m.answer(tr("کاربر مقصد پیدا نشد (او باید قبلاً ربات را استارت کرده باشد)."))
+        return
+    await m.answer(tr("⚠️ پنل نمایندگی {n} به کاربر {u} منتقل شود؟ پس از انتقال دیگر مال شما نیست.", n=f"<code>{esc(ag['username'])}</code>", u=f"<code>{t}</code>"),
+                   reply_markup=ikb([[btn(tr("✅ بله، منتقل کن"), f"vpn:agx2:{ag['id']}:{t}", role="confirm"), btn(tr("❌ انصراف"), f"vpn:ag:{ag['id']}", role="reject")]]))
+
+
+@router.callback_query(F.data.regexp(r"^vpn:agx2:\d+:\d+$"))
+async def agent_transfer_do(cb: CallbackQuery, shop: Shop, tr):
+    _, _, aid, target = cb.data.split(":")
+    ag = await _own_agent(cb, shop, tr, aid)
+    if not ag:
+        return
+    ok, msg = await shop.vpn.agents.user_transfer(cb.from_user.id, ag["id"], int(target))
+    await cb.answer(tr(msg), show_alert=True)
+    if ok:
+        await shop.say(int(target), "🚚 یک پنل نمایندگی به حساب شما منتقل شد: <code>{n}</code>. از بخش پنل‌های نمایندگی من ببینید.", n=esc(ag["username"]))
+        await cb.message.answer(tr("✅ پنل نمایندگی منتقل شد."))
 
 
 @router.callback_query(F.data.regexp(r"^vpn:agm:\d+$"))

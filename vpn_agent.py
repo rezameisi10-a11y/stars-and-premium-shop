@@ -770,6 +770,26 @@ class AgentSales:
             out.append(p)
         return out
 
+    def can_user_transfer(self, ag) -> bool:
+        if not self._flag("vpn_agent_transfer", "1") or ag["status"] == "deleted":
+            return False
+        mx = self._int("vpn_agent_transfer_max", 1)
+        return not (mx > 0 and json.loads(ag["meta"] or "{}").get("n_transfer", 0) >= mx)
+
+    async def user_transfer(self, uid: int, aid: int, target: int):
+        """انتقال مالکیت پنل نمایندگی به کاربر دیگر (فقط جابه‌جایی مالک؛ اکانت روی پنل دست نمی‌خورد)."""
+        ag = await self.db.get_agent(aid)
+        if not ag or ag["user_id"] != uid or not self.can_user_transfer(ag):
+            return False, N_("انتقال این پنل نمایندگی ممکن نیست.")
+        if target == uid or not await self.db.get_user(target):
+            return False, N_("کاربر مقصد پیدا نشد (او باید قبلاً ربات را استارت کرده باشد).")
+        m = json.loads(ag["meta"] or "{}")
+        m["n_transfer"] = int(m.get("n_transfer", 0)) + 1
+        await self.db.update_agent(aid, user_id=target, meta=json.dumps(m))
+        await self.db.log(f"user:{uid}", "agent_transfer", f"#{aid} -> {target}")
+        await self.shop.audit(f"user:{uid}", f"🚚 انتقال پنل نمایندگی <code>{esc(ag['username'])}</code> از <code>{uid}</code> به <code>{target}</code>")
+        return True, N_("انجام شد.")
+
     def can_user_move(self, ag) -> bool:
         if not self.move_enabled() or ag["status"] not in ("active", "limited"):
             return False
@@ -1067,6 +1087,8 @@ class AgentSales:
         rows.append([btn(tr("🔑 رمز جدید"), f"vpn:agw:{i}", role="action")])
         if self.can_user_move(ag) and await self.move_targets(ag):
             rows.append([btn(tr("📍 تغییر لوکیشن"), f"vpn:agm:{i}", role="action")])
+        if self.can_user_transfer(ag):
+            rows.append([btn(tr("🚚 انتقال به کاربر دیگر"), f"vpn:agx:{i}", role="action")])
         if self._can_auto(ag):
             rows.append([btn(tr("🔁 تمدید خودکار: روشن ✅") if self.is_auto(ag) else tr("🔁 تمدید خودکار: خاموش"), f"vpn:agt:{i}", role="action")])
         rows.append([btn(tr("🔙 پنل‌های نمایندگی من"), back, role="back")])

@@ -297,10 +297,9 @@ async def api_test(request):
         extra = ""
         if r["ok"]:
             raw = D(r["value"])
-            tom = pr._api_to_toman(raw, s.get(f"{what}_api_unit", "toman") if what == "ton" else "toman")
-            if what == "usd" and s.get("usd_api_unit") == "rial":
-                tom = raw / 10
-            extra = f"<p>{T('معادل تومان')}: <b>{fmt(tom)}</b></p>"
+            unit = pr.resolve_unit(what, raw, s.get(f"{what}_api_unit", "auto"), s[f"{what}_api_url"], s.get(f"{what}_api_body", ""), s.get(f"{what}_api_path", ""))
+            tom = pr._rate_toman(what, raw, unit)
+            extra = f"<p>{T('معادل تومان')}: <b>{fmt(tom)}</b> ({T('واحد تشخیص‌داده‌شده')}: {e(unit)})</p>"
         body = result_card(title, r, extra)
     elif what in ("fs", "fp"):
         kind = "stars" if what == "fs" else "premium"

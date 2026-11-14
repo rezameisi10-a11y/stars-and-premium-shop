@@ -9,7 +9,7 @@ import time
 from decimal import Decimal
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramNotFound, TelegramRetryAfter
 from aiohttp import ClientSession, ClientTimeout, web
 
 import provider
@@ -176,6 +176,9 @@ class Shop:
         self._prov_bal_ts = 0.0
         self.restart_requested = False
         self.restart_event = asyncio.Event()
+        self._dl_streak = 0                     # شکست/نامشخص پشت‌سرهم در تحویل خودکار (مدارشکن)
+        self._dl_pause_until = 0.0
+        self._send_lock = asyncio.Lock()        # ارسال‌های خارجی استارز/پریمیوم/گیفت یکی‌یکی انجام می‌شوند
 
     async def start(self):
         self.http = ClientSession(timeout=ClientTimeout(total=20))
@@ -188,6 +191,7 @@ class Shop:
         if (await self.settings()).get("rate_auto") == "1":
             self.spawn(self.pricing.refresh_rates())
         self.spawn(self.apply_miniapp_menu())
+        self.spawn(self.recover_stuck(minutes=0))      # سفارش‌های نیمه‌کارِ ریستارت قبلی
 
     async def stop(self):
         await self.vpn.close()
@@ -1058,11 +1062,11 @@ class Shop:
             if ton is None:
                 raise ValueError(tr("ترافیک زیاد است، چند دقیقه بعد دوباره تلاش کنید."))
             pid = await self.db.create_payment(user_id, order_id, "ton", amount, ton)
-            text = (tr("💎 دقیقاً مقدار <b>{ton}</b> TON را به آدرس زیر ارسال کنید:", ton=f"{ton:.5f}") + f"\n<code>{esc(self.gw('ton_wallet'))}</code>\n\n"
+            text = (tr("💎 دقیقاً مقدار <b>{ton}</b> TON را به آدرس زیر ارسال کنید:", ton=f"<code>{ton:.5f}</code>") + f"\n<code>{esc(self.gw('ton_wallet'))}</code>\n\n"
                     + tr("⚠️ مقدار باید با همین اعشار ارسال شود تا پرداخت شما خودکار شناسایی شود (تغییر ندهید).") + "\n"
                     + tr("اگر کیف‌پولتان فیلد Comment/Memo دارد، می‌توانید این متن را هم بنویسید (اختیاری):") + f" <code>P{pid}</code>\n\n"
                     + tr("پس از تأیید شبکه، خودکار ثبت می‌شود."))
-            return pid, text, ikb([[btn(tr("🔄 بررسی پرداخت"), f"chk:{pid}", role="action")]])
+            return pid, text, self._copy_kb(tr, self.gw("ton_wallet"), f"{ton:.5f}", pid)
 
         if method == "usdt":
             rate = self.pricing.usd_toman()
@@ -1079,12 +1083,21 @@ class Shop:
             if usdt is None:
                 raise ValueError(tr("ترافیک زیاد است، چند دقیقه بعد دوباره تلاش کنید."))
             pid = await self.db.create_payment(user_id, order_id, "usdt", amount, usdt)
-            text = (tr("💵 دقیقاً مقدار <b>{usdt}</b> USDT را روی شبکه <b>TRC20</b> به آدرس زیر بفرستید:", usdt=f"{usdt:.3f}") + "\n"
+            text = (tr("💵 دقیقاً مقدار <b>{usdt}</b> USDT را روی شبکه <b>TRC20</b> به آدرس زیر بفرستید:", usdt=f"<code>{usdt:.3f}</code>") + "\n"
                     f"<code>{esc(self.gw('usdt_wallet'))}</code>\n\n"
                     + tr("⚠️ مقدار باید با همین اعشار ارسال شود تا پرداخت شما شناسایی شود."))
-            return pid, text, ikb([[btn(tr("🔄 بررسی پرداخت"), f"chk:{pid}", role="action")]])
+            return pid, text, self._copy_kb(tr, self.gw("usdt_wallet"), f"{usdt:.3f}", pid)
 
         raise ValueError(tr("روش پرداخت نامعتبر است."))
+
+    @staticmethod
+    def _copy_kb(tr, address: str, amount: str, pid: int):
+        """کپی با یک لمس: آدرس کیف پول و مبلغ یکتا (دقیقاً با همان اعشار) + بررسی پرداخت."""
+        from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=tr("📋 کپی آدرس کیف پول"), copy_text=CopyTextButton(text=address)),
+             InlineKeyboardButton(text=tr("📋 کپی مبلغ یکتا"), copy_text=CopyTextButton(text=amount))],
+            [btn(tr("🔄 بررسی پرداخت"), f"chk:{pid}", role="action")]])
 
     async def _receipt_order_lines(self, o) -> list:
         """بخش «چی خریده» در پیام رسید برای ادمین؛ سرویس، محصول، حجم، زمان."""
@@ -1243,7 +1256,10 @@ class Shop:
         if o["kind"] in ("gift", "premium"):
             rows.append([btn("🎁 ارسال خودکار با ستاره ربات", f"oadm:auto:{o['id']}", role="action")])
         if o["kind"] != "stars" or provider.provider_enabled(self.s, "stars"):
-            rows.append([btn("🔁 تلاش مجدد", f"oadm:retry:{o['id']}", role="action")])
+            if (o.get("note") or "").startswith("UNKNOWN:"):
+                rows.append([btn("⚠️ تلاش مجدد (مطمئنم ارسال نشده)", f"oadm:retryfc:{o['id']}", role="reject")])
+            else:
+                rows.append([btn("🔁 تلاش مجدد", f"oadm:retry:{o['id']}", role="action")])
         rows.append([btn("✅ تحویل شد", f"oadm:done:{o['id']}", role="confirm"),
                      btn("↩️ بازگشت وجه به کیف پول", f"oadm:refund:{o['id']}", role="reject")])
         return ikb(rows)
@@ -1254,27 +1270,163 @@ class Shop:
         await self.say(o["user_id"], "🕓 سفارش #{oid} پرداخت شد و در صف تحویل است. به‌محض ارسال، خبر می‌دهیم.", oid=oid)
         await self.notify_admins(admin_text + "\n\n" + describe_order(o), self.order_admin_kb(o), perm="orders", topic="alerts")
 
-    async def _deliver_via_provider(self, o, kind):
+    # ---------- امنیت تحویل استارز/پریمیوم/گیفت ----------
+    # اصول: ۱) قبل از هر ارسال خارجی یک ردیف «sending» ثبت می‌شود (ایندکس یکتا: برای هر سفارش حداکثر یک ارسال فعال/موفق)
+    #       ۲) نتیجه‌ی نامشخص (تایم‌اوت/قطع/ریستارت وسط ارسال) هرگز خودکار دوباره ارسال نمی‌شود
+    #       ۳) سقف تلاش، سقف سرعت هر کاربر، ضد سفارش تکراری، سقف مبلغ و مدارشکن (توقف خودکار پس از شکست‌های پشت‌سرهم)
+    #       ۴) خطا بعد از ارسال موفق (مثلاً پیام به کاربر) هرگز سفارش را «ناموفق» نمی‌کند
+    async def _hold(self, oid, reason, unknown=False):
+        note = ("UNKNOWN: " if unknown else "HOLD: ") + reason
+        if unknown:
+            adm = ("⚠️ نتیجه‌ی ارسال نامشخص است؛ ممکن است ارسال شده باشد. اول در سرویس‌دهنده/کیف پول بررسی کنید. "
+                   "فقط اگر مطمئنید ارسال نشده «تلاش مجدد (مطمئنم)» را بزنید.\nعلت: " + reason)
+        else:
+            adm = "🛑 محافظ امنیتی تحویل خودکار این سفارش را نگه داشت (ارسالی انجام نشد).\nعلت: " + reason + "\nبعد از بررسی، «تلاش مجدد» را بزنید."
+        await self._to_manual(oid, note[:300], adm)
+
+    def _breaker(self, res):
+        """True اگر همین الان مدارشکن قطع شد."""
+        if res == "ok":
+            self._dl_streak = 0
+            return False
+        self._dl_streak += 1
+        n = int(D(self.s.get("deliver_breaker_n"), 0))
+        if n > 0 and self._dl_streak >= n:
+            self._dl_pause_until = time.time() + max(int(D(self.s.get("deliver_pause_min"), 30)), 1) * 60
+            self._dl_streak = 0
+            return True
+        return False
+
+    async def resume_delivery(self):
+        self._dl_pause_until = 0.0
+        self._dl_streak = 0
+
+    async def _pre_send(self, o, kind, method, admin=False):
+        """قبل از ارسال: خروجی (log_id, None) یا (None, ("hold"|"unknown"|"done", دلیل))."""
+        s = await self.settings()
         oid = o["id"]
-        res, info, ref = await provider.deliver(self, kind, o)
+        now = time.time()
+        if not admin:
+            if self._dl_pause_until > now:
+                return None, ("hold", f"تحویل خودکار موقتاً متوقف است (چند شکست پشت‌سرهم) تا {int((self._dl_pause_until - now) / 60) + 1} دقیقه‌ی دیگر")
+            cap = int(D(s.get("deliver_max_stars"), 0))
+            if kind == "stars" and cap and o["qty"] > cap:
+                return None, ("hold", f"تعداد ستاره ({o['qty']}) از سقف تحویل خودکار ({cap}) بیشتر است")
+            mx = int(D(s.get("deliver_user_day_max"), 0))
+            if mx and await self.db.dl_user_count(o["user_id"], int(now) - 86400) >= mx:
+                return None, ("hold", f"این کاربر در ۲۴ ساعت گذشته بیش از {mx} تحویل خودکار داشته")
+            dcap = int(D(s.get("deliver_day_max_stars"), 0))
+            if kind == "stars" and dcap and await self.db.dl_sum_stars(int(now) - 86400) + o["qty"] > dcap:
+                return None, ("hold", f"سقف کل استارز خودکار ۲۴ ساعته ({dcap}) پر می‌شود")
+            dm = int(D(s.get("deliver_dup_min"), 0))
+            if dm:
+                dup = await self.db.dl_dup(o, int(now) - dm * 60)
+                if dup:
+                    return None, ("hold", f"احتمال سفارش تکراری: سفارش #{dup} با همین گیرنده/نوع/تعداد اخیراً ارسال شده")
+        lid, why = await self.db.dl_claim(oid, kind, method, 0 if admin else int(D(s.get("deliver_max_attempts"), 2)))
+        if lid:
+            return lid, None
+        if why == "sent":
+            return None, ("done", "delivery log says already sent")
+        if why == "unknown":
+            return None, ("unknown", "ارسال قبلی همین سفارش نتیجه‌ی نامشخص داشته")
+        if why == "busy":
+            await self.db.dl_mark_unknown(oid)  # ردیف sending بازمانده (ریستارت/قطع) = نتیجه‌ی نامشخص، نه «ارسال نشده»
+            return None, ("unknown", "ارسال قبلی نیمه‌کاره مانده (ریستارت/قطع شدن حین ارسال)")
+        return None, ("hold", "تعداد تلاش‌های ناموفق خودکار این سفارش به سقف رسیده")
+
+    async def _settle(self, o, kind, res, info, ref, lid):
+        """ثبت نتیجه‌ی ارسال و تعیین وضعیت سفارش. هیچ استثنایی بعد از «ok» سفارش را ناموفق نمی‌کند."""
+        oid = o["id"]
+        await self.db.dl_finish(lid, res, info, ref)
         if ref:
             await self.db.set_order_provider_ref(oid, ref)
-        await self.db.log("provider", f"deliver_{res}", f"order {oid} {info[:120]}")
+        await self.db.log("delivery", f"{kind}_{res}", f"order {oid} {str(info)[:120]}")
+        tripped = self._breaker(res)
         if res == "ok":
-            await self.finish_order(oid, f"provider {ref}".strip())
+            try:
+                await self.finish_order(oid, f"{kind} {ref}".strip())
+            except Exception:  # noqa: BLE001
+                log.exception("finish_order failed AFTER successful send (order %s)", oid)
+                await self.db.transition(oid, ["delivering", "manual_pending", "failed", "paid"], "done", "sent OK (finish step error)")
             self.spawn(self._check_provider_balance(force=True))
-            return
-        if res == "fail":
-            await self.db.transition(oid, ["delivering"], "failed", f"provider: {info}"[:300])
+        elif res == "fail":
+            await self.db.transition(oid, ["delivering"], "failed", f"{kind}: {info}"[:300])
             o2 = await self.db.get_order(oid)
             await self.say(o["user_id"], "⚠️ در تحویل سفارش #{oid} مشکلی پیش آمد. پشتیبانی بررسی می‌کند و نتیجه اعلام می‌شود.", oid=oid)
-            await self.notify_admins("❌ خطا در تحویل خودکار (API سرویس‌دهنده، ارسال انجام نشده):\n\n" + describe_order(o2),
+            await self.notify_admins("❌ خطا در تحویل خودکار (ارسال انجام نشده):\n\n" + describe_order(o2),
                                      self.order_admin_kb(o2), perm="orders", topic="alerts")
-            return
-        await self._to_manual(oid, f"UNKNOWN: {info}"[:300],
-                              "⚠️ نتیجه‌ی ارسال از سرویس‌دهنده نامشخص است (مهلت/خطای سرور). قبل از «تلاش مجدد» حتماً در پنل سرویس‌دهنده بررسی کنید که ارسال انجام نشده باشد.")
+        else:
+            await self._hold(oid, str(info)[:200] or "unknown result", unknown=True)
+        if tripped:
+            mins = int(D(self.s.get("deliver_pause_min"), 30))
+            await self.notify_admins(f"🛑 <b>تحویل خودکار استارز/پریمیوم/گیفت موقتاً متوقف شد</b>\nچند شکست/نتیجه‌ی نامشخص پشت‌سرهم رخ داد. سفارش‌های جدید {mins} دقیقه به صف دستی می‌روند. "
+                                     "ابتدا سرویس‌دهنده/کیف پول را بررسی کنید.", ikb([[btn("▶️ از سرگیری تحویل خودکار", "adm:dlresume", role="confirm")]]), perm="orders", topic="alerts")
 
-    async def fulfil(self, oid, force_auto=False):
+    async def _deliver_via_provider(self, o, kind, admin=False):
+        oid = o["id"]
+        method = "marketapp" if self.s.get(f"deliver_{kind}_mode") == "marketapp" else "api"
+        lid, stop = await self._pre_send(o, kind, method, admin)
+        if stop:
+            await self._pre_stop(oid, stop)
+            return
+        try:
+            async with self._send_lock:
+                res, info, ref = await provider.deliver(self, kind, o)
+        except Exception as e:  # noqa: BLE001  هر خطای غیرمنتظره = نامشخص (ممکن است ارسال شده باشد)
+            log.exception("provider deliver crashed")
+            res, info, ref = "unknown", f"{type(e).__name__}: {str(e)[:120]}", ""
+        await self._settle(o, kind, res, info, ref, lid)
+
+    async def _pre_stop(self, oid, stop):
+        what, why = stop
+        if what == "done":
+            await self.finish_order(oid, "recovered: " + why)
+        else:
+            await self._hold(oid, why, unknown=(what == "unknown"))
+
+    async def _deliver_via_bot(self, o, kind, need, admin=False):
+        """ارسال با موجودی ستاره‌ی خود ربات (گیفت/پریمیوم)."""
+        lid, stop = await self._pre_send(o, kind, "bot", admin)
+        if stop:
+            await self._pre_stop(o["id"], stop)
+            return
+        try:
+            async with self._send_lock:
+                if kind == "premium":
+                    await self.bot.gift_premium_subscription(user_id=o["target_id"], month_count=o["qty"], star_count=need)
+                else:
+                    await self.bot.send_gift(user_id=o["target_id"], gift_id=o["ref"])
+            res, info = "ok", ""
+        except (TelegramBadRequest, TelegramForbiddenError, TelegramNotFound) as e:
+            res, info = "fail", f"{type(e).__name__}: {str(e)[:160]}"      # تلگرام صریحاً رد کرد
+        except Exception as e:  # noqa: BLE001  شبکه/تایم‌اوت: ممکن است ارسال شده باشد
+            log.exception("bot send error")
+            res, info = "unknown", f"{type(e).__name__}: {str(e)[:160]}"
+        await self._settle(o, kind, res, info, "", lid)
+        if res == "ok":
+            await self._star_alert()
+
+    async def recover_stuck(self, minutes=10):
+        """سفارش‌های مانده در «در حال تحویل» (ریستارت/قطع شدن). اگر ارسالی شروع شده بود = نامشخص و فقط ادمین تصمیم می‌گیرد."""
+        try:
+            rows = await self.db.stuck_delivering(int(time.time()) - minutes * 60)
+        except Exception:  # noqa: BLE001
+            log.exception("recover_stuck query")
+            return 0
+        for o in rows:
+            last = await self.db.dl_last(o["id"])
+            if last and last["status"] == "ok":
+                await self.finish_order(o["id"], "recovered after restart (log ok)")
+                continue
+            if last and last["status"] in ("sending", "unknown"):
+                await self.db.dl_finish(last["id"], "unknown", "interrupted while sending")
+                await self._hold(o["id"], "ارسال حین ریستارت/قطع شدن نیمه‌کاره ماند", unknown=True)
+            else:
+                await self._hold(o["id"], "تحویل قبل از شروع ارسال قطع شد")
+        return len(rows)
+
+    async def fulfil(self, oid, force_auto=False, admin=False):
         if not await self.db.transition(oid, ["paid", "failed", "manual_pending"], "delivering"):
             return
         o = await self.db.get_order(oid)
@@ -1286,14 +1438,14 @@ class Shop:
                 return
             if o["kind"] == "stars":
                 if provider.provider_enabled(s, "stars"):
-                    await self._deliver_via_provider(o, "stars")
+                    await self._deliver_via_provider(o, "stars", admin)
                     return
                 # ارسال استارز به کاربران دیگر از طریق Bot API ممکن نیست؛ تحویل دستی یا API سرویس‌دهنده
                 await self._to_manual(oid, "تحویل دستی استارز لازم است", "⭐ سفارش استارز برای تحویل دستی:")
                 return
             if o["kind"] == "premium":
                 if provider.provider_enabled(s, "premium"):
-                    await self._deliver_via_provider(o, "premium")
+                    await self._deliver_via_provider(o, "premium", admin)
                     return
                 if s.get("deliver_premium_mode") == "manual":
                     await self._to_manual(oid, "تحویل دستی پریمیوم", "👑 سفارش پریمیوم برای تحویل دستی:")
@@ -1310,19 +1462,22 @@ class Shop:
                                       f"⚠️ موجودی ستاره ربات کافی نیست ({bal} از {need}).\nاز پنل مدیریت ← «موجودی ستاره ربات» شارژ کنید؛ سفارش‌های صف خودکار تلاش مجدد می‌شوند.")
                 return
 
-            if o["kind"] == "premium":
-                await self.bot.gift_premium_subscription(user_id=o["target_id"], month_count=o["qty"], star_count=need)
-            else:
-                await self.bot.send_gift(user_id=o["target_id"], gift_id=o["ref"])
+            await self._deliver_via_bot(o, o["kind"], need, admin)
+            return
         except Exception as e:
             log.exception("fulfil failed for order %s", oid)
+            last = await self.db.dl_last(oid)
+            if last and last["status"] in ("sending", "ok"):          # خطا حین/بعد از ارسال: هرگز «ناموفق» نکن
+                if last["status"] == "sending":
+                    await self.db.dl_finish(last["id"], "unknown", f"{type(e).__name__}: {str(e)[:120]}")
+                    await self._hold(oid, f"خطای غیرمنتظره حین ارسال: {type(e).__name__}", unknown=True)
+                else:
+                    await self.finish_order(oid, "sent OK (post-send error)")
+                return
             await self.db.transition(oid, ["delivering"], "failed", str(e)[:300])
             o = await self.db.get_order(oid)
             await self.say(uid, "⚠️ در تحویل سفارش #{oid} مشکلی پیش آمد. پشتیبانی بررسی می‌کند و نتیجه اعلام می‌شود.", oid=oid)
             await self.notify_admins("❌ خطا در تحویل خودکار:\n\n" + describe_order(o), self.order_admin_kb(o), perm="orders", topic="alerts")
-            return
-        await self.finish_order(oid)
-        await self._star_alert()
 
     async def finish_order(self, oid, note=None) -> bool:
         if not await self.db.transition(oid, ["delivering", "manual_pending", "failed", "paid"], "done", note):
@@ -1367,8 +1522,11 @@ class Shop:
         s = await self.settings()
         for o in await self.db.queue_orders(50):
             note = o.get("note") or ""
-            if note.startswith("UNKNOWN:"):
+            if note.startswith(("UNKNOWN:", "HOLD:")):      # نامشخص/نگه‌داشته‌شده با محافظ: فقط تصمیم دستی ادمین
                 continue
+            last = await self.db.dl_last(o["id"])
+            if last and (last["status"] in ("unknown", "sending", "ok") or time.time() - (last["finished"] or last["started"]) < 60):
+                continue                                    # ارسال قبلی نامشخص/موفق، یا کمتر از ۱ دقیقه از شکست قبلی
             if o["kind"] == "stars" and not provider.provider_enabled(s, "stars"):
                 continue
             if o["kind"] == "premium" and provider.provider_enabled(s, "premium") and not include_failed:
@@ -1386,19 +1544,30 @@ class Shop:
         if not o:
             return NW_("سفارش پیدا نشد.")
         await self.db.log(actor, f"order_{act}", f"#{oid}")
-        if act == "retry":
+        if act in ("retry", "retryf"):
             if o["kind"] == "stars" and not provider.provider_enabled(await self.settings(), "stars"):
                 return NW_("سفارش استارز دستی است (API تحویل فعال نیست).")
             if o["status"] not in ("manual_pending", "failed", "paid"):
                 return NW_("وضعیت سفارش اجازه‌ی تلاش مجدد نمی‌دهد.")
-            await self.fulfil(oid)
+            last = await self.db.dl_last(oid)
+            risky = (o.get("note") or "").startswith("UNKNOWN:") or bool(last and last["status"] in ("unknown", "sending", "ok"))
+            if risky and act == "retry":
+                return NW_("⚠️ نتیجه‌ی ارسال قبلی نامشخص/موفق بوده؛ ممکن است دوباره‌ارسال شود. ابتدا در سرویس‌دهنده بررسی کنید و فقط اگر مطمئنید ارسال نشده «تلاش مجدد (مطمئنم)» را بزنید.")
+            if risky and act == "retryf":
+                if last and last["status"] == "ok":
+                    return NW_("ارسال این سفارش قبلاً موفق ثبت شده؛ «تحویل شد» را بزنید.")
+                await self.db.dl_void(oid)
+                await self.audit(actor, f"⚠️ تلاش مجدد اجباری سفارش <b>#{oid}</b> بعد از نتیجه‌ی نامشخص (ادمین تأیید کرد ارسال نشده)")
+            await self.fulfil(oid, admin=True)
             return NW_("تلاش مجدد انجام شد.")
         if act == "auto":
             if o["kind"] not in ("gift", "premium"):
                 return NW_("ارسال خودکار با ستاره ربات فقط برای گیفت و پریمیوم است.")
             if o["status"] not in ("manual_pending", "failed", "paid"):
                 return NW_("وضعیت سفارش اجازه‌ی ارسال نمی‌دهد.")
-            await self.fulfil(oid, force_auto=True)
+            if (o.get("note") or "").startswith("UNKNOWN:"):
+                return NW_("نتیجه‌ی ارسال قبلی نامشخص است؛ ابتدا بررسی و سپس «تلاش مجدد (مطمئنم)».")
+            await self.fulfil(oid, force_auto=True, admin=True)
             o2 = await self.db.get_order(oid)
             return NW_("✅ با ستاره ربات ارسال شد.") if o2 and o2["status"] == "done" else NW_("ارسال انجام نشد؛ موجودی ستاره ربات یا خطا را بررسی کنید.")
         if act == "done":
@@ -1757,9 +1926,12 @@ class Shop:
         await self.db.expire_payments(now - minutes * 60)
         await self.db.expire_orders(now - 86400)
 
+    async def _recover_tick(self):
+        await self.recover_stuck(minutes=10)
+
     async def background_loop(self):
         while True:
-            for step in (self.check_crypto, self.expire_old, self.pricing.tick, self.release_rewards, self._check_provider_balance, self.group.tick, self.vpn.tick):
+            for step in (self.check_crypto, self.expire_old, self.pricing.tick, self.release_rewards, self._check_provider_balance, self.group.tick, self.vpn.tick, self._recover_tick):
                 try:
                     await step()
                 except Exception:
