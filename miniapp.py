@@ -148,7 +148,7 @@ def _order_dict(ctx: Ctx, o: dict) -> dict:
             "orig": _money(ctx, o["orig_amount"]) if disc else None, "code": o.get("discount_code") if disc else None}
 
 
-async def _pay_methods(ctx: Ctx, order_id=None, allow_wallet=True) -> list[dict]:
+async def _pay_methods(ctx: Ctx, order_id=None, allow_wallet=True, topup=None) -> list[dict]:
     """روش‌های پرداخت فعال (همان شرط‌های pay_methods_kb ربات)."""
     shop = ctx.shop
     s = await shop.settings()
@@ -164,7 +164,7 @@ async def _pay_methods(ctx: Ctx, order_id=None, allow_wallet=True) -> list[dict]
         out.append({"id": "ton", "label": ctx.tr(METHOD_FA["ton"])})
     if s["pm_usdt"] == "1" and shop.gw("usdt_wallet"):
         out.append({"id": "usdt", "label": ctx.tr(METHOD_FA["usdt"])})
-    if order_id and await shop.stars_ok(order_id):
+    if await shop.stars_ok(order_id if order_id else (f"t{int(topup)}" if topup else "")):
         out.append({"id": "stars", "label": ctx.tr(METHOD_FA["stars"])})
     return out
 
@@ -287,6 +287,11 @@ async def a_order_get(ctx: Ctx, d: dict) -> dict:
         raise ApiError(ctx.tr("سفارش پیدا نشد."), 404)
     out = _order_dict(ctx, o)
     out["methods"] = await _pay_methods(ctx, o["id"]) if o["status"] == "pending_payment" else []
+    ref = str(o.get("ref") or "")
+    if o["status"] == "done" and ref.startswith("vpn:"):
+        ag = await ctx.shop.db.agent_by_order(o["id"])
+        if ag:
+            out["agent_id"] = ag["id"]
     return out
 
 
@@ -320,12 +325,12 @@ async def a_pay(ctx: Ctx, d: dict) -> dict:
     else:
         order = await _own_pending(ctx, d.get("order_id"))
         amount = order["amount"]
-    if method not in [m["id"] for m in await _pay_methods(ctx, order["id"] if order else None, allow_wallet=order is not None)]:
+    if method not in [m["id"] for m in await _pay_methods(ctx, order["id"] if order else None, allow_wallet=order is not None, topup=None if order else amount)]:
         raise ApiError(ctx.tr("روش پرداخت نامعتبر است."))
     if method == "wallet":
         if not await shop.pay_with_wallet(order["id"], ctx.uid):
             raise ApiError(ctx.tr("موجودی کیف پول کافی نیست."))
-        return {"done": True, "kind": order["kind"], "agent": (order.get("ref") or "").startswith(("vpn:agent", "vpn:arenew", "vpn:aaddon")), "message": ctx.tr("✅ پرداخت از کیف پول انجام شد؛ سفارش #{oid} در حال تحویل است.", oid=order["id"])}
+        return {"done": True, "order_id": order["id"], "kind": order["kind"], "agent": (order.get("ref") or "").startswith(("vpn:agent", "vpn:arenew", "vpn:aaddon")), "message": ctx.tr("✅ پرداخت از کیف پول انجام شد؛ سفارش #{oid} در حال تحویل است.", oid=order["id"])}
     try:
         pid, _text, kb = await shop.create_payment(method, ctx.uid, amount, order["id"] if order else None, ctx.tr)
     except ValueError as e:
@@ -380,14 +385,17 @@ async def a_check(ctx: Ctx, d: dict) -> dict:
         p = await shop.db.get_payment(p["id"])
     texts = {"confirmed": ctx.tr("✅ پرداخت شما تأیید شده است."), "pending": ctx.tr("⏳ هنوز پرداختی دریافت نشده است."),
              "expired": ctx.tr("⌛ مهلت این پرداخت تمام شده است."), "rejected": ctx.tr("❌ پرداخت رد شده است.")}
-    return {"status": p["status"], "message": texts.get(p["status"], ctx.tr(PAY_STATUS_FA.get(p["status"], p["status"])))}
+    return {"status": p["status"], "order_id": p.get("order_id"), "message": texts.get(p["status"], ctx.tr(PAY_STATUS_FA.get(p["status"], p["status"])))}
 
 
 async def a_wallet(ctx: Ctx, d: dict) -> dict:
     shop = ctx.shop
     u = await shop.db.get_user(ctx.uid)
     hist = await shop.db.wallet_history(ctx.uid, limit=20)
-    return {"balance": u["balance"], "methods": [m["id"] for m in await _pay_methods(ctx, allow_wallet=False)],
+    orders = await shop.db.user_orders(ctx.uid, 200)
+    return {"balance": u["balance"], "methods": [m["id"] for m in await _pay_methods(ctx, allow_wallet=False, topup=int(float((await shop.settings())["min_topup"])))],
+            "profile": {"id": ctx.uid, "username": u.get("username") or "", "name": u.get("first_name") or "", "joined": u["created_at"],
+                        "orders": len(orders), "done": sum(1 for o in orders if o["status"] == "done")},
             "history": [{"amount": t["amount"], "reason": t["reason"].split(" ")[0].split(":")[0], "ts": t["created_at"]} for t in hist]}
 
 

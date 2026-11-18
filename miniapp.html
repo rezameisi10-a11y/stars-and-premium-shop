@@ -77,6 +77,30 @@ input:focus{border-color:var(--btn)}
 .toast{position:fixed;inset-inline:16px;bottom:96px;background:#222;color:#fff;border-radius:12px;padding:12px 14px;z-index:9;text-align:center;box-shadow:0 6px 24px rgba(0,0,0,.35)}
 .toast.err{background:var(--err)}
 .center{text-align:center;padding:60px 10px}.big{font-size:54px}
+
+/* ===== انیمیشن نتیجه‌ی سفارش ===== */
+.ov{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;text-align:center;background:color-mix(in srgb,var(--bg) 86%,transparent);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);animation:ovIn .25s ease}
+@keyframes ovIn{from{opacity:0}to{opacity:1}}
+.ov h2{margin:8px 0 0;font-size:20px;line-height:1.5}.ov p{margin:0;color:var(--hint);font-size:14px;max-width:300px}
+.ov .bx{position:relative;width:132px;height:132px;display:grid;place-items:center}
+.ov .ring{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,transparent 0,var(--btn) 70%,var(--a2,#8b5cf6) 100%);-webkit-mask:radial-gradient(circle,transparent 55%,#000 57%);mask:radial-gradient(circle,transparent 55%,#000 57%);animation:sp 1s linear infinite;filter:drop-shadow(0 0 12px var(--btn))}
+.ov .ring.r2{inset:16px;animation-duration:1.6s;animation-direction:reverse;opacity:.6}
+.ov .core{font-size:38px;animation:ovPulse 1.4s ease-in-out infinite}
+@keyframes ovPulse{0%,100%{transform:scale(.9);opacity:.7}50%{transform:scale(1.12);opacity:1}}
+.ov svg.big{width:132px;height:132px;overflow:visible}
+.ov svg .c{fill:none;stroke-width:5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:314;stroke-dashoffset:314;animation:ovDraw .6s .05s ease forwards}
+.ov svg .k{fill:none;stroke-width:6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:80;stroke-dashoffset:80;animation:ovDraw .45s .55s ease forwards}
+@keyframes ovDraw{to{stroke-dashoffset:0}}
+.ov.ok svg{stroke:var(--ok);filter:drop-shadow(0 0 14px color-mix(in srgb,var(--ok) 70%,transparent));animation:ovPop .5s .5s ease}
+.ov.bad svg{stroke:var(--err);filter:drop-shadow(0 0 14px color-mix(in srgb,var(--err) 70%,transparent));animation:ovShake .5s .6s ease}
+.ov.wait svg{stroke:var(--warn);filter:drop-shadow(0 0 14px color-mix(in srgb,var(--warn) 60%,transparent))}
+@keyframes ovPop{0%{transform:scale(.8)}60%{transform:scale(1.14)}100%{transform:scale(1)}}
+@keyframes ovShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-9px)}40%{transform:translateX(8px)}60%{transform:translateX(-6px)}80%{transform:translateX(4px)}}
+.ov .cf{position:absolute;left:50%;top:50%;width:8px;height:8px;border-radius:2px;opacity:0;animation:ovCf 1.1s .55s ease-out forwards}
+@keyframes ovCf{0%{opacity:1;transform:rotate(var(--a)) translateX(0) scale(1)}100%{opacity:0;transform:rotate(var(--a)) translateX(var(--d)) scale(.4) rotate(220deg)}}
+.ov .b{max-width:300px;margin-top:14px;animation:ovIn .4s .9s both}
+.ov .dots span{display:inline-block;animation:ovDot 1.2s infinite;opacity:.2}.ov .dots span:nth-child(2){animation-delay:.2s}.ov .dots span:nth-child(3){animation-delay:.4s}
+@keyframes ovDot{50%{opacity:1}}
 .spin{width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--btn);border-radius:50%;animation:sp .8s linear infinite;margin:40px auto}
 @keyframes sp{to{transform:rotate(360deg)}}
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.chips button{border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:99px;padding:7px 13px;font:inherit;font-size:13px;cursor:pointer}
@@ -805,6 +829,17 @@ const CS = k => {
   const n = parseInt(c.slice(1), 16), lum = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
   return ` style="--tg:${c};--cc:${c};--ccfg:${lum > 0.62 ? "#1a1405" : "#ffffff"}"`;
 };
+const _fg = c => { const n = parseInt(c.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255 > 0.62 ? "#1a1405" : "#ffffff"; };
+function applyBtnColors() {      // رنگ دکمه‌ها در همه‌ی صفحات و تحت هر اسکین (کلیدهای bc_*)
+  let css = "";
+  const rule = (k, sel) => { const c = MU()[k] && MU()[k].c; if (c) css += `${sel}{background:${c}!important;background-image:none!important;color:${_fg(c)}!important;border-color:${c}!important;box-shadow:0 8px 20px color-mix(in srgb,${c} 38%,transparent)!important}`; };
+  rule("bc_main", ".b:not(.sec):not(.ok):not(.success):not(.danger)");
+  rule("bc_sec", ".b.sec"); rule("bc_ok", ".b.ok,.b.success"); rule("bc_danger", ".b.danger");
+  rule("bc_mini", ".copy button,.chips button");
+  let st = document.getElementById("bcs");
+  if (!st) { st = document.createElement("style"); st.id = "bcs"; document.head.appendChild(st); }
+  st.textContent = css;
+}
 const IC = (k, d) => (MU()[k] && MU()[k].e) ? emo(MU()[k].e, d) : esc(d);
 /* ایموجی پریمیوم: اول تصویر؛ اگر ویدیویی بود <video>؛ اگر هیچ‌کدام، ایموجی معمولی */
 document.addEventListener("error", ev => {
@@ -845,11 +880,11 @@ VIEWS.home = async () => {
   const nT = (I.tiles || []).filter(k => k !== "agent").length;
   const av = I.photo ? `<img class="av" src="${esc(I.photo)}" alt="">` : `<div class="av orb"><span>${esc((u.name || "?").trim().charAt(0).toUpperCase())}</span></div>`;
   if (!I.photo && !window._avTried) { window._avTried = 1; fetch("/app/avatar", {headers: {"X-Init-Data": TG ? TG.initData : ""}}).then(r => r.ok ? r.blob() : null).then(b => { if (b && b.size) { I.photo = URL.createObjectURL(b); const o = document.querySelector(".hero2 .av"); if (o) { const im = document.createElement("img"); im.className = "av"; im.alt = ""; im.src = I.photo; o.replaceWith(im); } } }).catch(() => {}); }
-  let html = `<div class="hero2">${av}<div><small>${esc(L("greet", t("سلام")))} ${IC("greet", "👋")}</small><b>${esc(u.name)}</b></div>${(I.tiles || []).length ? `<button class="hbuy" id="hbuy"${CS("btn_buy")}>${SI("btn_buy", "buy", "🛍")} ${esc(L("btn_buy", t("خرید")))}</button>` : ""}</div>
+  let html = `<div class="hero2">${av}<div><small>${esc(L("greet", t("سلام")))} ${IC("greet", "👋")}</small><b>${esc(u.name)}</b></div></div>
   ${I.texts.welcome ? `<div class="card hint" style="color:var(--fg)">${safeHtml(I.texts.welcome)}</div>` : ""}
   <div class="wcard"><div class="wt"><i>${IC("wallet_title", "👛")}</i><span>${esc(L("wallet_title", t("موجودی کیف پول")))}</span></div>
     <div class="wb">${num(u.balance)} <small>${esc(t("تومان"))}</small></div>
-    <div class="wbtns"><button class="wbtn" id="wbuy"${CS("btn_buy")}><span>${SI("btn_buy", "buy", "🛍")}</span> ${esc(L("btn_buy", t("خرید")))}</button><button class="wbtn" id="wtop"${CS("btn_topup")}><span>${SI("btn_topup", "topup", "➕")}</span> ${esc(L("btn_topup", t("افزایش موجودی")))}</button></div></div>`;
+    <div class="wbtns"><button class="wbtn" id="wtop"${CS("btn_topup")}><span>${SI("btn_topup", "topup", "➕")}</span> ${esc(L("btn_topup", t("افزایش موجودی")))}</button></div></div>`;
   const agBuy = (I.tiles || []).includes("agent"), agMy = (I.rows || []).includes("agent_my");
   if (agBuy || agMy) html += `<div class="agpair ${agBuy && agMy ? "" : "one"}">${agBuy ? `<button class="agb" data-t="agent"${CS("kind_agent")}><span class="ai">${SI("kind_agent", "agent", "🧑‍💼")}</span><span>${esc(L("kind_agent", t("خرید پنل نمایندگی")))}</span></button>` : ""}${agMy ? `<button class="agb alt" data-go="agent_my"${CS("agent_my")}><span class="ai">${SI("agent_my", "agentmy", "🗂")}</span><span>${esc(L("agent_my", t("پنل‌های نمایندگی من")))}</span>${I.agent.mine ? `<small>${num(I.agent.mine)}</small>` : ""}</button>` : ""}</div>`;
   html += `<div class="grid ${nT === 3 ? "g3" : ""}">${tiles}</div><div class="sp"></div>`;
@@ -872,8 +907,6 @@ VIEWS.home = async () => {
   $app.innerHTML = html;
   $app.querySelectorAll(".tile,.agb[data-t]").forEach(b => b.onclick = () => openTile(b.dataset.t));
   $app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
-  const hb = $app.querySelector("#hbuy"); if (hb) hb.onclick = () => go("products");
-  $app.querySelector("#wbuy").onclick = () => go("products");
   $app.querySelector("#wtop").onclick = () => go("wallet");
   $app.querySelector("#more").onclick = () => go("more");
   const a = $app.querySelector("#adm");
@@ -954,22 +987,63 @@ VIEWS.methods = async (a) => {
     a.methods.map(m => `<button class="row" data-m="${m.id}"><span>${esc(m.label)}</span><span>›</span></button>`).join("");
   $app.querySelectorAll("[data-m]").forEach(b => b.onclick = () => payWith(a.id, b.dataset.m, b));
 };
+/* ===== نتیجه‌ی سفارش: چرخش ← تیک/خطا ===== */
+function orderOverlay(oid, opt) {
+  opt = opt || {};
+  return new Promise(resolve => {
+    const o = document.createElement("div"); o.className = "ov"; document.body.appendChild(o);
+    const hap = k => { try { TG && TG.HapticFeedback && TG.HapticFeedback.notificationOccurred(k); } catch (e) {} };
+    const wait = () => { o.className = "ov"; o.innerHTML = `<div class="bx"><div class="ring"></div><div class="ring r2"></div><div class="core">${opt.icon || "🛍"}</div></div><h2>${esc(t("سفارش شما در حال انجام است"))}<span class="dots"><span>.</span><span>.</span><span>.</span></span></h2><p>${esc(t("لطفاً صبر کنید و این صفحه را نبندید."))}</p>`; };
+    const fin = (kind, title, sub, label, after) => {
+      const cols = ["#34d399", "#fbbf24", "#60a5fa", "#f472b6", "#a78bfa", "#fb923c"];
+      const cf = kind === "ok" ? Array.from({length: 22}, (_, i) => `<i class="cf" style="--a:${Math.round(i * 360 / 22 + Math.random() * 12)}deg;--d:${70 + Math.round(Math.random() * 60)}px;background:${cols[i % cols.length]}"></i>`).join("") : "";
+      const mark = kind === "ok" ? `<path class="k" d="M40 68l16 16 36-38"/>` : kind === "bad" ? `<path class="k" d="M46 46l40 40M86 46L46 86"/>` : `<path class="k" d="M66 40v28l18 11"/>`;
+      o.className = "ov " + kind;
+      o.innerHTML = `<div class="bx"><svg class="big" viewBox="0 0 132 132"><circle class="c" cx="66" cy="66" r="50"/>${mark}</svg>${cf}</div><h2>${esc(title)}</h2>${sub ? `<p>${esc(sub)}</p>` : ""}<button class="b" id="ovb">${esc(label)}</button>`;
+      hap(kind === "ok" ? "success" : kind === "bad" ? "error" : "warning");
+      o.querySelector("#ovb").onclick = () => { o.remove(); resolve(after); };
+    };
+    wait();
+    if (opt.topup) { setTimeout(() => fin("ok", t("کیف پول شما با موفقیت شارژ شد"), "", t("ادامه"), {to: "wallet"}), 900); return; }
+    let n = 0, stop = false;
+    const dest = d => d && d.agent_id ? {to: "agent_view", arg: d.agent_id} : (d && d.kind === "vpn" ? {to: "vpn_my"} : {to: "orders"});
+    const tick = async () => {
+      if (stop) return;
+      let d = null;
+      try { d = await api("order_get", {order_id: oid}); } catch (e) {}
+      if (d && d.status === "done") { stop = true; return fin("ok", t("سفارش شما با موفقیت انجام شد"), d.title || "", d.agent_id ? t("مشاهده‌ی مشخصات پنل") : t("ادامه"), dest(d)); }
+      if (d && d.status === "failed") { stop = true; return fin("bad", t("سفارش انجام نشد"), t("لطفاً با پشتیبانی تماس بگیرید؛ وضعیت را در «سفارش‌های من» هم می‌بینید."), t("سفارش‌های من"), {to: "orders"}); }
+      if (d && d.status === "manual_pending") { stop = true; return fin("wait", t("سفارش شما ثبت شد و در صف تحویل است"), t("به‌محض تحویل، در ربات اطلاع می‌دهیم."), t("ادامه"), {to: "orders"}); }
+      if (++n > 70) { stop = true; return fin("wait", t("سفارش شما در حال انجام است"), t("کمی بیشتر طول کشید؛ نتیجه در ربات و «سفارش‌های من» اعلام می‌شود."), t("ادامه"), {to: "orders"}); }
+      setTimeout(tick, n < 6 ? 1200 : 2200);
+    };
+    tick();
+  });
+}
+async function finishOrder(oid, opt) {         // نمایش انیمیشن و بعد رفتن به صفحه‌ی مناسب
+  const r = await orderOverlay(oid, opt);
+  stack.length = 0;
+  if (r.to === "agent_view") { current = {name: "agent_my"}; await render(); go("agent_view", r.arg); }
+  else { current = {name: r.to}; render(); }
+}
 function payWith(orderId, method, b, topup) {
   return run(b, async () => {
     const r = await api("pay", topup ? {topup, method} : {order_id: orderId, method});
-    if (r.done) { toast(r.message); stack.length = 0; current = {name: r.agent ? "agent_my" : (r.kind === "vpn" ? "vpn_my" : "orders")}; render(); return; }
+    if (r.done) { await finishOrder(r.order_id || orderId, {icon: r.agent ? "🧑‍💼" : r.kind === "vpn" ? "🛡" : r.kind === "premium" ? "👑" : r.kind === "gift" ? "🎁" : "⭐"}); return; }
     go("payinfo", r, true);
   });
 }
 
 function copyRow(label, v) { return `<div class="lbl">${esc(label)}</div><div class="copy"><code>${esc(v)}</code><button data-c="${esc(v)}">${esc(t("کپی"))}</button></div>`; }
 VIEWS.payinfo = async (r) => {
-  let h = `<h1>${r.method === "card" ? "💳" : r.method === "zarinpal" ? "🏦" : r.method === "ton" ? "💎" : "💵"} ${esc(t("اطلاعات پرداخت"))}</h1><div class="card"><div class="hint">${esc(t("مبلغ"))}</div><b style="font-size:20px">${esc(r.amount.text)}</b>
+  let h = `<h1>${r.method === "card" ? "💳" : r.method === "zarinpal" ? "🏦" : r.method === "ton" ? "💎" : r.method === "stars" ? "⭐" : "💵"} ${esc(t("اطلاعات پرداخت"))}</h1><div class="card"><div class="hint">${esc(t("مبلغ"))}</div><b style="font-size:20px">${esc(r.amount.text)}</b>
     <div class="hint">${esc(t("کد پیگیری: {code}", {code: r.code}))}</div></div>`;
   if (r.method === "card") {
     h += `<div class="card">${esc(t("مبلغ را به کارت زیر واریز کنید:"))}${copyRow(t("شماره کارت"), r.card)}${r.owner ? `<div class="hint">${esc(t("به نام: {owner}", {owner: r.owner}))}</div>` : ""}${r.note ? `<div class="hint">${esc(r.note)}</div>` : ""}</div>
       <h2>${esc(t("ارسال عکس رسید"))}</h2><input type="file" id="rf" accept="image/*" style="display:none"><button class="b sec" id="pick">📷 ${esc(t("انتخاب عکس رسید"))}</button><div id="pv"></div>
       <button class="b" id="send" disabled>${esc(t("ارسال رسید"))}</button>`;
+  } else if (r.method === "stars") {
+    h += `<div class="card">⭐ <b>${num(r.stars)}</b> ${esc(t("ستاره"))}<p class="hint">${esc(r.message || "")}</p></div><button class="b" id="tgc">💬 ${esc(t("رفتن به چت ربات"))}</button><button class="b sec" id="chk">🔄 ${esc(t("بررسی پرداخت"))}</button>`;
   } else if (r.method === "zarinpal") {
     h += `<button class="b" id="zp">${esc(t("پرداخت آنلاین"))}</button><p class="hint">${esc(t("بعد از پرداخت، نتیجه خودکار اعلام می‌شود."))}</p><button class="b sec" id="chk">🔄 ${esc(t("بررسی پرداخت"))}</button>`;
   } else {
@@ -981,7 +1055,16 @@ VIEWS.payinfo = async (r) => {
   $app.innerHTML = h;
   $app.querySelectorAll("[data-c]").forEach(b => b.onclick = () => copyText(b.dataset.c));
   const chk = $app.querySelector("#chk");
-  if (chk) chk.onclick = () => run(chk, async () => { const s = await api("check", {payment_id: r.payment_id}); toast(s.message, s.status === "rejected" || s.status === "expired"); if (s.status === "confirmed") { stack.length = 0; current = {name: "orders"}; render(); } });
+  let paying = false;
+  const paid = async s => { if (paying) return; paying = true; await finishOrder(s.order_id, s.order_id ? {} : {topup: true}); };
+  if (chk) chk.onclick = () => run(chk, async () => { const s = await api("check", {payment_id: r.payment_id}); if (s.status === "confirmed") return paid(s); toast(s.message, s.status === "rejected" || s.status === "expired"); });
+  const tgc = $app.querySelector("#tgc"); if (tgc) tgc.onclick = () => { try { TG.close(); } catch (e) {} };
+  if (r.method !== "card" && r.payment_id) {      // بررسی خودکار تا وقتی روی همین صفحه‌ایم
+    const me = current, iv = setInterval(async () => {
+      if (current !== me || paying) return clearInterval(iv);
+      try { const s = await api("check", {payment_id: r.payment_id}); if (s.status === "confirmed") { clearInterval(iv); paid(s); } else if (s.status === "rejected" || s.status === "expired") clearInterval(iv); } catch (e) { clearInterval(iv); }
+    }, 5000);
+  }
   const zp = $app.querySelector("#zp"); if (zp) zp.onclick = () => openLink(r.url);
   if (r.method === "card") setupReceipt(r);
 };
@@ -1237,17 +1320,24 @@ VIEWS.wallet = async () => {
   const lo = I.limits.min_topup, hi = I.limits.max_topup;
   const quick = [lo, lo * 5, lo * 10, lo * 20].filter((v, i, a) => v <= hi && a.indexOf(v) === i);
   let h = `<div class="hero"><small>${esc(t("موجودی کیف پول"))}</small><b>${num(r.balance)} <small>${esc(t("تومان"))}</small></b></div>
+    <div class="card prof"><h2><i>${IC("profile_title", "🪪")}</i> ${esc(L("profile_title", t("مشخصات شما")))}</h2>
+    <div class="kvr"><span>${IC("profile_id", "🆔")} ${esc(L("profile_id", t("شناسه")))}</span><b dir="ltr">${r.profile.id}</b></div>
+    ${r.profile.username ? `<div class="kvr"><span>${IC("profile_user", "👤")} ${esc(L("profile_user", t("نام کاربری")))}</span><b dir="ltr">@${esc(r.profile.username)}</b></div>` : ""}
+    <div class="kvr"><span>📅 ${esc(t("تاریخ عضویت"))}</span><b>${esc(fdate(r.profile.joined))}</b></div>
+    <div class="kvr"><span>🧾 ${esc(t("سفارش‌ها"))}</span><b>${num(r.profile.orders)}${r.profile.done ? ` <small class="hint">(${esc(t("تحویل‌شده: {n}", {n: num(r.profile.done)}))})</small>` : ""}</b></div>
+    <button class="b sec sm" id="wo" style="margin-top:8px">${esc(t("سفارش‌های من"))}</button></div>
     <h2>➕ ${esc(t("شارژ کیف پول"))}</h2><div class="card"><div class="hint">${esc(t("مبلغ شارژ را به تومان وارد کنید (حداقل {lo}):", {lo: num(lo)}))}</div>
     <input id="amt" type="number" inputmode="numeric" placeholder="${num(lo)}"><div class="chips">${quick.map(v => `<button data-v="${v}">${num(v)}</button>`).join("")}</div>
     <button class="b" id="top">${esc(t("ادامه"))}</button></div>`;
   if (r.history.length) h += `<h2>${esc(t("آخرین تراکنش‌ها:"))}</h2>` + r.history.map(x => `<div class="row" style="cursor:default"><span>${x.amount > 0 ? "➕" : "➖"} ${esc(x.reason)}<div class="sub">${esc(fdate(x.ts))}</div></span><b style="color:${x.amount > 0 ? "var(--ok)" : "var(--err)"}">${num(Math.abs(x.amount))}</b></div>`).join("");
   $app.innerHTML = h;
   $app.querySelectorAll(".chips button").forEach(b => b.onclick = () => { $app.querySelector("#amt").value = b.dataset.v; });
+  $app.querySelector("#wo").onclick = () => go("orders");
   const top = $app.querySelector("#top");
   top.onclick = () => { const v = parseInt($app.querySelector("#amt").value, 10); if (!(v >= lo && v <= hi)) return toast(t("مبلغ نامعتبر است. بین {lo} تا {hi} تومان، فقط عدد.", {lo: num(lo), hi: num(hi)}), true); go("topup", {amount: v, methods: r.methods}); };
 };
 VIEWS.topup = async (a) => {
-  const labels = {card: "💳 " + t("کارت به کارت"), zarinpal: "🏦 " + t("درگاه بانکی"), ton: "💎 " + t("تون (TON)"), usdt: "💵 " + t("تتر (USDT TRC20)")};
+  const labels = {card: "💳 " + t("کارت به کارت"), zarinpal: "🏦 " + t("درگاه بانکی"), ton: "💎 " + t("تون (TON)"), usdt: "💵 " + t("تتر (USDT TRC20)"), stars: "⭐ " + t("ستاره تلگرام")};
   $app.innerHTML = `<h1>➕ ${esc(t("شارژ کیف پول"))}</h1><div class="card"><b style="font-size:20px">${num(a.amount)} ${esc(t("تومان"))}</b></div><p class="hint">${esc(t("روش پرداخت را انتخاب کنید:"))}</p>` +
     (a.methods.length ? a.methods.map(m => `<button class="row" data-m="${m}"><span>${esc(labels[m] || m)}</span><span>›</span></button>`).join("") : `<div class="card hint">${esc(t("هیچ روش پرداختی فعال نیست."))}</div>`);
   $app.querySelectorAll("[data-m]").forEach(b => b.onclick = () => payWith(null, b.dataset.m, b, a.amount));
@@ -1400,6 +1490,7 @@ async function boot() {
       const tb = document.getElementById("thm"); if (tb) tb.style.display = I.skin_pick ? "" : "none"; }
   } catch (e) { return handleErr(e); }
   UI = I.ui || {};
+  applyBtnColors();
   document.documentElement.lang = I.lang;
   document.documentElement.dir = I.rtl ? "rtl" : "ltr";
   document.title = I.shop_name || "Shop";

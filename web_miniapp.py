@@ -56,6 +56,9 @@ def ui_card(request, shop: Shop) -> str:
         if key in skip:
             continue
         v = cur.get(key, {"t": "", "e": "", "c": ""})
+        if key.startswith("bc_"):                      # فقط رنگ
+            groups.setdefault(grp, []).append(f"<tr><td>{e(ic)} <code>{e(key)}</code></td><td>{e(_(d))}</td><td></td><td>{_color_cell(key, cur.get(key, {'t': '', 'e': '', 'c': ''}))}</td></tr>")
+            continue
         field = (f"<textarea name='t_{e(key)}' rows='3' maxlength='{mu.MAX_AREA}' placeholder='{e(_(d))}'>{e(v['t'])}</textarea>" if area else
                  f"<input class='m' name='t_{e(key)}' maxlength='{mu.MAX_TEXT}' value='{e(v['t'])}' placeholder='{e(_(d))}'>")
         emo = f"<input class='s' name='e_{e(key)}' value='{e(v['e'])}' placeholder='ID' inputmode='numeric'>" if key != "welcome" else ""

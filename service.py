@@ -936,7 +936,12 @@ class Shop:
     async def stars_ok(self, ctx) -> bool:
         """پرداخت با استارز فقط برای سفارش VPN/نماینده و وقتی نرخ ستاره در دسترس است."""
         s = await self.settings()
-        if s.get("pm_stars", "0") != "1" or not str(ctx).isdigit():
+        if s.get("pm_stars", "0") != "1":
+            return False
+        ctx = str(ctx)
+        if ctx.startswith("t") and ctx[1:].isdigit():          # شارژ کیف پول
+            return self.pricing.toman_to_stars(int(ctx[1:])) > 0
+        if not ctx.isdigit():
             return False
         o = await self.db.get_order(int(ctx))
         return bool(o and str(o.get("ref") or "").startswith("vpn:") and self.pricing.toman_to_stars(o["amount"]) > 0)
@@ -1037,12 +1042,12 @@ class Shop:
                 ikb([[btn(tr("پرداخت آنلاین"), url=url, role="pay")]])
 
         if method == "stars":
-            if not (order_id and await self.stars_ok(order_id)):
+            if not await self.stars_ok(order_id if order_id else f"t{int(amount)}"):
                 raise ValueError(tr("پرداخت با استارز برای این سفارش فعال نیست."))
             n = self.pricing.toman_to_stars(amount)
             pid = await self.db.create_payment(user_id, order_id, "stars", amount, n)
             from aiogram.types import LabeledPrice
-            await self.bot.send_invoice(user_id, title=tr("پرداخت سفارش #{oid}", oid=order_id)[:32],
+            await self.bot.send_invoice(user_id, title=(tr("پرداخت سفارش #{oid}", oid=order_id) if order_id else tr("شارژ کیف پول"))[:32],
                                         description=tr("پرداخت {n} ستاره تلگرام", n=n)[:255], payload=f"pay:{pid}",
                                         currency="XTR", prices=[LabeledPrice(label="Stars", amount=n)])
             return pid, tr("⭐ فاکتور {n} ستاره بالا ارسال شد؛ دکمه‌ی پرداخت زیر آن را بزنید.", n=n), None
