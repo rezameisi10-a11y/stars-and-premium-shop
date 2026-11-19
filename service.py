@@ -41,7 +41,7 @@ STATUS_FA = {
     "cancelled": N_("❌ لغو شد"),
 }
 PAY_STATUS_FA = {"pending": N_("⏳ منتظر پرداخت"), "waiting_admin": N_("🧾 منتظر تأیید ادمین"), "confirmed": N_("✅ تأیید شد"),
-                 "rejected": N_("❌ رد شد"), "expired": N_("⌛ منقضی"), "failed": N_("⚠️ ناموفق")}
+                 "rejected": N_("❌ رد شد"), "cancelled": N_("🚫 لغو شد"), "expired": N_("⌛ منقضی"), "failed": N_("⚠️ ناموفق")}
 METHOD_FA = {"wallet": N_("کیف پول"), "card": N_("کارت به کارت"), "zarinpal": N_("درگاه بانکی"),
              "ton": N_("تون (TON)"), "usdt": N_("تتر (USDT TRC20)"), "stars": N_("ستاره تلگرام")}
 REJECT_REASONS = {"fake": N_("رسید جعلی/ساختگی بود"), "amount": N_("مبلغ واریزی کافی نبود"), "unclear": N_("رسید ناخوانا یا ناقص بود"),
@@ -934,7 +934,7 @@ class Shop:
 
     # ---------- کیبورد روش‌های پرداخت ----------
     async def stars_ok(self, ctx) -> bool:
-        """پرداخت با استارز فقط برای سفارش VPN/نماینده و وقتی نرخ ستاره در دسترس است."""
+        """پرداخت با استارز برای همه‌ی سفارش‌ها و شارژ کیف پول، وقتی نرخ ستاره در دسترس است."""
         s = await self.settings()
         if s.get("pm_stars", "0") != "1":
             return False
@@ -944,7 +944,7 @@ class Shop:
         if not ctx.isdigit():
             return False
         o = await self.db.get_order(int(ctx))
-        return bool(o and str(o.get("ref") or "").startswith("vpn:") and self.pricing.toman_to_stars(o["amount"]) > 0)
+        return bool(o and self.pricing.toman_to_stars(o["amount"]) > 0)
 
     async def pay_methods_kb(self, ctx: str, user_id: int, allow_wallet: bool, tr=None, step=None):
         """step: None → خلاصه‌ی سفارش (کیف پول، کد تخفیف، «پرداخت») برای سفارش‌ها؛ "methods" → فهرست روش‌های پرداخت.
@@ -959,7 +959,7 @@ class Shop:
                 rows.append([btn(tr("👛 کیف پول (موجودی {b} ت)", b=fmt(u["balance"])), f"pay:wallet:{ctx}", role="pay")])
             rows.append([btn(tr("🏷 کد تخفیف دارم"), f"disc:{ctx}", role="action")])
             rows.append([btn(tr("💳 پرداخت"), f"pm:{ctx}", role="pay")])
-            rows.append([btn(tr("🔙 منوی اصلی"), "menu", role="back")])
+            rows.append([btn(tr("❌ انصراف"), f"xo:{ctx}", role="back")])
             return ikb(rows)
         rows = []
         if allow_wallet and s["pm_wallet"] == "1" and not two_step:
@@ -979,12 +979,25 @@ class Shop:
             if s["pm_wallet"] == "1":
                 u = await self.db.get_user(user_id)
                 rows.append([btn(tr("👛 کیف پول (موجودی {b} ت)", b=fmt(u["balance"])), f"pay:wallet:{ctx}", role="pay")])
-            rows.append([btn(tr("🔙 بازگشت به سفارش"), f"ord:{ctx}", role="back")])
+            rows.append([btn(tr("🔙 بازگشت به سفارش"), f"ord:{ctx}", role="back"), btn(tr("❌ انصراف"), f"xo:{ctx}", role="back")])
             return ikb(rows)
         if allow_wallet and not ctx.startswith("t"):
             rows.append([btn(tr("🏷 کد تخفیف دارم"), f"disc:{ctx}", role="action")])
-        rows.append([btn(tr("🔙 منوی اصلی"), "menu", role="back")])
+        rows.append([btn(tr("❌ انصراف"), f"xo:{ctx}", role="back")])
         return ikb(rows)
+
+    async def cancel_payment(self, pid, uid) -> bool:
+        """انصراف از یک پرداخت در انتظار (سفارش سر جایش می‌ماند تا روش دیگری انتخاب شود)."""
+        return await self.db.cancel_payment(int(pid), uid)
+
+    async def cancel_order(self, oid, uid):
+        """انصراف از سفارشِ پرداخت‌نشده؛ پرداخت‌های منتظرِ آن هم لغو می‌شوند. خروجی True/False."""
+        o = await self.db.get_order(int(oid))
+        if not o or o["user_id"] != uid or o["status"] != "pending_payment":
+            return False
+        for p in await self.db.all("SELECT id FROM payments WHERE order_id=? AND user_id=? AND status='pending'", (o["id"], uid)):
+            await self.db.cancel_payment(p["id"], uid)
+        return await self.db.transition(o["id"], ["pending_payment"], "cancelled", "انصراف کاربر")
 
     # ---------- کد تخفیف ----------
     async def apply_discount(self, oid, user_id, code, tr=None):

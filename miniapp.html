@@ -974,7 +974,9 @@ VIEWS.order = async (oid) => {
   if (wallet) html += `<button class="b ok" data-m="wallet">👛 ${esc(t("پرداخت از کیف پول (موجودی {b})", {b: num(wallet.balance)}))}</button>`;
   if (I.pay_step) html += others.length ? `<button class="b" id="paynow">💳 ${esc(t("پرداخت"))}</button>` : (wallet ? "" : `<div class="card hint">${esc(t("هیچ روش پرداختی فعال نیست."))}</div>`);
   else html += others.map(m => `<button class="b" data-m="${m.id}">${esc(m.label)}</button>`).join("");
+  html += `<button class="b sec" id="xo">❌ ${esc(t("انصراف از سفارش"))}</button>`;
   $app.innerHTML = html;
+  $app.querySelector("#xo").onclick = (ev) => run(ev.currentTarget, async () => { await api("order_cancel", {order_id: o.id}); toast(t("🚫 لغو شد.")); home(); });
   const da = $app.querySelector("#da");
   da.onclick = () => run(da, async () => { const c = $app.querySelector("#dc").value.trim(); if (!c) return; try { await api("discount", {order_id: o.id, code: c}); toast(t("✅ کد تخفیف اعمال شد.")); render(); } catch (e) { handleErr(e); } });
   $app.querySelectorAll("[data-m]").forEach(b => b.onclick = () => payWith(o.id, b.dataset.m, b));
@@ -984,7 +986,8 @@ VIEWS.order = async (oid) => {
 VIEWS.methods = async (a) => {
   const o = await api("order_get", {order_id: a.id});
   $app.innerHTML = `<h1>💳 ${esc(t("پرداخت"))}</h1><div class="card">${priceHtml(o)}</div><p class="hint">${esc(t("روش پرداخت را انتخاب کنید:"))}</p>` +
-    a.methods.map(m => `<button class="row" data-m="${m.id}"><span>${esc(m.label)}</span><span>›</span></button>`).join("");
+    a.methods.map(m => `<button class="row" data-m="${m.id}"><span>${esc(m.label)}</span><span>›</span></button>`).join("") + `<button class="b sec" id="xc">❌ ${esc(t("انصراف"))}</button>`;
+  $app.querySelector("#xc").onclick = back;
   $app.querySelectorAll("[data-m]").forEach(b => b.onclick = () => payWith(a.id, b.dataset.m, b));
 };
 /* ===== نتیجه‌ی سفارش: چرخش ← تیک/خطا ===== */
@@ -1052,10 +1055,12 @@ VIEWS.payinfo = async (r) => {
       ${r.memo ? copyRow("Comment / Memo", r.memo) + `<p class="hint">⚠️ ${esc(t("حتماً در بخش Comment/Memo این متن را وارد کنید."))}</p>` : `<p class="hint">⚠️ ${esc(t("مقدار باید با همین اعشار ارسال شود تا پرداخت شما شناسایی شود."))}</p>`}</div>
       <button class="b" id="chk">🔄 ${esc(t("بررسی پرداخت"))}</button>`;
   }
+  let paying = false;
+  h += `<button class="b danger" id="xp">❌ ${esc(t("انصراف از پرداخت"))}</button>`;
   $app.innerHTML = h;
+  $app.querySelector("#xp").onclick = (ev) => run(ev.currentTarget, async () => { const c = await api("pay_cancel", {payment_id: r.payment_id}); paying = true; toast(c.message); back(); });
   $app.querySelectorAll("[data-c]").forEach(b => b.onclick = () => copyText(b.dataset.c));
   const chk = $app.querySelector("#chk");
-  let paying = false;
   const paid = async s => { if (paying) return; paying = true; await finishOrder(s.order_id, s.order_id ? {} : {topup: true}); };
   if (chk) chk.onclick = () => run(chk, async () => { const s = await api("check", {payment_id: r.payment_id}); if (s.status === "confirmed") return paid(s); toast(s.message, s.status === "rejected" || s.status === "expired"); });
   const tgc = $app.querySelector("#tgc"); if (tgc) tgc.onclick = () => { try { TG.close(); } catch (e) {} };
@@ -1315,18 +1320,30 @@ VIEWS.orders = async () => {
   $app.querySelectorAll(".row").forEach(b => b.onclick = () => go("order", +b.dataset.id));
 };
 
+const kv = (k, v) => `<div class="kvr"><span>${k}</span>${v}</div>`;
 VIEWS.wallet = async () => {
   const r = await api("wallet");
   const lo = I.limits.min_topup, hi = I.limits.max_topup;
   const quick = [lo, lo * 5, lo * 10, lo * 20].filter((v, i, a) => v <= hi && a.indexOf(v) === i);
   let h = `<div class="hero"><small>${esc(t("موجودی کیف پول"))}</small><b>${num(r.balance)} <small>${esc(t("تومان"))}</small></b></div>
     <div class="card prof"><h2><i>${IC("profile_title", "🪪")}</i> ${esc(L("profile_title", t("مشخصات شما")))}</h2>
-    <div class="kvr"><span>${IC("profile_id", "🆔")} ${esc(L("profile_id", t("شناسه")))}</span><b dir="ltr">${r.profile.id}</b></div>
-    ${r.profile.username ? `<div class="kvr"><span>${IC("profile_user", "👤")} ${esc(L("profile_user", t("نام کاربری")))}</span><b dir="ltr">@${esc(r.profile.username)}</b></div>` : ""}
-    <div class="kvr"><span>📅 ${esc(t("تاریخ عضویت"))}</span><b>${esc(fdate(r.profile.joined))}</b></div>
-    <div class="kvr"><span>🧾 ${esc(t("سفارش‌ها"))}</span><b>${num(r.profile.orders)}${r.profile.done ? ` <small class="hint">(${esc(t("تحویل‌شده: {n}", {n: num(r.profile.done)}))})</small>` : ""}</b></div>
+    ${kv(IC("profile_id", "🆔") + " " + esc(L("profile_id", t("شناسه"))), `<b dir="ltr">${r.profile.id}</b>`)}
+    ${r.profile.name ? kv("🙍 " + esc(t("نام")), `<b>${esc(r.profile.name)}</b>`) : ""}
+    ${r.profile.username ? kv(IC("profile_user", "👤") + " " + esc(L("profile_user", t("نام کاربری"))), `<b dir="ltr">@${esc(r.profile.username)}</b>`) : ""}
+    ${kv("📅 " + esc(t("تاریخ عضویت")), `<b>${esc(fdate(r.profile.joined))}</b>`)}
+    ${r.profile.last_seen ? kv("🕒 " + esc(t("آخرین بازدید")), `<b>${esc(fdate(r.profile.last_seen))}</b>`) : ""}
+    ${kv("🌐 " + esc(t("زبان")), `<b>${esc(r.profile.lang)}</b>`)}
+    ${r.profile.discount ? kv("🎁 " + esc(t("تخفیف اختصاصی")), `<b>${r.profile.discount}٪</b>`) : ""}
+    ${kv("🧾 " + esc(t("سفارش‌ها")), `<b>${num(r.profile.orders)}</b>`)}
+    ${kv("✅ " + esc(t("تحویل‌شده")), `<b>${num(r.profile.done)}</b>`)}
+    ${r.profile.pending ? kv("⏳ " + esc(t("در انتظار پرداخت")), `<b>${num(r.profile.pending)}</b>`) : ""}
+    ${r.profile.issue ? kv("🕓 " + esc(t("در صف/دارای مشکل")), `<b>${num(r.profile.issue)}</b>`) : ""}
+    ${kv("📈 " + esc(t("مجموع خرید")), `<b>${esc(r.profile.spent.short)}</b>`)}
+    ${kv("➕ " + esc(t("مجموع شارژ")), `<b>${esc(r.profile.topped.short)}</b>`)}
+    ${kv("🤝 " + esc(t("دعوت‌شده‌ها")), `<b>${num(r.profile.invited)}</b>`)}
+    ${r.profile.earned.short && r.profile.invited ? kv("💰 " + esc(t("مجموع پورسانت")), `<b>${esc(r.profile.earned.short)}</b>`) : ""}
     <button class="b sec sm" id="wo" style="margin-top:8px">${esc(t("سفارش‌های من"))}</button></div>
-    <h2>➕ ${esc(t("شارژ کیف پول"))}</h2><div class="card"><div class="hint">${esc(t("مبلغ شارژ را به تومان وارد کنید (حداقل {lo}):", {lo: num(lo)}))}</div>
+    <h2>➕ ${esc(t("شارژ کیف پول"))}</h2><div class="card"><div class="hint">${esc(t("مبلغ شارژ را به تومان وارد کنید (حداقل {lo}):", {lo: num(lo)}))} · ${esc(t("حداکثر {hi}", {hi: num(hi)}))}</div>
     <input id="amt" type="number" inputmode="numeric" placeholder="${num(lo)}"><div class="chips">${quick.map(v => `<button data-v="${v}">${num(v)}</button>`).join("")}</div>
     <button class="b" id="top">${esc(t("ادامه"))}</button></div>`;
   if (r.history.length) h += `<h2>${esc(t("آخرین تراکنش‌ها:"))}</h2>` + r.history.map(x => `<div class="row" style="cursor:default"><span>${x.amount > 0 ? "➕" : "➖"} ${esc(x.reason)}<div class="sub">${esc(fdate(x.ts))}</div></span><b style="color:${x.amount > 0 ? "var(--ok)" : "var(--err)"}">${num(Math.abs(x.amount))}</b></div>`).join("");
@@ -1340,6 +1357,8 @@ VIEWS.topup = async (a) => {
   const labels = {card: "💳 " + t("کارت به کارت"), zarinpal: "🏦 " + t("درگاه بانکی"), ton: "💎 " + t("تون (TON)"), usdt: "💵 " + t("تتر (USDT TRC20)"), stars: "⭐ " + t("ستاره تلگرام")};
   $app.innerHTML = `<h1>➕ ${esc(t("شارژ کیف پول"))}</h1><div class="card"><b style="font-size:20px">${num(a.amount)} ${esc(t("تومان"))}</b></div><p class="hint">${esc(t("روش پرداخت را انتخاب کنید:"))}</p>` +
     (a.methods.length ? a.methods.map(m => `<button class="row" data-m="${m}"><span>${esc(labels[m] || m)}</span><span>›</span></button>`).join("") : `<div class="card hint">${esc(t("هیچ روش پرداختی فعال نیست."))}</div>`);
+  $app.innerHTML += `<button class="b sec" id="xc">❌ ${esc(t("انصراف"))}</button>`;
+  $app.querySelector("#xc").onclick = back;
   $app.querySelectorAll("[data-m]").forEach(b => b.onclick = () => payWith(null, b.dataset.m, b, a.amount));
 };
 

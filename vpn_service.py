@@ -239,6 +239,36 @@ def _uptime(sec) -> str:
     return (f"{d} روز و " if d else "") + f"{h} ساعت و {r // 60} دقیقه"
 
 
+_NODE_ST = {"connected": "🟢 متصل", "healthy": "🟢 متصل", "connecting": "🟡 در حال اتصال", "error": "🔴 خطا", "unhealthy": "🔴 خطا",
+            "disabled": "⚫️ غیرفعال", "limited": "🟠 سقف حجم پر شده", "none": "⚪️ نامشخص"}
+
+
+def nodes_summary(nodes) -> tuple[int, int]:
+    ok = sum(1 for n in nodes if n.get("status") in ("connected", "healthy"))
+    return ok, len(nodes)
+
+
+def render_nodes(nodes: list) -> str:
+    """وضعیت هر نود جداگانه."""
+    ok, total = nodes_summary(nodes)
+    out = [f"\n🌍 <b>نودها</b> ({ltr(f'{ok}/{total}')} متصل)"]
+    for n in nodes:
+        stt = _NODE_ST.get(n.get("status") or "none", "⚪️ " + esc(n.get("status") or "نامشخص"))
+        rows = [f"وضعیت: {stt}"]
+        if n.get("address"):
+            rows.append(f"آدرس: {ltr(esc(str(n['address'])) + (':' + str(n['port']) if n.get('port') else ''))}")
+        if n.get("xray") or n.get("node_ver"):
+            rows.append("نسخه: " + ltr(" | ".join(x for x in (("Xray " + str(n["xray"])) if n.get("xray") else "", ("Node " + str(n["node_ver"])) if n.get("node_ver") else "") if x)))
+        if n.get("up") is not None or n.get("down") is not None:
+            rows.append(f"ترافیک: ↑ {_hb(n.get('up') or 0)} · ↓ {_hb(n.get('down') or 0)}")
+        if n.get("coef") not in (None, "", 1, 1.0):
+            rows.append(f"ضریب مصرف: {ltr(n['coef'])}")
+        if n.get("msg") and n.get("status") not in ("connected", "healthy"):
+            rows.append(f"پیام: <code>{esc(n['msg'])}</code>")
+        out.append(f"\n▫️ <b>{esc(n['name'])}</b>\n" + _tree(rows))
+    return "\n".join(out)
+
+
 def render_status(st: dict) -> str:
     """متن مانیتورینگ سرور؛ فقط بخش‌هایی که پنل داده نشان داده می‌شود."""
     L = ["🖥 <b>وضعیت سرور</b>"]
@@ -268,6 +298,8 @@ def render_status(st: dict) -> str:
     if st.get("xray_state"):
         run = str(st["xray_state"]).lower() == "running"
         L.append("\n🛡 <b>Xray</b>\n" + _tree([f"وضعیت: {'🟢 فعال' if run else '🔴 ' + esc(st['xray_state'])}"] + ([f"نسخه: {ltr(st['xray_version'])}"] if st.get("xray_version") else [])))
+    if st.get("nodes"):
+        L.append(render_nodes(st["nodes"]))
     tail = []
     if st.get("version"):
         tail.append(f"🏷 <b>نسخه پنل:</b> {ltr(st['version'])}")

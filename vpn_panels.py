@@ -337,7 +337,28 @@ class Marzban(BasePanel):
             out["up_speed"], out["down_speed"] = int(out["up_speed"] or 0), int(out["down_speed"] or 0)
         except (TypeError, ValueError):
             pass
-        return {k: v for k, v in out.items() if v not in (None, "")}
+        out = {k: v for k, v in out.items() if v not in (None, "")}
+        nodes = await self.nodes()
+        if nodes:
+            out["nodes"] = nodes
+        return out
+
+    async def nodes(self) -> list:
+        """وضعیت نودها (Marzban/PasarGuard: GET /nodes). اگر پنل نود نداشته باشد یا دسترسی نباشد، لیست خالی."""
+        try:
+            d = await self._call("GET", "/nodes")
+        except PanelError:
+            return []
+        items = d.get("nodes") if isinstance(d, dict) else d
+        out = []
+        for n in items or []:
+            if not isinstance(n, dict):
+                continue
+            out.append({"id": n.get("id"), "name": str(n.get("name") or n.get("id") or "-"), "status": str(n.get("status") or "").lower(),
+                        "address": n.get("address") or "", "port": n.get("port"), "xray": n.get("xray_version") or "", "node_ver": n.get("node_version") or "",
+                        "up": n.get("uplink"), "down": n.get("downlink"), "coef": n.get("usage_coefficient"), "msg": str(n.get("message") or "")[:160],
+                        "since": n.get("last_status_change")})
+        return out
 
     def _sample_names(self) -> list:
         """«کانفیگ نمونه»: مقدارهای اینباند که با @ شروع می‌شوند، نام یک کاربر موجود در پنل‌اند (نماینده‌ی محدود اجازه‌ی خواندن اینباندها را ندارد)."""

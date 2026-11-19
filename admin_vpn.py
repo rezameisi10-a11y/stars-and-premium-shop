@@ -2338,6 +2338,10 @@ async def _health_screen(cb: CallbackQuery, shop: Shop):
             pc = v._pct(m.get(k + "_used"), m.get(k + "_total"))
             if pc is not None:
                 bits.append(f"{lb} {pc:.0f}٪")
+        if m.get("nodes"):
+            from vpn_service import nodes_summary
+            nk, nt = nodes_summary(m["nodes"])
+            bits.append(f"{'🟢' if nk == nt else '🟠'} نود {nk}/{nt}")
         if p.get("capacity"):
             bits.append(f"ظرفیت {await shop.db.panel_load(p['id'])}/{p['capacity']}")
         lines.append(f"\n{'🟢' if h['ok'] else '🔴'} <b>{esc(p['name'])}</b> — {_ago(h['last'])}{closed}"

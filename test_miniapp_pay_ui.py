@@ -35,6 +35,38 @@ async def run(tmp):
     else:
         print("  (نرخ ستاره در این محیط موجود نیست؛ بخش فاکتور رد شد)")
     # خرید با کیف پول: order_id برگردد
+    # --- انصراف + استارز برای سفارش غیر VPN
+    prem = (await db.all("SELECT * FROM products WHERE kind='premium' LIMIT 1")) or (await db.all("SELECT * FROM products LIMIT 1"))
+    prod = prem[0]
+    oid = await db.create_order(5, prod, 5, None, 90000)
+    if shop.pricing.toman_to_stars(90000) > 0:
+        ok(await shop.stars_ok(oid), "استارز برای سفارش غیر VPN فعال")
+        ok("stars" in [m["id"] for m in await ma._pay_methods(c, oid)], "stars در روش‌های سفارش")
+    await shop.set_setting("pm_card", "1"); await shop.set_setting("card_number", "6037997000000000")
+    r = await ma.a_pay(c, {"order_id": oid, "method": "card"})
+    ok(r["order_id"] == oid, "a_pay: order_id")
+    await ma.a_pay_cancel(c, {"payment_id": r["payment_id"]})
+    ok((await db.get_payment(r["payment_id"]))["status"] == "cancelled", "انصراف از پرداخت")
+    try:
+        await ma.a_pay_cancel(c, {"payment_id": r["payment_id"]}); ok(False, "دوباره")
+    except ma.ApiError:
+        ok(True, "انصراف دوباره رد شد")
+    ok((await db.get_order(oid))["status"] == "pending_payment", "سفارش بعد از انصراف از پرداخت سر جایش")
+    r2 = await ma.a_pay(c, {"order_id": oid, "method": "card"})
+    await db.update_payment(r2["payment_id"], status="waiting_admin")
+    try:
+        await ma.a_pay_cancel(c, {"payment_id": r2["payment_id"]}); ok(False, "رسید")
+    except ma.ApiError:
+        ok(True, "پرداخت با رسیدِ ارسال‌شده قابل انصراف نیست")
+    await db.update_payment(r2["payment_id"], status="pending")
+    await ma.a_order_cancel(c, {"order_id": oid})
+    ok((await db.get_order(oid))["status"] == "cancelled" and (await db.get_payment(r2["payment_id"]))["status"] == "cancelled", "انصراف از سفارش + پرداخت‌هایش")
+    c9 = ma.Ctx(shop, {"id": 9, "first_name": "x"}, "fa")
+    ok(not await shop.cancel_order(oid, 9) and not await shop.cancel_payment(r["payment_id"], 9), "دیگران نمی‌توانند")
+    kb = await shop.pay_methods_kb("t60000", 5, allow_wallet=False)
+    ok(any(b.callback_data == "xo:t60000" for row in kb.inline_keyboard for b in row), "دکمه‌ی انصراف در ربات")
+    w = await ma.a_wallet(c, {})
+    ok(w["limits"]["min"] > 0 and "spent" in w["profile"] and "invited" in w["profile"], "پروفایل کامل + حدود شارژ")
     print("DONE")
 
 async def main():

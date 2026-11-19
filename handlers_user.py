@@ -390,7 +390,53 @@ async def pay(cb: CallbackQuery, shop: Shop, state: FSMContext, tr):
         await state.set_state(Buy.receipt)
         await state.update_data(payment_id=pid)
     protect = method == "card" and (await shop.settings()).get("card_protect", "0") == "1"   # جلوگیری از اسکرین‌شات/فوروارد شماره کارت
-    await cb.message.answer(text, reply_markup=kb, protect_content=protect or None)
+    rows = [list(r) for r in kb.inline_keyboard] if kb else []
+    rows.append([btn(tr("❌ انصراف"), f"xp:{pid}:{ctx}", role="back")])
+    await cb.message.answer(text, reply_markup=ikb(rows), protect_content=protect or None)
+    await cb.answer()
+
+
+async def _methods_again(cb, shop, tr, ctx):
+    """بعد از انصراف: برگشت به انتخاب روش پرداخت (سفارش یا شارژ)."""
+    uid = cb.from_user.id
+    if ctx.startswith("t"):
+        await cb.message.answer(tr("شارژ کیف پول به مبلغ <b>{amount}</b> تومان", amount=fmt(int(ctx[1:]))) + "\n" + tr("روش پرداخت را انتخاب کنید:"),
+                                reply_markup=await shop.pay_methods_kb(ctx, uid, allow_wallet=False, tr=tr))
+    else:
+        o = await shop.db.get_order(int(ctx))
+        if o and o["user_id"] == uid and o["status"] == "pending_payment":
+            await cb.message.answer(tr("روش پرداخت را انتخاب کنید:"), reply_markup=await shop.pay_methods_kb(ctx, uid, True, tr, step="methods"))
+
+
+@router.callback_query(F.data.startswith("xp:"))
+async def cancel_pay(cb: CallbackQuery, shop: Shop, state: FSMContext, tr):
+    """انصراف از یک پرداخت در انتظار (کارت/درگاه/کریپتو/استارز)."""
+    _, pid, ctx = cb.data.split(":")
+    if not await shop.cancel_payment(int(pid), cb.from_user.id):
+        await cb.answer(tr("این پرداخت دیگر قابل انصراف نیست (رسید ارسال شده یا پرداخت بسته شده است)."), show_alert=True)
+        return
+    await state.clear()
+    try:
+        await cb.message.edit_reply_markup(reply_markup=None)
+    except Exception:  # noqa: BLE001
+        pass
+    await cb.message.answer(tr("🚫 پرداخت لغو شد. اگر مبلغی واریز کرده‌اید با پشتیبانی تماس بگیرید."))
+    await _methods_again(cb, shop, tr, ctx)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("xo:"))
+async def cancel_order(cb: CallbackQuery, shop: Shop, state: FSMContext, tr):
+    """انصراف از سفارش پرداخت‌نشده یا از شارژ کیف پول."""
+    ctx = cb.data.split(":")[1]
+    await state.clear()
+    if not ctx.startswith("t"):
+        await shop.cancel_order(int(ctx), cb.from_user.id)
+    try:
+        await cb.message.edit_reply_markup(reply_markup=None)
+    except Exception:  # noqa: BLE001
+        pass
+    await cb.message.answer(tr("🚫 لغو شد.") + " " + tr("برای ادامه از منوی اصلی استفاده کنید."), reply_markup=ikb([[btn(tr("🔙 منوی اصلی"), "menu", role="back")]]))
     await cb.answer()
 
 

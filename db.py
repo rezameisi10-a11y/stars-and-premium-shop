@@ -817,6 +817,11 @@ class DB(VpnDB, TicketDB):
                 await self.conn.rollback()
                 return False
 
+    async def cancel_payment(self, pid, uid) -> bool:
+        """انصراف کاربر: فقط پرداخت منتظرِ خودِ کاربر (رسیدِ فرستاده‌شده = waiting_admin قابل انصراف نیست)."""
+        cur = await self.run("UPDATE payments SET status='cancelled' WHERE id=? AND user_id=? AND status='pending'", (pid, uid))
+        return cur.rowcount == 1
+
     async def reject_payment(self, pid, reason: str = "") -> bool:
         cur = await self.run("UPDATE payments SET status='rejected', reject_reason=? WHERE id=? AND status IN ('pending','waiting_admin')", (reason[:300] or None, pid))
         return cur.rowcount == 1

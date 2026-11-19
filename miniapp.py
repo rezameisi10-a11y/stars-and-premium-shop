@@ -336,7 +336,7 @@ async def a_pay(ctx: Ctx, d: dict) -> dict:
     except ValueError as e:
         raise ApiError(str(e))
     p = await shop.db.get_payment(pid)
-    out = {"payment_id": pid, "method": method, "amount": _money(ctx, amount), "code": f"P{pid}"}
+    out = {"payment_id": pid, "method": method, "amount": _money(ctx, amount), "code": f"P{pid}", "order_id": order["id"] if order else None}
     if method == "card":
         out.update(card=s["card_number"], owner=s["card_owner"] or "", note=s.get("card_note") or "")
     elif method == "zarinpal":
@@ -348,6 +348,18 @@ async def a_pay(ctx: Ctx, d: dict) -> dict:
     elif method == "stars":
         out.update(stars=int(p["crypto_amount"]), message=ctx.tr("⭐ فاکتور در چت ربات ارسال شد؛ آنجا پرداخت کنید."))
     return out
+
+
+async def a_pay_cancel(ctx: Ctx, d: dict) -> dict:
+    if not await ctx.shop.cancel_payment(int(d.get("payment_id") or 0), ctx.uid):
+        raise ApiError(ctx.tr("این پرداخت دیگر قابل انصراف نیست (رسید ارسال شده یا پرداخت بسته شده است)."), 409)
+    return {"ok": True, "message": ctx.tr("🚫 پرداخت لغو شد. اگر مبلغی واریز کرده‌اید با پشتیبانی تماس بگیرید.")}
+
+
+async def a_order_cancel(ctx: Ctx, d: dict) -> dict:
+    if not await ctx.shop.cancel_order(int(d.get("order_id") or 0), ctx.uid):
+        raise ApiError(ctx.tr("این سفارش دیگر قابل پرداخت نیست."), 409)
+    return {"ok": True, "message": ctx.tr("🚫 لغو شد.")}
 
 
 async def a_receipt(ctx: Ctx, d: dict) -> dict:
@@ -392,10 +404,18 @@ async def a_wallet(ctx: Ctx, d: dict) -> dict:
     shop = ctx.shop
     u = await shop.db.get_user(ctx.uid)
     hist = await shop.db.wallet_history(ctx.uid, limit=20)
-    orders = await shop.db.user_orders(ctx.uid, 200)
+    st = await shop.db.one("SELECT COUNT(*) n, COALESCE(SUM(status='done'),0) done, COALESCE(SUM(status='pending_payment'),0) pending, "
+                           "COALESCE(SUM(status IN ('failed','manual_pending')),0) issue, COALESCE(SUM(CASE WHEN status='done' THEN amount ELSE 0 END),0) spent "
+                           "FROM orders WHERE user_id=?", (ctx.uid,))
+    topped = (await shop.db.one("SELECT COALESCE(SUM(amount),0) s FROM wallet_tx WHERE user_id=? AND reason LIKE 'topup%'", (ctx.uid,)))["s"]
+    ref = await shop.db.referral_stats(ctx.uid)
+    lang_name = next((l["name"] for l in shop.langs if l["code"] == ctx.lang), ctx.lang) if getattr(shop, "langs", None) else ctx.lang
     return {"balance": u["balance"], "methods": [m["id"] for m in await _pay_methods(ctx, allow_wallet=False, topup=int(float((await shop.settings())["min_topup"])))],
-            "profile": {"id": ctx.uid, "username": u.get("username") or "", "name": u.get("first_name") or "", "joined": u["created_at"],
-                        "orders": len(orders), "done": sum(1 for o in orders if o["status"] == "done")},
+            "limits": {"min": int(float((await shop.settings())["min_topup"])), "max": int(float((await shop.settings())["max_topup"]))},
+            "profile": {"id": ctx.uid, "username": u.get("username") or "", "name": tg_name(ctx.tg), "joined": u["created_at"], "last_seen": u.get("last_seen") or 0,
+                        "lang": lang_name, "discount": u.get("personal_discount") or 0,
+                        "orders": st["n"], "done": st["done"], "pending": st["pending"], "issue": st["issue"], "spent": _money(ctx, st["spent"]),
+                        "topped": _money(ctx, topped), "invited": ref["count"], "earned": _money(ctx, ref["earned"])},
             "history": [{"amount": t["amount"], "reason": t["reason"].split(" ")[0].split(":")[0], "ts": t["created_at"]} for t in hist]}
 
 
@@ -871,7 +891,7 @@ async def a_ai_reset(ctx: Ctx, d: dict) -> dict:
     return {}
 
 
-ACTIONS = {"ai_ask": a_ai_ask, "ai_human": a_ai_human, "ai_reset": a_ai_reset, "vpn_plans": a_vpn_plans, "vpn_order": a_vpn_order, "vpn_test": a_vpn_test, "vpn_test_options": a_vpn_test_options, "vpn_services": a_vpn_services, "vpn_service": a_vpn_service,
+ACTIONS = {"pay_cancel": a_pay_cancel, "order_cancel": a_order_cancel, "ai_ask": a_ai_ask, "ai_human": a_ai_human, "ai_reset": a_ai_reset, "vpn_plans": a_vpn_plans, "vpn_order": a_vpn_order, "vpn_test": a_vpn_test, "vpn_test_options": a_vpn_test_options, "vpn_services": a_vpn_services, "vpn_service": a_vpn_service,
            "vpn_renew_plans": a_vpn_renew_plans, "vpn_renew": a_vpn_renew, "vpn_addons": a_vpn_addons, "vpn_addon": a_vpn_addon,
            "vpn_revoke": a_vpn_revoke, "vpn_send": a_vpn_send, "vpn_toggle": a_vpn_toggle, "vpn_note": a_vpn_note, "vpn_delete": a_vpn_delete, "vpn_report": a_vpn_report,
            "agent_plans": a_agent_plans, "agent_order": a_agent_order, "agent_list": a_agent_list, "agent_get": a_agent_get,
