@@ -13,6 +13,7 @@ meta یک dict کوچک است که همراه سرویس در دیتابیس ذ
 days=0 یعنی بدون انقضا و gb=0 یعنی حجم نامحدود.
 
 نکته: APIها از روی مستندات عمومی پنل‌ها نوشته شده‌اند؛ دکمه‌ی «تست اتصال» در پنل وب برای هر پنل ثبت‌شده، درستی را نشان می‌دهد."""
+import asyncio
 import base64
 import json
 import re
@@ -338,12 +339,27 @@ class Marzban(BasePanel):
         except (TypeError, ValueError):
             pass
         out = {k: v for k, v in out.items() if v not in (None, "")}
-        nodes = await self.nodes()
+        nodes = await self.nodes(realtime=True)
         if nodes:
             out["nodes"] = nodes
         return out
 
-    async def nodes(self) -> list:
+    _NODE_RT_PATHS = ("/node/{id}/realtime_stats", "/nodes/{id}/realtime_stats", "/node/{id}/stats", "/nodes/{id}/stats")
+
+    async def _node_realtime(self, nid):
+        """آمار لحظه‌ای یک نود (CPU/RAM/سرعت). مسیرها در نسخه‌های مختلف فرق دارد؛ اولین مسیر جواب‌دهنده یادآوری می‌شود."""
+        paths = ([self._node_rt_path] if getattr(self, "_node_rt_path", None) else []) + [x for x in self._NODE_RT_PATHS if x != getattr(self, "_node_rt_path", None)]
+        for tpl in paths:
+            try:
+                d = await self._call("GET", tpl.format(id=nid))
+            except PanelError:
+                continue
+            if isinstance(d, dict) and any(k in d for k in ("cpu_usage", "mem_used", "incoming_bandwidth_speed", "outgoing_bandwidth_speed")):
+                self._node_rt_path = tpl
+                return d
+        return None
+
+    async def nodes(self, realtime=False) -> list:
         """وضعیت نودها (Marzban/PasarGuard: GET /nodes). اگر پنل نود نداشته باشد یا دسترسی نباشد، لیست خالی."""
         try:
             d = await self._call("GET", "/nodes")
@@ -358,6 +374,20 @@ class Marzban(BasePanel):
                         "address": n.get("address") or "", "port": n.get("port"), "xray": n.get("xray_version") or "", "node_ver": n.get("node_version") or "",
                         "up": n.get("uplink"), "down": n.get("downlink"), "coef": n.get("usage_coefficient"), "msg": str(n.get("message") or "")[:160],
                         "since": n.get("last_status_change")})
+        if realtime:
+            live = [n for n in out if n["status"] == "connected" and n["id"] is not None]
+            sem = asyncio.Semaphore(4)
+
+            async def one(n):
+                async with sem:
+                    try:
+                        d = await asyncio.wait_for(self._node_realtime(n["id"]), 10)
+                    except Exception:  # noqa: BLE001
+                        d = None
+                if d:
+                    n.update({"cpu": d.get("cpu_usage"), "cores": d.get("cpu_cores"), "mem_used": d.get("mem_used"), "mem_total": d.get("mem_total"),
+                              "up_speed": d.get("outgoing_bandwidth_speed"), "down_speed": d.get("incoming_bandwidth_speed")})
+            await asyncio.gather(*(one(n) for n in live))
         return out
 
     def _sample_names(self) -> list:

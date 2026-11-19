@@ -259,8 +259,14 @@ def render_nodes(nodes: list) -> str:
             rows.append(f"آدرس: {ltr(esc(str(n['address'])) + (':' + str(n['port']) if n.get('port') else ''))}")
         if n.get("xray") or n.get("node_ver"):
             rows.append("نسخه: " + ltr(" | ".join(x for x in (("Xray " + str(n["xray"])) if n.get("xray") else "", ("Node " + str(n["node_ver"])) if n.get("node_ver") else "") if x)))
+        if n.get("cpu") is not None:
+            rows.append(f"پردازنده: {ltr(str(round(float(n['cpu']), 1)) + '%')}" + (f" ({ltr(n['cores'])} هسته)" if n.get("cores") else ""))
+        if n.get("mem_used") is not None and n.get("mem_total"):
+            rows.append(f"رم: {_hb(n['mem_used'])} / {_hb(n['mem_total'])} ({ltr('%.1f%%' % (float(n['mem_used']) * 100 / float(n['mem_total'])))})")
+        if n.get("up_speed") is not None or n.get("down_speed") is not None:
+            rows.append(f"سرعت لحظه‌ای: ↑ {_hb(n.get('up_speed') or 0)}{ltr('/s')} · ↓ {_hb(n.get('down_speed') or 0)}{ltr('/s')}")
         if n.get("up") is not None or n.get("down") is not None:
-            rows.append(f"ترافیک: ↑ {_hb(n.get('up') or 0)} · ↓ {_hb(n.get('down') or 0)}")
+            rows.append(f"ترافیک کل: ↑ {_hb(n.get('up') or 0)} · ↓ {_hb(n.get('down') or 0)}")
         if n.get("coef") not in (None, "", 1, 1.0):
             rows.append(f"ضریب مصرف: {ltr(n['coef'])}")
         if n.get("msg") and n.get("status") not in ("connected", "healthy"):

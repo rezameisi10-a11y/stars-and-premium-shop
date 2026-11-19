@@ -817,6 +817,16 @@ class DB(VpnDB, TicketDB):
                 await self.conn.rollback()
                 return False
 
+    async def user_profile_stats(self, uid) -> dict:
+        """آمار مشخصات کاربر برای کیف پول (ربات و مینی‌اپ)."""
+        st = await self.one("SELECT COUNT(*) n, COALESCE(SUM(status='done'),0) done, COALESCE(SUM(status='pending_payment'),0) pending, "
+                            "COALESCE(SUM(status IN ('failed','manual_pending')),0) issue, COALESCE(SUM(CASE WHEN status='done' THEN amount ELSE 0 END),0) spent "
+                            "FROM orders WHERE user_id=?", (uid,))
+        topped = (await self.one("SELECT COALESCE(SUM(amount),0) s FROM wallet_tx WHERE user_id=? AND reason LIKE 'topup%'", (uid,)))["s"]
+        ref = await self.referral_stats(uid)
+        return {"orders": st["n"], "done": st["done"], "pending": st["pending"], "issue": st["issue"], "spent": st["spent"], "topped": topped,
+                "invited": ref["count"], "earned": ref["earned"]}
+
     async def cancel_payment(self, pid, uid) -> bool:
         """انصراف کاربر: فقط پرداخت منتظرِ خودِ کاربر (رسیدِ فرستاده‌شده = waiting_admin قابل انصراف نیست)."""
         cur = await self.run("UPDATE payments SET status='cancelled' WHERE id=? AND user_id=? AND status='pending'", (pid, uid))

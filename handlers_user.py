@@ -10,6 +10,7 @@ from aiogram.types import (CallbackQuery, KeyboardButton, KeyboardButtonRequestU
 from i18n import CATALOG, N_
 from service import STATUS_FA, Shop
 from ui import btn, esc, fmt, ikb
+from vpn_service import jdate
 
 router = Router()
 router.message.filter(F.chat.type == "private")
@@ -474,13 +475,45 @@ async def check_payment(cb: CallbackQuery, shop: Shop, tr):
 
 
 # ---------- کیف پول ----------
+async def profile_text(shop, tr, user, tg_user) -> str:
+    """مشخصات کامل کاربر + کیف پول (همان داده‌ی مینی‌اپ)."""
+    uid = tg_user.id
+    st = await shop.db.user_profile_stats(uid)
+    langs = {l["code"]: l["name"] for l in await shop.db.list_languages()}
+    s = await shop.settings()
+    L = [tr("👛 <b>کیف پول و مشخصات شما</b>"), "",
+         tr("🆔 شناسه عددی: <code>{v}</code>", v=uid)]
+    name = " ".join(x for x in (tg_user.first_name, tg_user.last_name) if x)
+    if name:
+        L.append(tr("🙍 نام: {v}", v=esc(name)))
+    if tg_user.username:
+        L.append(tr("👤 نام کاربری: @{v}", v=esc(tg_user.username)))
+    L.append(tr("📅 تاریخ عضویت: {v}", v=jdate(user["created_at"])))
+    if user.get("last_seen"):
+        L.append(tr("🕒 آخرین بازدید: {v}", v=jdate(user["last_seen"])))
+    L.append(tr("🌐 زبان: {v}", v=esc(langs.get(user.get("lang") or "", user.get("lang") or "-"))))
+    if user.get("personal_discount"):
+        L.append(tr("🎁 تخفیف اختصاصی: {v}٪", v=user["personal_discount"]))
+    L += ["", tr("🧾 سفارش‌ها: <b>{n}</b> (تحویل‌شده: {d})", n=st["orders"], d=st["done"])]
+    if st["pending"]:
+        L.append(tr("⏳ در انتظار پرداخت: <b>{n}</b>", n=st["pending"]))
+    if st["issue"]:
+        L.append(tr("🕓 در صف/دارای مشکل: <b>{n}</b>", n=st["issue"]))
+    L += [tr("📈 مجموع خرید: <b>{v}</b> تومان", v=fmt(st["spent"])), tr("➕ مجموع شارژ: <b>{v}</b> تومان", v=fmt(st["topped"])),
+          tr("🤝 دعوت‌شده‌ها: <b>{n}</b>", n=st["invited"])]
+    if st["invited"] and st["earned"]:
+        L.append(tr("💰 مجموع پورسانت: <b>{v}</b> تومان", v=fmt(st["earned"])))
+    L += ["", tr("👛 موجودی کیف پول شما: <b>{b}</b> تومان", b=fmt(user["balance"]))]
+    return "\n".join(L)
+
+
 @router.callback_query(F.data == "wallet")
 async def wallet(cb: CallbackQuery, shop: Shop, tr):
     u = await shop.db.get_user(cb.from_user.id)
     hist = await shop.db.wallet_history(cb.from_user.id, limit=5)
     lines = "\n".join(f"{'➕' if t['amount'] > 0 else '➖'} {fmt(abs(t['amount']))} {tr('ت')} — {esc(t['reason'].split(' ')[0].split(':')[0])}" for t in hist)
     await cb.message.answer(
-        tr("👛 موجودی کیف پول شما: <b>{b}</b> تومان", b=fmt(u["balance"])) + (("\n\n" + tr("آخرین تراکنش‌ها:") + f"\n{lines}") if lines else ""),
+        await profile_text(shop, tr, u, cb.from_user) + (("\n\n" + tr("آخرین تراکنش‌ها:") + f"\n{lines}") if lines else ""),
         reply_markup=ikb([[btn(tr("➕ شارژ کیف پول"), "topup", role="action")], [btn(tr("🔙 منوی اصلی"), "menu", role="back")]]))
     await cb.answer()
 

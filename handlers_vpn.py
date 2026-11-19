@@ -833,8 +833,13 @@ async def agent_name(m: Message, shop: Shop, state: FSMContext, tr):
 async def _agent_list(cb: CallbackQuery, shop: Shop, tr):
     uid = cb.from_user.id
     items = await shop.db.list_agents(user_id=uid, limit=30)
-    if not items:
-        await cb.answer(tr("هنوز پنل نمایندگی ندارید."), show_alert=True)
+    if not items:                      # بدون پنل هم دکمه کار می‌کند: پیام + خرید
+        rows = []
+        if await shop.vpn.agents.available():
+            rows.append([btn(tr("🛒 خرید پنل نمایندگی"), "vpn:agh", role="action")])
+        rows.append([btn(tr("🔙 منوی اصلی"), "menu", role="back")])
+        await cb.message.answer(tr("🗂 <b>پنل‌های نمایندگی شما</b>") + "\n\n" + tr("هنوز پنل نمایندگی ندارید."), reply_markup=ikb(rows))
+        await cb.answer()
         return
     rows = [[btn(f"{tr(STATUS_FA.get(a['status'], a['status']))[:2]} {a['username']}", f"vpn:ag:{a['id']}", role="action")] for a in items]
     rows.append([btn(tr("🛒 خرید پنل نمایندگی"), "vpn:agh", role="action"), btn(tr("🔙 منوی اصلی"), "menu", role="back")])

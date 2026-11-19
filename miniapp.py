@@ -404,18 +404,14 @@ async def a_wallet(ctx: Ctx, d: dict) -> dict:
     shop = ctx.shop
     u = await shop.db.get_user(ctx.uid)
     hist = await shop.db.wallet_history(ctx.uid, limit=20)
-    st = await shop.db.one("SELECT COUNT(*) n, COALESCE(SUM(status='done'),0) done, COALESCE(SUM(status='pending_payment'),0) pending, "
-                           "COALESCE(SUM(status IN ('failed','manual_pending')),0) issue, COALESCE(SUM(CASE WHEN status='done' THEN amount ELSE 0 END),0) spent "
-                           "FROM orders WHERE user_id=?", (ctx.uid,))
-    topped = (await shop.db.one("SELECT COALESCE(SUM(amount),0) s FROM wallet_tx WHERE user_id=? AND reason LIKE 'topup%'", (ctx.uid,)))["s"]
-    ref = await shop.db.referral_stats(ctx.uid)
+    st = await shop.db.user_profile_stats(ctx.uid)
     lang_name = next((l["name"] for l in shop.langs if l["code"] == ctx.lang), ctx.lang) if getattr(shop, "langs", None) else ctx.lang
     return {"balance": u["balance"], "methods": [m["id"] for m in await _pay_methods(ctx, allow_wallet=False, topup=int(float((await shop.settings())["min_topup"])))],
             "limits": {"min": int(float((await shop.settings())["min_topup"])), "max": int(float((await shop.settings())["max_topup"]))},
             "profile": {"id": ctx.uid, "username": u.get("username") or "", "name": tg_name(ctx.tg), "joined": u["created_at"], "last_seen": u.get("last_seen") or 0,
                         "lang": lang_name, "discount": u.get("personal_discount") or 0,
-                        "orders": st["n"], "done": st["done"], "pending": st["pending"], "issue": st["issue"], "spent": _money(ctx, st["spent"]),
-                        "topped": _money(ctx, topped), "invited": ref["count"], "earned": _money(ctx, ref["earned"])},
+                        "orders": st["orders"], "done": st["done"], "pending": st["pending"], "issue": st["issue"], "spent": _money(ctx, st["spent"]),
+                        "topped": _money(ctx, st["topped"]), "invited": st["invited"], "earned": _money(ctx, st["earned"])},
             "history": [{"amount": t["amount"], "reason": t["reason"].split(" ")[0].split(":")[0], "ts": t["created_at"]} for t in hist]}
 
 

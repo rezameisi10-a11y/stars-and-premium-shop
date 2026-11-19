@@ -630,7 +630,7 @@ class Shop:
                 continue
             if it["action"] == "agent" and not (self.vpn.enabled() and await self.vpn.agents.available()):
                 continue
-            if it["action"] == "agent_my" and not (self.vpn.enabled() and await self.db.count_agents(user_id=uid)):
+            if it["action"] == "agent_my" and not self.vpn.enabled():     # حتی بدون پنل خریده‌شده دیده می‌شود
                 continue
             b = self._menu_button(it, lang)
             if b:
